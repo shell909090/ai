@@ -1,7 +1,7 @@
 [project]
 name = "auto-cut"
 version = "0.1.0"
-description = "Add your description here"
+description = "智能切图工具，产生不同平台可用的壁纸。"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
