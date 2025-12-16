@@ -11,9 +11,8 @@ import json
 import logging
 import argparse
 
-import google.generativeai as genai
-import typing_extensions as typing
 from PIL import Image
+from providers import create_provider
 
 
 # 定义设备及其分辨率
@@ -23,10 +22,6 @@ TARGET_DEVICES = [
     {"name": "MacBook_Pro",   "width": 3024, "height": 1964}, # 横屏宽幅 (~1.54)
     {"name": "UltraWide",     "width": 3440, "height": 1440}  # 超宽屏 (~2.38)
 ]
-
-
-class CropResult(typing.TypedDict):
-    box_2d: list[float]
 
 
 def verify_box_ratio(box, target_ratio, tolerance=0.03):
@@ -51,23 +46,36 @@ def verify_box_ratio(box, target_ratio, tolerance=0.03):
     return ratio_diff <= tolerance
 
 
-def get_subject_box(model, img, device, max_retries=3):
+def get_subject_box(provider, img, device, max_retries=3, resize_factor=0.5):
     """
-    只做一件事：让 Gemini 找出画面中最核心的主体（人、物体、建筑）的边界。
-    不需要 Gemini 考虑设备比例，只考虑内容。
-    如果返回的box比例不符合目标比例，最多重试3次。
+    Use AI provider to find the best bounding box for the main subject.
+    Validates aspect ratio and retries if needed.
+
+    Args:
+        provider: AI provider instance
+        img: Original PIL Image
+        device: Target device configuration
+        max_retries: Maximum retry attempts
+        resize_factor: Factor to resize image before sending to AI (default: 0.5 for 50%)
     """
-    logging.info(f"正在分析视觉重心: {device['name']} ...")
+    logging.info(f"正在分析视觉重心: {device['name']} using {provider.get_provider_name()}...")
 
     w, h = img.size
     s_width = float(device['width']) / w
     s_height = float(device['height']) / h
     target_ratio = float(device['width'])/device['height']
 
+    # Resize image for AI analysis to save bandwidth and cost
+    # Since we use normalized coordinates, the size doesn't affect accuracy
+    resized_w = int(w * resize_factor)
+    resized_h = int(h * resize_factor)
+    resized_img = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
+    logging.debug(f"原始尺寸: {w}x{h}, AI分析尺寸: {resized_w}x{resized_h} ({resize_factor*100:.0f}%)")
+
     prompt = f"""
     You are an expert photo editor. Your task is to identify the best cropping region for a wallpaper. Analyze the image to find the best bounding box for the MAIN SUBJECT.
 
-    Target Aspect Ratio: {target_ratio:.3f} (width/height = {device['width']}/{device['height']})
+    Target Aspect Ratio: {target_ratio:.3f}
 
     Constraints:
     1. **Completeness**: The box must encompass the full subject (head to toe if applicable, or key features).
@@ -79,39 +87,29 @@ def get_subject_box(model, img, device, max_retries=3):
     """
 
     for attempt in range(max_retries):
-        try:
-            if attempt > 0:
-                logging.warning(f"重试第 {attempt} 次...")
+        result_json = provider.analyze_image(resized_img, prompt, max_retries=1)
 
-            response = model.generate_content(
-                [prompt, img],
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json", # 强制 JSON MIME
-                    response_schema=CropResult             # 强制 Schema 结构
-                ))
-            result_json = json.loads(response.text)
-            box = result_json["box_2d"]
-
-            logging.debug(f"Subject box: {box}")
-
-            # 验证box比例是否符合目标
-            if verify_box_ratio(box, target_ratio):
-                logging.info(f"✓ Box比例验证通过")
-                return box
-            else:
-                logging.warning(f"✗ Box比例不匹配目标比例 {target_ratio:.3f}")
-                if attempt < max_retries - 1:
-                    continue
-                else:
-                    logging.error(f"达到最大重试次数 ({max_retries})，使用最后一次结果")
-                    return box
-
-        except Exception as e:
-            logging.error(f"Gemini 分析失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+        if result_json is None:
+            logging.error(f"Provider analysis failed (attempt {attempt + 1}/{max_retries})")
             if attempt < max_retries - 1:
                 continue
             else:
                 return None
+
+        box = result_json["box_2d"]
+        logging.debug(f"Subject box: {box}")
+
+        # 验证box比例是否符合目标
+        if verify_box_ratio(box, target_ratio):
+            logging.info(f"✓ Box比例验证通过")
+            return box
+        else:
+            logging.warning(f"✗ Box比例不匹配目标比例 {target_ratio:.3f}")
+            if attempt < max_retries - 1:
+                continue
+            else:
+                logging.error(f"达到最大重试次数 ({max_retries})，使用最后一次结果")
+                return box
 
     return None
 
@@ -124,7 +122,8 @@ def calculate_best_crop(img_w, img_h, subject_box):
     return [round(xmin*img_w), round(ymin*img_h), round(xmax*img_w), round(ymax*img_h)]
 
 
-def process_image(fp, output_dir, model_name):
+def process_image(fp, output_dir, provider, resize_factor=0.5):
+    """Process a single image and generate wallpapers for all devices."""
     if not os.path.exists(fp):
         logging.error(f"图片不存在: {fp}")
         return
@@ -139,13 +138,15 @@ def process_image(fp, output_dir, model_name):
     # Get base filename without extension for output naming
     base_name = os.path.splitext(os.path.basename(fp))[0]
 
-    model = genai.GenerativeModel(model_name)
-
     # 2. 本地针对不同设备进行几何计算
     for device in TARGET_DEVICES:
         logging.info(f"正在处理: {device['name']} ...")
 
-        subject_box = get_subject_box(model, img, device)
+        subject_box = get_subject_box(provider, img, device, resize_factor=resize_factor)
+
+        if subject_box is None:
+            logging.error(f"Failed to analyze {device['name']}, skipping")
+            continue
 
         # 计算最佳裁切框
         crop_box = calculate_best_crop(w, h, subject_box)
@@ -164,15 +165,22 @@ def process_image(fp, output_dir, model_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Auto crop images for multiple device wallpapers')
-    parser.add_argument('filenames', nargs='+', type=str, help='Input image file path(s)')
-    parser.add_argument('--output-dir', '-o', type=str, default='output_wallpapers_fixed',
-                        help='Output directory (default: output_wallpapers_fixed)')
-    parser.add_argument('--model', '-m', type=str, default='gemini-2.5-flash',
-                        help='Gemini model name (default: gemini-2.5-flash)')
+    parser = argparse.ArgumentParser(
+        description='Auto crop images for multiple device wallpapers using AI vision'
+    )
+    parser.add_argument('filenames', nargs='+', type=str,
+                       help='Input image file path(s)')
+    parser.add_argument('--output-dir', '-o', type=str, default='output_wallpapers',
+                       help='Output directory (default: output_wallpapers)')
+    parser.add_argument('--provider', '-p', type=str, choices=['gemini', 'openai'],
+                       help='AI provider to use (auto-detect if not specified)')
+    parser.add_argument('--model', '-m', type=str,
+                       help='Model name (default: gemini-2.5-flash for Gemini, gpt-4o for OpenAI)')
+    parser.add_argument('--resize-factor', '-r', type=float, default=0.5,
+                       help='Resize factor for AI analysis (default: 0.5 for 50%%, saves bandwidth/cost)')
     parser.add_argument('--log-level', '-l', type=str, default='INFO',
-                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                        help='Logging level (default: INFO)')
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       help='Logging level (default: INFO)')
     args = parser.parse_args()
 
     # Configure logging
@@ -182,17 +190,35 @@ def main():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
+    # Validate resize factor
+    if args.resize_factor <= 0 or args.resize_factor > 1:
+        logging.error(f"Invalid resize factor: {args.resize_factor}. Must be between 0 and 1.")
+        return 1
+
+    # Create output directory
     output_dir = args.output_dir
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # Initialize provider
+    try:
+        provider = create_provider(
+            provider_name=args.provider,
+            model_name=args.model
+        )
+        logging.info(f"使用提供商: {provider.get_provider_name()}")
+    except ValueError as e:
+        logging.error(f"Provider initialization failed: {e}")
+        return 1
+
     logging.info(f"将处理 {len(args.filenames)} 个文件")
     logging.info(f"输出目录: {output_dir}")
-    logging.info(f"使用模型: {args.model}")
+    logging.info(f"AI分析缩放比例: {args.resize_factor*100:.0f}%")
 
+    # Process each file
     for filename in args.filenames:
         try:
-            process_image(filename, output_dir, args.model)
+            process_image(filename, output_dir, provider, resize_factor=args.resize_factor)
         except Exception as e:
             logging.error(f"处理 {filename} 时出错: {e}")
             continue
@@ -201,6 +227,8 @@ def main():
     logging.info(f"全部完成! 共处理 {len(args.filenames)} 个文件")
     logging.info("=" * 60)
 
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    exit(main())
