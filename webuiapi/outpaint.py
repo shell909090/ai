@@ -15,29 +15,7 @@ from os import path
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
-
-def outpaint(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes:
-    rslt = api.upload_image(image_filepath)
-    server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    print(f'server side filepath: {server_filepath}')
-
-    wf.set_node_param("加载图像", "image", server_filepath)
-    wf.set_node_param("外补画板", "left", left)
-    wf.set_node_param("外补画板", "top", top)
-    wf.set_node_param("外补画板", "right", right)
-    wf.set_node_param("外补画板", "bottom", bottom)
-
-    # 生成图片
-    results = api.queue_and_wait_images(wf, "预览图像")
-    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
-    return next(iter(results.values()))
-
-
-def save_image(image_data: bytes, output_filepath: Path) -> None:
-    output_file_png = Path(output_filepath).with_suffix('.png')
-    with open(output_file_png, "wb") as f:
-        f.write(image_data)
-    print(f"已保存PNG: {output_file_png}")
+from libs import outpaint, save_image
 
 
 def main():
