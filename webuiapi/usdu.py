@@ -11,8 +11,6 @@ import sys
 import random
 import argparse
 from pathlib import Path
-from PIL import Image
-from io import BytesIO
 from os import path
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
@@ -39,18 +37,6 @@ def save_image(image_data: bytes, output_filepath: Path) -> None:
     print(f"已保存PNG: {output_file_png}")
 
 
-def convert_to_jpg(image_data: bytes, output_filepath: Path) -> None:
-    img = Image.open(BytesIO(image_data))
-    if img.mode in ('RGBA', 'LA', 'P'):
-        # 转换为RGB模式（JPG不支持透明通道）
-        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-        if img.mode == 'P':
-            img = img.convert('RGBA')
-        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-        img = rgb_img
-    img.save(output_filepath, 'JPEG', quality=95)
-
-
 def main():
     parser = argparse.ArgumentParser(description='使用ultimate-sd-upscale流程提升分辨率')
     parser.add_argument('--url', '-u',
@@ -69,9 +55,6 @@ def main():
                         type=float,
                         default=2.0,
                         help='放大倍数 (默认: 2.0)')
-    parser.add_argument('--jpg', '-j',
-                        action='store_true',
-                        help='同时生成JPG格式')
     args = parser.parse_args()
 
     if not args.url:
@@ -87,12 +70,6 @@ def main():
 
     # 保存PNG文件
     save_image(image_data, Path(args.output))
-
-    # 转换为JPG（如果需要）
-    if args.jpg:
-        output_file_jpg = Path(args.output).with_suffix('.jpg')
-        convert_to_jpg(image_data, output_file_jpg)
-        print(f"已保存JPG: {output_file_jpg}")
 
 
 if __name__ == '__main__':

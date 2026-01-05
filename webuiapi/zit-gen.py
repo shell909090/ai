@@ -11,8 +11,6 @@ import sys
 import random
 import argparse
 from pathlib import Path
-from PIL import Image
-from io import BytesIO
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
@@ -39,18 +37,6 @@ def save_image(image_data: bytes, output_filepath: Path) -> None:
     print(f"已保存PNG: {output_file_png}")
 
 
-def convert_to_jpg(image_data: bytes, output_filepath: Path) -> None:
-    img = Image.open(BytesIO(image_data))
-    if img.mode in ('RGBA', 'LA', 'P'):
-        # 转换为RGB模式（JPG不支持透明通道）
-        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-        if img.mode == 'P':
-            img = img.convert('RGBA')
-        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-        img = rgb_img
-    img.save(output_filepath, 'JPEG', quality=95)
-
-
 def main():
     parser = argparse.ArgumentParser(description='使用z-image-turbo流程生成图片')
     parser.add_argument('--url', '-u',
@@ -68,9 +54,14 @@ def main():
     parser.add_argument('--output-dir', '-o',
                         required=True,
                         help='输出目录')
-    parser.add_argument('--jpg', '-j',
-                        action='store_true',
-                        help='同时生成JPG格式')
+    parser.add_argument('--width',
+                        type=int,
+                        default=1024,
+                        help='图像宽度 (默认: 1024)')
+    parser.add_argument('--height',
+                        type=int,
+                        default=1024,
+                        help='图像高度 (默认: 1024)')
     args = parser.parse_args()
 
     if not args.url:
@@ -106,19 +97,11 @@ def main():
 
             prompt = f"{theme}\n{v}"
             seed = random.randint(2**20, 2**64)
-            for width, height in [(1024, 1024), (1440, 1080), (1920, 1200), (1920, 1080), (1080, 1440)]:
-            # for width, height in [(1024, 1024), ]:
-                output_filepath = output_dir / f"{counter:03d}_{width}x{height}.png"
-                image_data = generate_image(api, wf, prompt, seed, width, height)
+            image_data = generate_image(api, wf, prompt, seed, args.width, args.height)
 
-                # 保存PNG文件
-                save_image(image_data, output_filepath)
-
-                # 转换为JPG（如果需要）
-                if args.jpg:
-                    output_file_jpg = output_filepath.with_suffix('.jpg')
-                    convert_to_jpg(image_data, output_file_jpg)
-                    print(f"已保存JPG: {output_file_jpg}")
+            # 保存PNG文件
+            output_filepath = output_dir / f"{counter:03d}.png"
+            save_image(image_data, output_filepath)
 
             counter += 1
 
