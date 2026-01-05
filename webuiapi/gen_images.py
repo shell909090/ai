@@ -8,8 +8,6 @@
 '''
 import os
 import sys
-import csv
-import math
 import random
 import argparse
 from pathlib import Path

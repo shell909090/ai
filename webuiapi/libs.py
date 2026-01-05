@@ -60,7 +60,7 @@ def convert_to_jpg(png_filepath: Path, quality: int = 95) -> None:
         img = img.convert('RGB')
 
     img.save(jpg_filepath, 'JPEG', quality=quality)
-    print(f"      已转换为JPG: {jpg_filepath.name}")
+    print(f"已转换为JPG: {jpg_filepath.name}")
 
 
 def get_device_resolution(pixels_csv: str, device_id: str) -> tuple[int, int]:

@@ -8,12 +8,8 @@
 '''
 import os
 import sys
-import random
 import argparse
 from pathlib import Path
-from os import path
-from PIL import Image
-from io import BytesIO
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 

@@ -8,10 +8,8 @@
 '''
 import os
 import sys
-import random
 import argparse
 from pathlib import Path
-from os import path
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
