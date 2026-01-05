@@ -16,7 +16,7 @@ from os import path
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
 
-def generate_image(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, upscale_by: float) -> bytes:
+def usdu(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, upscale_by: float) -> bytes:
     rslt = api.upload_image(image_filepath)
     server_filepath = path.join(rslt['subfolder'], rslt['name'])
     print(f'server side filepath: {server_filepath}')
@@ -66,7 +66,7 @@ def main():
     wf = ComfyWorkflowWrapper(args.workflow)
 
     # 生成图片
-    image_data = generate_image(api, wf, args.input, args.upscale_by)
+    image_data = usdu(api, wf, args.input, args.upscale_by)
 
     # 保存PNG文件
     save_image(image_data, Path(args.output))

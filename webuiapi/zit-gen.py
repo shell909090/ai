@@ -15,7 +15,7 @@ from pathlib import Path
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
 
-def generate_image(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:
+def zit_generate_image(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:
     # 设置提示词和随机种子
     wf.set_node_param("CLIP文本编码", "text", prompt)
     wf.set_node_param("K采样器", "seed", seed)
@@ -97,7 +97,7 @@ def main():
 
             prompt = f"{theme}\n{v}"
             seed = random.randint(2**20, 2**64)
-            image_data = generate_image(api, wf, prompt, seed, args.width, args.height)
+            image_data = zit_generate_image(api, wf, prompt, seed, args.width, args.height)
 
             # 保存PNG文件
             output_filepath = output_dir / f"{counter:03d}.png"
