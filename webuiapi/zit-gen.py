@@ -23,8 +23,8 @@ def main():
                         default=os.environ.get('COMFYUI_API_URL'),
                         help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
     parser.add_argument('--workflow', '-w',
-                        default='z_image_turbo.json',
-                        help='ComfyUI Workflow文件 (默认: z_image_turbo.json)')
+                        default='z-image-turbo.json',
+                        help='ComfyUI Workflow文件 (默认: z-image-turbo.json)')
     parser.add_argument('--theme', '-t',
                         required=True,
                         help='主题文件路径')
