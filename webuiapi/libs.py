@@ -6,9 +6,11 @@
 @copyright: 2026, Shell.Xu <shell909090@gmail.com>
 @license: BSD-3-clause
 '''
-from pathlib import Path
+import csv
+import math
 from os import path
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
@@ -59,6 +61,73 @@ def convert_to_jpg(png_filepath: Path, quality: int = 95) -> None:
 
     img.save(jpg_filepath, 'JPEG', quality=quality)
     print(f"      已转换为JPG: {jpg_filepath.name}")
+
+
+def get_device_resolution(pixels_csv: str, device_id: str) -> tuple[int, int]:
+    """从pixels.csv读取指定设备的分辨率"""
+    with open(pixels_csv, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row['device_id'] == device_id:
+                return int(row['width']), int(row['height'])
+    raise ValueError(f"设备 '{device_id}' 未在 {pixels_csv} 中找到")
+
+
+def calculate_generation_size(device_width: int, device_height: int, target_area: int = 1024 * 1024) -> tuple[int, int]:
+    """
+    根据设备分辨率计算生成图像尺寸。
+    保持设备的纵横比，总像素数接近target_area (默认1024*1024)。
+    """
+    aspect_ratio = device_width / device_height
+    # new_width * new_height = target_area
+    # new_width / new_height = aspect_ratio
+    # => new_width = sqrt(target_area * aspect_ratio)
+    # => new_height = sqrt(target_area / aspect_ratio)
+    gen_width = int(math.sqrt(target_area * aspect_ratio))
+    gen_height = int(math.sqrt(target_area / aspect_ratio))
+    return gen_width, gen_height
+
+
+def get_all_devices(pixels_csv: str) -> list[dict]:
+    """读取pixels.csv中的所有设备"""
+    devices = []
+    with open(pixels_csv, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            devices.append({
+                'device_id': row['device_id'],
+                'width': int(row['width']),
+                'height': int(row['height'])
+            })
+    return devices
+
+
+def filter_devices_by_ratio(devices: list[dict]) -> list[dict]:
+    """
+    过滤掉相同纵横比的设备，只保留最高分辨率。
+    例如: 3840x2160 和 1920x1080 都是 16:9，只保留 3840x2160
+    """
+    ratio_groups = {}
+
+    for device in devices:
+        width = device['width']
+        height = device['height']
+
+        # 计算最简比例 (使用GCD)
+        gcd = math.gcd(width, height)
+        ratio = (width // gcd, height // gcd)
+
+        # 按比例分组，保留分辨率最高的
+        if ratio not in ratio_groups:
+            ratio_groups[ratio] = device
+        else:
+            # 比较分辨率大小（使用实际像素数）
+            current_pixels = width * height
+            existing_pixels = ratio_groups[ratio]['width'] * ratio_groups[ratio]['height']
+            if current_pixels > existing_pixels:
+                ratio_groups[ratio] = device
+
+    return list(ratio_groups.values())
 
 
 def upscale(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str) -> bytes:
