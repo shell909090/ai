@@ -12,6 +12,8 @@ from os import path
 
 from libs import ComfyApiWrapper, ComfyWorkflow
 
+# 4x-UltraSharp.pth
+
 
 WORKFLOW_STR = '''
 {

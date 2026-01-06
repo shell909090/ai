@@ -6,65 +6,222 @@
 @copyright: 2026, Shell.Xu <shell909090@gmail.com>
 @license: BSD-3-clause
 '''
-import os
-import sys
+import json
 import logging
-import argparse
-from pathlib import Path
+from os import path
 
-from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
+from libs import ComfyApiWrapper, ComfyWorkflow
 
-from libs import outpaint, save_image
-
-
-def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    parser = argparse.ArgumentParser(description='使用sdxl-outpaint扩图')
-    parser.add_argument('--url', '-u',
-                        default=os.environ.get('COMFYUI_API_URL'),
-                        help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
-    parser.add_argument('--workflow', '-w',
-                        default='sdxl-outpaint.json',
-                        help='ComfyUI Workflow文件 (默认: sdxl-outpaint.json)')
-    parser.add_argument('--input', '-i',
-                        required=True,
-                        help='输入图像文件路径')
-    parser.add_argument('--output', '-o',
-                        required=True,
-                        help='输出图像文件路径')
-    parser.add_argument('--left',
-                        type=int,
-                        default=0,
-                        help='左侧扩展像素 (默认: 0)')
-    parser.add_argument('--top',
-                        type=int,
-                        default=0,
-                        help='顶部扩展像素 (默认: 0)')
-    parser.add_argument('--right',
-                        type=int,
-                        default=0,
-                        help='右侧扩展像素 (默认: 0)')
-    parser.add_argument('--bottom',
-                        type=int,
-                        default=0,
-                        help='底部扩展像素 (默认: 0)')
-    args = parser.parse_args()
-
-    if not args.url:
-        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
-        sys.exit(1)
-
-    # 初始化ComfyUI API和Workflow
-    api = ComfyApiWrapper(args.url)
-    wf = ComfyWorkflowWrapper(args.workflow)
-
-    # 生成图片
-    image_data = outpaint(api, wf, args.input, args.left, args.top, args.right, args.bottom)
-
-    # 保存PNG文件
-    save_image(image_data, Path(args.output))
+# sd_xl_base_1.0_inpainting_0.1.safetensors
+# SDXL/sdxl_vae.safetensors
 
 
-if __name__ == '__main__':
-    main()
+WORKFLOW_STR = '''
+{
+  "3": {
+    "inputs": {
+      "seed": 527148651682568,
+      "steps": 40,
+      "cfg": 3.5,
+      "sampler_name": "ddim",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "200",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "178",
+        0
+      ],
+      "latent_image": [
+        "191",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "masterpiece, best quality, high quality, (photorealistic), (realistic)",
+      "clip": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "195",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "10": {
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "107": {
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0_inpainting_0.1.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Checkpoint加载器（简易）"
+    }
+  },
+  "146": {
+    "inputs": {
+      "image": ""
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "178": {
+    "inputs": {
+      "text": "paintings,sketches,text,watermark,(worst quality:2),(low quality:2),(normal quality:2),lowres,((monochrome)),((grayscale)),acnes,age spot,glans,skin spots,acnes,skin blemishes,age spot,glans,extra fingers,fewer fingers,strange fingers,bad hand,(bad_prompt:0.8),LOGO",
+      "clip": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "186": {
+    "inputs": {
+      "left": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "feathering": 20,
+      "image": [
+        "146",
+        0
+      ]
+    },
+    "class_type": "ImagePadForOutpaint",
+    "_meta": {
+      "title": "外补画板"
+    }
+  },
+  "191": {
+    "inputs": {
+      "grow_mask_by": 6,
+      "pixels": [
+        "186",
+        0
+      ],
+      "vae": [
+        "195",
+        0
+      ],
+      "mask": [
+        "186",
+        1
+      ]
+    },
+    "class_type": "VAEEncodeForInpaint",
+    "_meta": {
+      "title": "VAE编码（局部重绘）"
+    }
+  },
+  "195": {
+    "inputs": {
+      "vae_name": "SDXL/sdxl_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "200": {
+    "inputs": {
+      "weight": 1,
+      "start_at": 0,
+      "end_at": 1,
+      "weight_type": "standard",
+      "model": [
+        "201",
+        0
+      ],
+      "ipadapter": [
+        "201",
+        1
+      ],
+      "image": [
+        "146",
+        0
+      ]
+    },
+    "class_type": "IPAdapter",
+    "_meta": {
+      "title": "IPAdapter"
+    }
+  },
+  "201": {
+    "inputs": {
+      "preset": "PLUS (high strength)",
+      "model": [
+        "107",
+        0
+      ]
+    },
+    "class_type": "IPAdapterUnifiedLoader",
+    "_meta": {
+      "title": "IPAdapter Unified Loader"
+    }
+  }
+}
+'''
+
+
+def outpaint(api: ComfyApiWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes:
+    wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
+
+    logging.info(f'upload image {image_filepath}')
+    rslt = api.upload_image(image_filepath)
+    server_filepath = path.join(rslt['subfolder'], rslt['name'])
+    logging.info(f'Server side filepath: {server_filepath}')
+
+    wf.set_node_param("加载图像", "image", server_filepath)
+    wf.set_node_param("外补画板", "left", left)
+    wf.set_node_param("外补画板", "top", top)
+    wf.set_node_param("外补画板", "right", right)
+    wf.set_node_param("外补画板", "bottom", bottom)
+
+    results = api.queue_and_wait_images(wf, "预览图像")
+    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
+    return next(iter(results.values()))

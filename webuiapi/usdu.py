@@ -12,6 +12,10 @@ from os import path
 
 from libs import ComfyApiWrapper, ComfyWorkflow
 
+# 4x-UltraSharp.pth
+# sd_xl_base_1.0.safetensors
+# SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors
+
 
 WORKFLOW_STR = '''
 {

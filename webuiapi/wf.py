@@ -35,6 +35,22 @@ def main():
     parser.add_argument('--upscale-by',
                         type=float,
                         help='放大倍数 (默认: 2.0)')
+    parser.add_argument('--left',
+                        type=int,
+                        default=0,
+                        help='左侧扩展像素 (默认: 0)')
+    parser.add_argument('--top',
+                        type=int,
+                        default=0,
+                        help='顶部扩展像素 (默认: 0)')
+    parser.add_argument('--right',
+                        type=int,
+                        default=0,
+                        help='右侧扩展像素 (默认: 0)')
+    parser.add_argument('--bottom',
+                        type=int,
+                        default=0,
+                        help='底部扩展像素 (默认: 0)')
     parser.add_argument('rest', nargs='*', type=str)
     args = parser.parse_args()
 
@@ -52,6 +68,10 @@ def main():
     elif args.workflow == 'upscale':
         import upscale
         image_data = upscale.upscale(api, args.input)
+        save_image(image_data, Path(args.output))
+    elif args.workflow == 'outpaint':
+        import outpaint
+        image_data = outpaint.outpaint(api, args.input, args.left, args.top, args.right, args.bottom)
         save_image(image_data, Path(args.output))
     else:
         logging.error(f'unknown workflow {args.workflow}')
