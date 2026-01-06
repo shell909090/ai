@@ -13,9 +13,70 @@ import logging
 import argparse
 from pathlib import Path
 
-from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
+from comfy_api_simplified import ComfyApiWrapper
 
-from libs import zit_generate_image, save_image, get_device_resolution, calculate_generation_size, get_all_devices, filter_devices_by_ratio
+import zit
+from libs import save_image, calculate_generation_size, get_all_devices
+
+
+def gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device):
+    """
+    为单个设备生成图片
+
+    Args:
+        api: ComfyUI API wrapper
+        output_dir: 输出目录
+        counter: 序列ID (从0开始)
+        batch: 批次ID (从0开始)
+        prompt: 提示词
+        seed: 随机数种子
+        device: 设备信息字典，包含 device_id, width, height；如果为None则不指定设备
+    """
+    # 确定输出文件名
+    if device:
+        output_filepath = output_dir / f"{counter:03d}_{batch:02d}_{device['device_id']}.png"
+        width, height = device['width'], device['height']
+    else:
+        output_filepath = output_dir / f"{counter:03d}_{batch:02d}.png"
+        width, height = 1024, 1024  # 默认分辨率
+
+    # 检查目标文件是否已存在
+    if output_filepath.exists():
+        logging.info(f"Skipping {output_filepath.name}: file already exists")
+        return
+
+    # 调用 zit.zit 生成图片
+    image_data = zit.zit(api, prompt, seed, width, height)
+
+    # 保存图片
+    save_image(image_data, output_filepath)
+
+
+def gen_images_for_variation(api, output_dir, counter, prompt, devices, batch_size=1):
+    """
+    为一个变奏生成所有批次的图片
+
+    Args:
+        api: ComfyUI API wrapper
+        output_dir: 输出目录
+        counter: 序列ID
+        prompt: 提示词
+        devices: 设备信息列表，每个设备包含 device_id, width, height
+        batch_size: 批次数量
+    """
+    for batch in range(batch_size):
+        # 同一个counter和batch使用相同的seed，确保不同设备的图片内容一致
+        seed = random.randint(2**20, 2**64)
+        logging.info(f"Batch {batch}, seed: {seed}")
+
+        # 为所有设备生成图片
+        if not devices:
+            # 没有指定设备，生成默认分辨率
+            gen_image_for_device(api, output_dir, counter, batch, prompt, seed, None)
+        else:
+            # 为每个设备生成图片
+            for device in devices:
+                gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device)
 
 
 def main():
@@ -25,9 +86,6 @@ def main():
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
                         help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
-    parser.add_argument('--workflow', '-w',
-                        default='z-image-turbo.json',
-                        help='ComfyUI Workflow文件 (默认: z-image-turbo.json)')
     parser.add_argument('--theme', '-t',
                         required=True,
                         help='主题文件路径')
@@ -38,9 +96,11 @@ def main():
                         required=True,
                         help='输出目录')
     parser.add_argument('--pixels-csv', '-p',
-                        help='像素分辨率CSV文件。如果指定但无--device，则为所有设备生成图片')
-    parser.add_argument('--device', '-d',
-                        help='设备ID (从pixels.csv读取分辨率并自动计算生成尺寸)')
+                        help='像素分辨率CSV文件。如果指定，则为所有设备生成图片')
+    parser.add_argument('--batches', '-b',
+                        type=int,
+                        default=1,
+                        help='每个变奏生成的批次数 (默认: 1)')
     args = parser.parse_args()
 
     if not args.url:
@@ -48,39 +108,24 @@ def main():
         sys.exit(1)
 
     # 确定生成模式和尺寸列表
-    generation_sizes = []
+    devices = []
 
-    if args.pixels_csv and not args.device:
-        # 批量模式：为所有设备生成
+    if args.pixels_csv:
+        # 设备模式：为所有设备生成
         all_devices = get_all_devices(args.pixels_csv)
-        filtered_devices = filter_devices_by_ratio(all_devices)
-        logging.info(f"Batch mode: {len(all_devices)} original devices, {len(filtered_devices)} after filtering by aspect ratio")
+        logging.info(f"Device mode: {len(all_devices)} devices")
 
-        for device in filtered_devices:
+        for device in all_devices:
             gen_width, gen_height = calculate_generation_size(device['width'], device['height'])
-            generation_sizes.append({
+            devices.append({
                 'device_id': device['device_id'],
                 'width': gen_width,
-                'height': gen_height,
-                'device_width': device['width'],
-                'device_height': device['height']
+                'height': gen_height
             })
             logging.info(f"  {device['device_id']}: {device['width']}x{device['height']} -> {gen_width}x{gen_height}")
-    elif args.device:
-        # 单设备模式
-        if not args.pixels_csv:
-            logging.error("Error: --pixels-csv must be specified when using --device")
-            sys.exit(1)
-        device_width, device_height = get_device_resolution(args.pixels_csv, args.device)
-        gen_width, gen_height = calculate_generation_size(device_width, device_height)
-        generation_sizes.append({
-            'device_id': args.device,
-            'width': gen_width,
-            'height': gen_height,
-            'device_width': device_width,
-            'device_height': device_height
-        })
-        logging.info(f"Single device mode: {args.device} {device_width}x{device_height} -> {gen_width}x{gen_height}")
+    else:
+        # 默认模式：不指定设备，生成默认分辨率
+        logging.info("Default mode: generating 1024x1024 images")
 
     # 检查输出目录
     output_dir = Path(args.output_dir)
@@ -91,9 +136,8 @@ def main():
     with open(args.theme, 'r', encoding='utf-8') as f:
         theme = f.read().strip()
 
-    # 初始化ComfyUI API和Workflow
+    # 初始化ComfyUI API
     api = ComfyApiWrapper(args.url)
-    wf = ComfyWorkflowWrapper(args.workflow)
 
     # 读取变奏并生成图片
     counter = 0
@@ -104,24 +148,10 @@ def main():
                 continue
 
             prompt = f"{theme}\n{v}"
-            # 同一个prompt使用相同的seed，确保不同分辨率的图片内容一致
-            seed = random.randint(2**20, 2**64)
+            logging.info(f"Processing counter {counter}")
 
-            # 为每个尺寸生成图片
-            for size_info in generation_sizes:
-                gen_width = size_info['width']
-                gen_height = size_info['height']
-
-                # 检查目标文件是否已存在
-                output_filepath = output_dir / f"{counter:03d}_{gen_width}x{gen_height}.png"
-                if output_filepath.exists():
-                    logging.info(f"Skipping {output_filepath.name}: file already exists")
-                    continue
-
-                image_data = zit_generate_image(api, wf, prompt, seed, gen_width, gen_height)
-
-                # 保存PNG文件
-                save_image(image_data, output_filepath)
+            # 为该变奏生成所有批次
+            gen_images_for_variation(api, output_dir, counter, prompt, devices, args.batches)
 
             counter += 1
 
