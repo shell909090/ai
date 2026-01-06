@@ -17,6 +17,12 @@ from PIL import Image
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
 
+class ComfyWorkflow(ComfyWorkflowWrapper):
+
+    def __init__(self, data: dict):
+        dict.__init__(self, data)    
+
+
 def read_img_from_byte(image_data: bytes) -> Image.Image:
     """
     Read an image from raw byte data.

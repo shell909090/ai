@@ -20,13 +20,12 @@ from libs import usdu, save_image
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    parser = argparse.ArgumentParser(description='使用usdu流程提升分辨率')
+    parser = argparse.ArgumentParser(description='运行特定workflow')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
                         help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
     parser.add_argument('--workflow', '-w',
-                        default='usdu.json',
-                        help='ComfyUI Workflow文件 (默认: usdu.json)')
+                        help='ComfyUI Workflow')
     parser.add_argument('--input', '-i',
                         required=True,
                         help='输入图像文件路径')
@@ -35,8 +34,8 @@ def main():
                         help='输出图像文件路径')
     parser.add_argument('--upscale-by',
                         type=float,
-                        default=2.0,
                         help='放大倍数 (默认: 2.0)')
+    parser.add_argument('rest', nargs='*', type=str)
     args = parser.parse_args()
 
     if not args.url:
@@ -45,13 +44,15 @@ def main():
 
     # 初始化ComfyUI API和Workflow
     api = ComfyApiWrapper(args.url)
-    wf = ComfyWorkflowWrapper(args.workflow)
 
-    # 生成图片
-    image_data = usdu(api, wf, args.input, args.upscale_by)
+    if args.workflow == 'usdu':
+        import usdu
+        image_data = usdu.usdu(api, args.input, args.upscale_by)
 
-    # 保存PNG文件
-    save_image(image_data, Path(args.output))
+        # 保存PNG文件
+        save_image(image_data, Path(args.output))
+    else:
+        logging.error(f'unknown workflow {args.workflow}')
 
 
 if __name__ == '__main__':
