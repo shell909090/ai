@@ -17,13 +17,13 @@ from libs import usdu, save_image
 
 
 def main():
-    parser = argparse.ArgumentParser(description='使用ultimate-sd-upscale流程提升分辨率')
+    parser = argparse.ArgumentParser(description='使用usdu流程提升分辨率')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
                         help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
     parser.add_argument('--workflow', '-w',
-                        default='ultimate-sd-upscale.json',
-                        help='ComfyUI Workflow文件 (默认: ultimate-sd-upscale.json)')
+                        default='usdu.json',
+                        help='ComfyUI Workflow文件 (默认: usdu.json)')
     parser.add_argument('--input', '-i',
                         required=True,
                         help='输入图像文件路径')
