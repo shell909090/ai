@@ -2,6 +2,18 @@
 
 AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量生成多设备分辨率壁纸。
 
+## 流程
+
+首先思考一个主题，并写出描述词。然后用这个主题，借助AI大模型，生成不同的描述变化。
+
+例如主题是：“18岁亚裔女性，扎高马尾，黑发，细腰，长腿，邻家女孩。”。
+
+可以向AI提问：“我的主题是“18岁亚裔女性，扎高马尾，黑发，细腰，长腿，邻家女孩。”请为我生成24条该女性的动作和场景描述的提示词，用于AI图像生成。每个月份两条，一条城市主题，一条乡村主题。穿着，背景和色调，必须符合这个月份当地的天气。中文生成。一行一条，输出纯文本格式。输出仅包含描述。输出无需包含主题。输出描述必须详细。输出必须包含详细的衣着，包括上下身穿着，首饰（如有）。输出必须包括环境，照片风格，动作神态，表情，取景范围。”
+
+随后使用主题+变奏，批量生成图片。ZIT会保持生成对象间近似一致。不一致或不好看的，丢弃即可。
+
+默认生成1024x1024分辨率。其他分辨率可以参考`test_pixels.csv`文件。
+
 ## 特性
 
 - 使用z-image-turbo模型快速生成高质量图片
@@ -51,7 +63,7 @@ pip install comfy-api-simplified pillow websockets
 ### 设置ComfyUI API地址
 
 ```bash
-export COMFYUI_API_URL=http://192.168.33.4:8188/
+export COMFYUI_API_URL=http://192.168.1.1:8188/
 ```
 
 ### 设备分辨率表格式（pixels.csv）
@@ -86,13 +98,22 @@ mac_retina,2880,1800
 
 **模型清单汇总**：
 - `qwen_3_4b.safetensors` - CLIP文本编码器
+  - [HuggingFace下载](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/text_encoders/qwen_3_4b.safetensors)
 - `ae.safetensors` - VAE编码器
+  - [HuggingFace下载](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/vae/ae.safetensors)
 - `z_image_turbo_bf16_nsfw_v2.safetensors` - Z-Image Turbo扩散模型
+  - [HuggingFace下载 (标准bf16版本)](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors)
+  - [HuggingFace下载](https://huggingface.co/tewea/z_image_turbo_bf16_nsfw/blob/main/z_image_turbo_bf16_nsfw_v2.safetensors)
 - `4x-UltraSharp.pth` - 4倍超分辨率模型
+  - [HuggingFace下载](https://huggingface.co/Kim2091/UltraSharp/blob/main/4x-UltraSharp.pth)
 - `sd_xl_base_1.0.safetensors` - SDXL基础模型
+  - [HuggingFace下载](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/sd_xl_base_1.0.safetensors)
 - `sd_xl_base_1.0_inpainting_0.1.safetensors` - SDXL修复模型
+  - [HuggingFace下载](https://huggingface.co/benjamin-paine/sd-xl-alternative-bases/blob/main/sd_xl_base_1.0_inpainting_0.1.safetensors)
 - `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors` - ControlNet瓦片模型
+  - [HuggingFace下载](https://huggingface.co/xinsir/controlnet-tile-sdxl-1.0/blob/main/diffusion_pytorch_model.safetensors)
 - `SDXL/sdxl_vae.safetensors` - SDXL VAE
+  - [HuggingFace下载](https://huggingface.co/stabilityai/sdxl-vae/blob/main/sdxl_vae.safetensors)
 
 ## 使用方法
 
@@ -107,11 +128,15 @@ mac_retina,2880,1800
 
 # 每个变奏生成多个批次
 ./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --batches 3
+
+# 生成PNG并自动转换为JPG
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --jpg
 ```
 
 生成的文件命名规则：
 - 有设备表：`{序号:03d}_{批次:02d}_{device_id}.png`
 - 无设备表：`{序号:03d}_{批次:02d}.png`
+- 如果使用`--jpg`参数，会同时生成`.png`和`.jpg`文件
 
 例如：`000_00_iphone_15_16.png`、`000_01_iphone_15_16.png`、`001_00_win_hd_monitor.png`
 
@@ -159,6 +184,8 @@ make clean
 
 ### gen-images.py工作流程
 
+#### 第一阶段：生成所有基础图片
+
 1. 从`theme.txt`读取主题提示词
 2. 从`variations.txt`读取变奏（每行一个）
 3. 主题+变奏混合生成最终提示词
@@ -168,11 +195,36 @@ make clean
 7. 如果指定了分辨率表，为所有设备生成对应分辨率图片
 8. 文件命名：`{counter:03d}_{batch:02d}_{device_id}.png`（有设备表）或 `{counter:03d}_{batch:02d}.png`（无设备表）
 
-关键特性：
+#### 第二阶段：批量超分处理
+
+所有基础图片生成完成后，统一处理需要超分的图片：
+1. 收集所有超分任务
+2. 批量调用upscale进行4倍放大
+3. 使用PIL精确缩放到目标尺寸
+4. 保存最终图片
+5. 可选转换为JPG格式
+6. 自动清理临时文件
+
+#### 智能分辨率处理
+
+**缩放策略**：
+- 如果总像素 > 1.5M (1.5×1024×1024)，先生成较小的基础图片，再超分放大
+- 缩放算法：循环乘以2/3，直到总像素 ≤ 1M
+- 示例：3840×2160 (8.3M) → 2560×1440 (3.7M) → 1707×960 (1.64M) → 1138×640 (0.73M)
+
+**断点续传**：
+- 检查临时基础图片是否已存在
+- 存在则跳过生成，直接使用现有文件
+- 支持中断后继续执行
+
+#### 关键特性
+
 - 同一counter+batch的所有设备使用相同seed，确保内容一致
 - 支持多批次生成，提供更多变化
-- 自动跳过已存在文件
-- **直接生成设备原始分辨率**，无需后期缩放
+- 自动跳过已存在的最终文件
+- 断点续传：跳过已生成的基础图片
+- 批量超分：避免频繁切换模型，提升性能
+- 自动清理：超分完成后删除临时文件
 
 ## 代码规范
 
