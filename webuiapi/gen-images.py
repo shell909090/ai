@@ -9,6 +9,7 @@
 import os
 import sys
 import random
+import logging
 import argparse
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from libs import zit_generate_image, save_image, get_device_resolution, calculat
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     parser = argparse.ArgumentParser(description='使用z-image-turbo流程生成图片')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
@@ -41,7 +44,7 @@ def main():
     args = parser.parse_args()
 
     if not args.url:
-        print("错误: 必须通过--url参数或COMFYUI_API_URL环境变量指定ComfyUI API URL", file=sys.stderr)
+        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
         sys.exit(1)
 
     # 确定生成模式和尺寸列表
@@ -51,7 +54,7 @@ def main():
         # 批量模式：为所有设备生成
         all_devices = get_all_devices(args.pixels_csv)
         filtered_devices = filter_devices_by_ratio(all_devices)
-        print(f"批量模式: 原始设备数 {len(all_devices)}, 过滤后 {len(filtered_devices)} 个不同纵横比")
+        logging.info(f"Batch mode: {len(all_devices)} original devices, {len(filtered_devices)} after filtering by aspect ratio")
 
         for device in filtered_devices:
             gen_width, gen_height = calculate_generation_size(device['width'], device['height'])
@@ -62,11 +65,11 @@ def main():
                 'device_width': device['width'],
                 'device_height': device['height']
             })
-            print(f"  {device['device_id']}: {device['width']}x{device['height']} -> {gen_width}x{gen_height}")
+            logging.info(f"  {device['device_id']}: {device['width']}x{device['height']} -> {gen_width}x{gen_height}")
     elif args.device:
         # 单设备模式
         if not args.pixels_csv:
-            print("错误: 使用--device时必须指定--pixels-csv", file=sys.stderr)
+            logging.error("Error: --pixels-csv must be specified when using --device")
             sys.exit(1)
         device_width, device_height = get_device_resolution(args.pixels_csv, args.device)
         gen_width, gen_height = calculate_generation_size(device_width, device_height)
@@ -77,7 +80,7 @@ def main():
             'device_width': device_width,
             'device_height': device_height
         })
-        print(f"单设备模式: {args.device} {device_width}x{device_height} -> {gen_width}x{gen_height}")
+        logging.info(f"Single device mode: {args.device} {device_width}x{device_height} -> {gen_width}x{gen_height}")
 
     # 检查输出目录
     output_dir = Path(args.output_dir)
@@ -112,7 +115,7 @@ def main():
                 # 检查目标文件是否已存在
                 output_filepath = output_dir / f"{counter:03d}_{gen_width}x{gen_height}.png"
                 if output_filepath.exists():
-                    print(f"跳过 {output_filepath.name}: 文件已存在")
+                    logging.info(f"Skipping {output_filepath.name}: file already exists")
                     continue
 
                 image_data = zit_generate_image(api, wf, prompt, seed, gen_width, gen_height)

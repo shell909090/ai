@@ -8,6 +8,7 @@
 '''
 import csv
 import math
+import logging
 from os import path
 from io import BytesIO
 from pathlib import Path
@@ -33,7 +34,7 @@ def save_image(image_data: bytes, output_filepath: Path) -> None:
     output_file_png = Path(output_filepath).with_suffix('.png')
     with open(output_file_png, "wb") as f:
         f.write(image_data)
-    print(f"已保存PNG: {output_file_png}")
+    logging.info(f"Saved PNG: {output_file_png}")
 
 
 def resize_image(input_filepath: Path, output_filepath: Path, target_width: int, target_height: int) -> None:
@@ -60,7 +61,7 @@ def convert_to_jpg(png_filepath: Path, quality: int = 95) -> None:
         img = img.convert('RGB')
 
     img.save(jpg_filepath, 'JPEG', quality=quality)
-    print(f"已转换为JPG: {jpg_filepath.name}")
+    logging.info(f"Converted to JPG: {jpg_filepath.name}")
 
 
 def get_device_resolution(pixels_csv: str, device_id: str) -> tuple[int, int]:
@@ -133,7 +134,7 @@ def filter_devices_by_ratio(devices: list[dict]) -> list[dict]:
 def upscale(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str) -> bytes:
     rslt = api.upload_image(image_filepath)
     server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    print(f'server side filepath: {server_filepath}')
+    logging.info(f'Server side filepath: {server_filepath}')
 
     wf.set_node_param("加载图像", "image", server_filepath)
 
@@ -146,7 +147,7 @@ def upscale(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str)
 def usdu(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, upscale_by: float) -> bytes:
     rslt = api.upload_image(image_filepath)
     server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    print(f'server side filepath: {server_filepath}')
+    logging.info(f'Server side filepath: {server_filepath}')
 
     wf.set_node_param("加载图像", "image", server_filepath)
     wf.set_node_param("Ultimate SD Upscale", "upscale_by", upscale_by)
@@ -160,7 +161,7 @@ def usdu(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, up
 def outpaint(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes:
     rslt = api.upload_image(image_filepath)
     server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    print(f'server side filepath: {server_filepath}')
+    logging.info(f'Server side filepath: {server_filepath}')
 
     wf.set_node_param("加载图像", "image", server_filepath)
     wf.set_node_param("外补画板", "left", left)

@@ -8,6 +8,7 @@
 '''
 import os
 import sys
+import logging
 import argparse
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from libs import outpaint, save_image
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     parser = argparse.ArgumentParser(description='使用sdxl-outpaint扩图')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
@@ -49,7 +52,7 @@ def main():
     args = parser.parse_args()
 
     if not args.url:
-        print("错误: 必须通过--url参数或COMFYUI_API_URL环境变量指定ComfyUI API URL", file=sys.stderr)
+        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
         sys.exit(1)
 
     # 初始化ComfyUI API和Workflow

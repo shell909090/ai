@@ -9,6 +9,7 @@
 import os
 import sys
 import random
+import logging
 import argparse
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from libs import zit_generate_image, save_image
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     parser = argparse.ArgumentParser(description='使用z-image-turbo流程生成图片')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
@@ -45,7 +48,7 @@ def main():
     args = parser.parse_args()
 
     if not args.url:
-        print("错误: 必须通过--url参数或COMFYUI_API_URL环境变量指定ComfyUI API URL", file=sys.stderr)
+        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
         sys.exit(1)
 
     # 检查输出目录
@@ -75,7 +78,7 @@ def main():
             # 检查目标文件是否已存在
             output_filepath = output_dir / f"{counter:03d}_{args.width}x{args.height}.png"
             if output_filepath.exists():
-                print(f"跳过 {output_filepath.name}: 文件已存在")
+                logging.info(f"Skipping {output_filepath.name}: file already exists")
                 counter += 1
                 continue
 

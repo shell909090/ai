@@ -9,6 +9,7 @@
 import os
 import sys
 import math
+import logging
 import argparse
 from pathlib import Path
 from PIL import Image
@@ -31,14 +32,14 @@ def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, in
 
     # 查找匹配的文件
     pattern = f"*_{gen_width}x{gen_height}.png"
-    print(f"处理设备：{device_id} ({device_width}x{device_height})，文件模式：{pattern}")
+    logging.info(f"Processing device: {device_id} ({device_width}x{device_height}), file pattern: {pattern}")
     matching_files = sorted(input_dir.glob(pattern))
 
     if not matching_files:
-        print(f"  未找到匹配文件，跳过")
+        logging.info(f"  No matching files found, skipping")
         return
 
-    print(f"  找到 {len(matching_files)} 个文件")
+    logging.info(f"  Found {len(matching_files)} files")
 
     # 处理每个匹配的文件
     for input_file in matching_files:
@@ -48,13 +49,13 @@ def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, in
 
         # 检查是否已存在
         if output_file.exists():
-            print(f"    跳过 {output_file.name}: 已存在")
+            logging.info(f"    Skipping {output_file.name}: already exists")
             continue
 
         # 判断是upscale还是downscale
         if device_pixels > gen_pixels:
             # 需要upscale
-            print(f"    Upscale {input_file.name} -> {output_file.name}")
+            logging.info(f"    Upscale {input_file.name} -> {output_file.name}")
             image_data = upscale(api, wf, str(input_file))
             img = read_img_from_byte(image_data)
             img_resized = img.resize((device_width, device_height), Image.Resampling.LANCZOS)
@@ -62,7 +63,7 @@ def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, in
             img.close()
         else:
             # 需要downscale
-            print(f"    Downscale {input_file.name} -> {output_file.name}")
+            logging.info(f"    Downscale {input_file.name} -> {output_file.name}")
             resize_image(input_file, output_file, device_width, device_height)
 
         # 转换为JPG（如果需要）
@@ -71,6 +72,8 @@ def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, in
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     parser = argparse.ArgumentParser(description='根据设备分辨率，使用upscale流程提升分辨率')
     parser.add_argument('--url', '-u',
                         default=os.environ.get('COMFYUI_API_URL'),
@@ -92,14 +95,14 @@ def main():
     args = parser.parse_args()
 
     if not args.url:
-        print("错误: 必须通过--url参数或COMFYUI_API_URL环境变量指定ComfyUI API URL", file=sys.stderr)
+        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
         sys.exit(1)
 
     # 批量模式
     if args.pixels_csv and args.input_dir:
         input_dir = Path(args.input_dir)
         if not input_dir.exists():
-            print(f"错误: 输入目录不存在: {args.input_dir}", file=sys.stderr)
+            logging.error(f"Error: Input directory does not exist: {args.input_dir}")
             sys.exit(1)
 
         # 初始化API (仅在需要upscale时使用)
@@ -108,14 +111,14 @@ def main():
 
         # 读取所有设备（不过滤，允许同一模式匹配多个设备）
         all_devices = get_all_devices(args.pixels_csv)
-        print(f"批量模式: {len(all_devices)} 个设备\n")
+        logging.info(f"Batch mode: {len(all_devices)} devices\n")
 
         # 处理每个设备
         for device in all_devices:
             proc_device(api, wf, device, input_dir, args.jpg)
 
     else:
-        print("错误: 必须指定 (--input 和 --output) 或 (--input-dir 和 --pixels-csv)", file=sys.stderr)
+        logging.error("Error: Must specify either (--input and --output) or (--input-dir and --pixels-csv)")
         sys.exit(1)
 
 
