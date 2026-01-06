@@ -14,7 +14,7 @@ from pathlib import Path
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
-from libs import usdu, save_image
+from libs import save_image
 
 
 def main():
@@ -48,8 +48,10 @@ def main():
     if args.workflow == 'usdu':
         import usdu
         image_data = usdu.usdu(api, args.input, args.upscale_by)
-
-        # 保存PNG文件
+        save_image(image_data, Path(args.output))
+    elif args.workflow == 'upscale':
+        import upscale
+        image_data = upscale.upscale(api, args.input)
         save_image(image_data, Path(args.output))
     else:
         logging.error(f'unknown workflow {args.workflow}')

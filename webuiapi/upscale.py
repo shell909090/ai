@@ -6,49 +6,75 @@
 @copyright: 2026, Shell.Xu <shell909090@gmail.com>
 @license: BSD-3-clause
 '''
-import os
-import sys
+import json
 import logging
-import argparse
-from pathlib import Path
+from os import path
 
-from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
-
-from libs import upscale, save_image
+from libs import ComfyApiWrapper, ComfyWorkflow
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+WORKFLOW_STR = '''
+{
+  "1": {
+    "inputs": {
+      "image": ""
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "4x-UltraSharp.pth"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "加载放大模型"
+    }
+  },
+  "14": {
+    "inputs": {
+      "images": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "15": {
+    "inputs": {
+      "upscale_model": [
+        "2",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ImageUpscaleWithModel",
+    "_meta": {
+      "title": "使用模型放大图像"
+    }
+  }
+}
+'''
 
-    parser = argparse.ArgumentParser(description='使用upscale流程提升分辨率')
-    parser.add_argument('--url', '-u',
-                        default=os.environ.get('COMFYUI_API_URL'),
-                        help='ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)')
-    parser.add_argument('--workflow', '-w',
-                        default='upscale.json',
-                        help='ComfyUI Workflow文件 (默认: upscale.json)')
-    parser.add_argument('--input', '-i',
-                        required=True,
-                        help='输入图像文件路径')
-    parser.add_argument('--output', '-o',
-                        required=True,
-                        help='输出图像文件路径')
-    args = parser.parse_args()
 
-    if not args.url:
-        logging.error("Error: ComfyUI API URL must be specified via --url parameter or COMFYUI_API_URL environment variable")
-        sys.exit(1)
+def upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes:
+    wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
 
-    # 初始化ComfyUI API和Workflow
-    api = ComfyApiWrapper(args.url)
-    wf = ComfyWorkflowWrapper(args.workflow)
+    logging.info(f'upload image {image_filepath}')
+    rslt = api.upload_image(image_filepath)
+    server_filepath = path.join(rslt['subfolder'], rslt['name'])
+    logging.debug(f'Server side filepath: {server_filepath}')
 
-    # 生成图片
-    image_data = upscale(api, wf, args.input)
+    wf.set_node_param("加载图像", "image", server_filepath)
 
-    # 保存PNG文件
-    save_image(image_data, Path(args.output))
-
-
-if __name__ == '__main__':
-    main()
+    results = api.queue_and_wait_images(wf, "预览图像")
+    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
+    return next(iter(results.values()))

@@ -137,33 +137,6 @@ def filter_devices_by_ratio(devices: list[dict]) -> list[dict]:
     return list(ratio_groups.values())
 
 
-def upscale(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str) -> bytes:
-    rslt = api.upload_image(image_filepath)
-    server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    logging.info(f'Server side filepath: {server_filepath}')
-
-    wf.set_node_param("加载图像", "image", server_filepath)
-
-    # 生成图片
-    results = api.queue_and_wait_images(wf, "预览图像")
-    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
-    return next(iter(results.values()))
-
-
-def usdu(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, upscale_by: float) -> bytes:
-    rslt = api.upload_image(image_filepath)
-    server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    logging.info(f'Server side filepath: {server_filepath}')
-
-    wf.set_node_param("加载图像", "image", server_filepath)
-    wf.set_node_param("Ultimate SD Upscale", "upscale_by", upscale_by)
-
-    # 生成图片
-    results = api.queue_and_wait_images(wf, "预览图像")
-    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
-    return next(iter(results.values()))
-
-
 def outpaint(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes:
     rslt = api.upload_image(image_filepath)
     server_filepath = path.join(rslt['subfolder'], rslt['name'])
