@@ -1,0 +1,17 @@
+device_id,width,height
+iphone_15_16,1179,2556
+iphone_15_16_promax,1290,2796
+ipad_pro_11,1668,2388
+ipad_pro_13,2064,2752
+macbook_air_13,2560,1664
+macbook_pro_14,3024,1964
+macbook_pro_16,3456,2234
+xiaomi_14,1200,2670
+xiaomi_14_ultra,1440,3200
+xiaomi_pad_6,1800,2880
+huawei_mate_60_pro,1260,2720
+huawei_matepad_pro_11,1600,2560
+win_hd_monitor,1920,1080
+win_2k_monitor,2560,1440
+win_4k_monitor,3840,2160
+win_surface_pro_9,2880,1920
