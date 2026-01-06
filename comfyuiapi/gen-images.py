@@ -139,35 +139,28 @@ def process_upscale_task(api: ComfyApiWrapper, task: dict) -> None:
     target_height = task['target_height']
     convert_jpg = task['convert_jpg']
 
-    try:
-        # 调用upscale进行4倍放大
-        logging.info(f"Upscaling {base_filepath}")
-        upscaled_data = upscale.upscale(api, str(base_filepath))
+    # 调用upscale进行4倍放大
+    logging.info(f"Upscaling {base_filepath}")
+    upscaled_data = upscale.upscale(api, str(base_filepath))
 
-        # 读取放大后的图片
-        img = read_img_from_byte(upscaled_data)
-        actual_width, actual_height = img.size
-        logging.info(f"Upscaled size: {actual_width}x{actual_height}")
+    # 读取放大后的图片
+    img = read_img_from_byte(upscaled_data)
+    actual_width, actual_height = img.size
+    logging.info(f"Upscaled size: {actual_width}x{actual_height}")
 
-        # 如果尺寸不严格等于目标尺寸，用PIL进行小幅缩放
-        if actual_width != target_width or actual_height != target_height:
-            logging.info(f"Resizing from {actual_width}x{actual_height} to {target_width}x{target_height}")
-            img = img.resize((target_width, target_height), Image.LANCZOS)
+    # 如果尺寸不严格等于目标尺寸，用PIL进行小幅缩放
+    if actual_width != target_width or actual_height != target_height:
+        logging.info(f"Resizing from {actual_width}x{actual_height} to {target_width}x{target_height}")
+        img = img.resize((target_width, target_height), Image.LANCZOS)
 
-        # 保存最终图片
-        img.save(target_filepath, 'PNG')
-        logging.info(f"Saved to {target_filepath}")
+    # 保存最终图片
+    img.save(target_filepath, 'PNG')
+    logging.info(f"Saved to {target_filepath}")
 
-        # 如果需要转换为JPG
-        if convert_jpg:
-            logging.info(f"Converting {target_filepath} to JPG")
-            convert_to_jpg(target_filepath)
-
-    finally:
-        # 删除基础图片临时文件
-        if base_filepath.exists():
-            os.unlink(base_filepath)
-            logging.debug(f"Deleted base image {base_filepath}")
+    # 如果需要转换为JPG
+    if convert_jpg:
+        logging.info(f"Converting {target_filepath} to JPG")
+        convert_to_jpg(target_filepath)
 
 
 def gen_images_for_variation(
@@ -307,6 +300,18 @@ def main() -> None:
         for i, task in enumerate(all_upscale_tasks, 1):
             logging.info(f"Upscaling task {i}/{len(all_upscale_tasks)}")
             process_upscale_task(api, task)
+
+        # 收集所有唯一的基础图片文件路径
+        base_files = set()
+        for task in all_upscale_tasks:
+            base_files.add(task['base_filepath'])
+
+        # 删除所有临时基础图片文件
+        logging.info(f"Cleaning up {len(base_files)} temporary base image files")
+        for base_filepath in base_files:
+            if base_filepath.exists():
+                os.unlink(base_filepath)
+                logging.debug(f"Deleted base image {base_filepath}")
 
 
 if __name__ == '__main__':
