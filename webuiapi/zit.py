@@ -1,3 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+'''
+@date: 2026-01-03
+@author: Shell.Xu
+@copyright: 2026, Shell.Xu <shell909090@gmail.com>
+@license: BSD-3-clause
+'''
+import json
+import logging
+from os import path
+
+from libs import ComfyApiWrapper, ComfyWorkflow
+
+# qwen_3_4b.safetensors
+# ae.safetensors
+# z_image_turbo_bf16_nsfw_v2.safetensors
+
+
+WORKFLOW_STR = '''
 {
   "39": {
     "inputs": {
@@ -141,3 +161,21 @@
     }
   }
 }
+'''
+
+
+def zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:
+    wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
+
+    # 设置提示词和随机种子
+    wf.set_node_param("CLIP文本编码", "text", prompt)
+    wf.set_node_param("K采样器", "seed", seed)
+
+    # 设置图像尺寸
+    wf.set_node_param("空Latent图像（SD3）", "width", width)
+    wf.set_node_param("空Latent图像（SD3）", "height", height)
+
+    # 生成图片
+    results = api.queue_and_wait_images(wf, "预览图像")
+    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
+    return next(iter(results.values()))

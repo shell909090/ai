@@ -135,18 +135,3 @@ def filter_devices_by_ratio(devices: list[dict]) -> list[dict]:
                 ratio_groups[ratio] = device
 
     return list(ratio_groups.values())
-
-
-def zit_generate_image(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:
-    # 设置提示词和随机种子
-    wf.set_node_param("CLIP文本编码", "text", prompt)
-    wf.set_node_param("K采样器", "seed", seed)
-
-    # 设置图像尺寸
-    wf.set_node_param("空Latent图像（SD3）", "width", width)
-    wf.set_node_param("空Latent图像（SD3）", "height", height)
-
-    # 生成图片
-    results = api.queue_and_wait_images(wf, "预览图像")
-    assert len(results) == 1, f"Expected 1 image, got {len(results)}"
-    return next(iter(results.values()))

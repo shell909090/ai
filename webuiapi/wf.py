@@ -8,6 +8,7 @@
 '''
 import os
 import sys
+import random
 import logging
 import argparse
 from pathlib import Path
@@ -27,7 +28,6 @@ def main():
     parser.add_argument('--workflow', '-w',
                         help='ComfyUI Workflow')
     parser.add_argument('--input', '-i',
-                        required=True,
                         help='输入图像文件路径')
     parser.add_argument('--output', '-o',
                         required=True,
@@ -51,6 +51,8 @@ def main():
                         type=int,
                         default=0,
                         help='底部扩展像素 (默认: 0)')
+    parser.add_argument('--prompt', '-p',
+                        help='提示词')
     parser.add_argument('rest', nargs='*', type=str)
     args = parser.parse_args()
 
@@ -65,14 +67,22 @@ def main():
         import usdu
         image_data = usdu.usdu(api, args.input, args.upscale_by)
         save_image(image_data, Path(args.output))
+
     elif args.workflow == 'upscale':
         import upscale
         image_data = upscale.upscale(api, args.input)
         save_image(image_data, Path(args.output))
+
     elif args.workflow == 'outpaint':
         import outpaint
         image_data = outpaint.outpaint(api, args.input, args.left, args.top, args.right, args.bottom)
         save_image(image_data, Path(args.output))
+
+    elif args.workflow == 'zit':
+        import zit
+        image_data = zit.zit(api, args.prompt, random.randint(2**20, 2**64))
+        save_image(image_data, Path(args.output))
+
     else:
         logging.error(f'unknown workflow {args.workflow}')
 
