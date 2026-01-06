@@ -12,14 +12,23 @@ import random
 import logging
 import argparse
 from pathlib import Path
+from typing import Optional
 
 from comfy_api_simplified import ComfyApiWrapper
 
 import zit
-from libs import save_image, calculate_generation_size, get_all_devices
+from libs import save_image, get_all_devices
 
 
-def gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device):
+def gen_image_for_device(
+    api: ComfyApiWrapper,
+    output_dir: Path,
+    counter: int,
+    batch: int,
+    prompt: str,
+    seed: int,
+    device: Optional[dict]
+) -> None:
     """
     为单个设备生成图片
 
@@ -52,7 +61,14 @@ def gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device):
     save_image(image_data, output_filepath)
 
 
-def gen_images_for_variation(api, output_dir, counter, prompt, devices, batch_size=1):
+def gen_images_for_variation(
+    api: ComfyApiWrapper,
+    output_dir: Path,
+    counter: int,
+    prompt: str,
+    devices: list[dict],
+    batch_size: int = 1
+) -> None:
     """
     为一个变奏生成所有批次的图片
 
@@ -79,7 +95,13 @@ def gen_images_for_variation(api, output_dir, counter, prompt, devices, batch_si
                 gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device)
 
 
-def main():
+def main() -> None:
+    """
+    批量生成图片主函数
+
+    从命令行参数读取配置，为每个变奏生成多个批次的图片。
+    支持设备模式和默认模式。
+    """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     parser = argparse.ArgumentParser(description='使用z-image-turbo流程生成图片')
@@ -112,17 +134,11 @@ def main():
 
     if args.pixels_csv:
         # 设备模式：为所有设备生成
-        all_devices = get_all_devices(args.pixels_csv)
-        logging.info(f"Device mode: {len(all_devices)} devices")
+        devices = get_all_devices(args.pixels_csv)
+        logging.info(f"Device mode: {len(devices)} devices")
 
-        for device in all_devices:
-            gen_width, gen_height = calculate_generation_size(device['width'], device['height'])
-            devices.append({
-                'device_id': device['device_id'],
-                'width': gen_width,
-                'height': gen_height
-            })
-            logging.info(f"  {device['device_id']}: {device['width']}x{device['height']} -> {gen_width}x{gen_height}")
+        for device in devices:
+            logging.info(f"  {device['device_id']}: {device['width']}x{device['height']}")
     else:
         # 默认模式：不指定设备，生成默认分辨率
         logging.info("Default mode: generating 1024x1024 images")

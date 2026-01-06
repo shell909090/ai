@@ -60,14 +60,12 @@ test-outpaint: test-zit
 test-gen-images: setup
 	@echo "=== Testing gen-images workflow ==="
 	uv run ./gen-images.py --url $(COMFYUI_URL) \
-		--theme theme.txt \
+		--theme test_theme.txt \
 		--variations test_variations.txt \
-		--output-dir $(TEST_DIR)/gen_images \
+		--output-dir $(TEST_DIR) \
 		--pixels-csv test_pixels.csv \
 		--batches 2
 	@echo "✓ gen-images test completed"
-	@echo "Generated images:"
-	@ls -lh $(TEST_DIR)/gen_images/ 2>/dev/null || echo "  (no images yet)"
 
 # 运行所有测试
 test: test-zit test-upscale test-usdu test-outpaint test-gen-images

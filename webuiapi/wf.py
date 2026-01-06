@@ -18,7 +18,13 @@ from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 from libs import save_image
 
 
-def main():
+def main() -> None:
+    """
+    Workflow入口脚本主函数
+
+    根据命令行参数调用不同的workflow模块（zit, usdu, upscale, outpaint）。
+    统一处理参数解析和结果保存。
+    """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     parser = argparse.ArgumentParser(description='运行特定workflow')
