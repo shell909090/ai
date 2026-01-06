@@ -6,25 +6,30 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 
 - 使用z-image-turbo模型快速生成高质量图片
 - 支持批量生成：根据主题和变奏自动生成多张图片
-- 多设备适配：自动计算各设备分辨率，保持宽高比
-- 智能超分：根据目标分辨率自动选择AI超分或PIL缩放
+- 多设备适配：直接生成原始设备分辨率，保持宽高比
+- 多种workflow：图片生成、超分、扩图
 - 模块化架构：每个workflow独立封装为Python模块
+- 完整测试：Makefile提供所有workflow的自动化测试
 
 ## 项目结构
 
 ```
 .
-├── libs.py          # 公共库函数
-├── wf.py            # workflow入口脚本
-├── zit.py           # z-image-turbo图片生成workflow
-├── usdu.py          # Ultimate SD Upscale超分workflow
-├── upscale.py       # 4倍模型超分workflow
-├── outpaint.py      # 扩图workflow
-├── gen-images.py    # 批量生成脚本
-├── resize.py        # 批量调整分辨率脚本
-├── theme.txt        # 主题提示词
-├── variations.txt   # 变奏提示词（每行一个）
-└── pixels.csv       # 设备分辨率表
+├── libs.py               # 公共库函数
+├── wf.py                 # workflow入口脚本
+├── zit.py                # z-image-turbo图片生成workflow
+├── usdu.py               # Ultimate SD Upscale超分workflow
+├── upscale.py            # 4倍模型超分workflow
+├── outpaint.py           # 扩图workflow
+├── gen-images.py         # 批量生成脚本
+├── Makefile              # 测试自动化
+├── theme.txt             # 主题提示词
+├── variations.txt        # 变奏提示词（每行一个）
+├── pixels.csv            # 设备分辨率表
+├── test_theme.txt        # 测试用主题
+├── test_variations.txt   # 测试用变奏
+├── test_pixels.csv       # 测试用设备表
+└── CLAUDE.md             # 项目开发文档
 ```
 
 ## 安装
@@ -58,6 +63,37 @@ win_hd_monitor,1920,1080
 mac_retina,2880,1800
 ```
 
+### 必需的ComfyUI模型
+
+项目使用以下ComfyUI模型，需要预先下载并放置在ComfyUI的models目录：
+
+#### z-image-turbo 图片生成 (zit.py)
+- **CLIP**: `qwen_3_4b.safetensors`
+- **VAE**: `ae.safetensors`
+- **Diffusion Model**: `z_image_turbo_bf16_nsfw_v2.safetensors`
+
+#### Ultimate SD Upscale 超分 (usdu.py)
+- **Upscale Model**: `4x-UltraSharp.pth`
+- **SDXL Checkpoint**: `sd_xl_base_1.0.safetensors`
+- **ControlNet**: `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors`
+
+#### 4倍模型超分 (upscale.py)
+- **Upscale Model**: `4x-UltraSharp.pth`
+
+#### 图片扩展 (outpaint.py)
+- **SDXL Inpainting**: `sd_xl_base_1.0_inpainting_0.1.safetensors`
+- **VAE**: `SDXL/sdxl_vae.safetensors`
+
+**模型清单汇总**：
+- `qwen_3_4b.safetensors` - CLIP文本编码器
+- `ae.safetensors` - VAE编码器
+- `z_image_turbo_bf16_nsfw_v2.safetensors` - Z-Image Turbo扩散模型
+- `4x-UltraSharp.pth` - 4倍超分辨率模型
+- `sd_xl_base_1.0.safetensors` - SDXL基础模型
+- `sd_xl_base_1.0_inpainting_0.1.safetensors` - SDXL修复模型
+- `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors` - ControlNet瓦片模型
+- `SDXL/sdxl_vae.safetensors` - SDXL VAE
+
 ## 使用方法
 
 ### 批量生成壁纸
@@ -79,16 +115,6 @@ mac_retina,2880,1800
 
 例如：`000_00_iphone_15_16.png`、`000_01_iphone_15_16.png`、`001_00_win_hd_monitor.png`
 
-### 调整已有图片到多设备分辨率
-
-```bash
-# 将output目录的图片调整到所有设备分辨率
-./resize.py --input-dir output/ --pixels-csv pixels.csv
-
-# 同时转换为JPG
-./resize.py --input-dir output/ --pixels-csv pixels.csv --jpg
-```
-
 ### 使用独立workflow
 
 ```bash
@@ -104,6 +130,30 @@ mac_retina,2880,1800
 # 扩图
 ./wf.py --workflow outpaint --input input.png --output output.png --left 100 --right 100
 ```
+
+### 运行测试
+
+项目包含完整的Makefile测试套件：
+
+```bash
+# 查看所有可用测试
+make help
+
+# 运行所有workflow测试
+make test
+
+# 运行单个workflow测试
+make test-zit         # 测试图片生成
+make test-upscale     # 测试4倍超分
+make test-usdu        # 测试Ultimate SD Upscale
+make test-outpaint    # 测试扩图
+make test-gen-images  # 测试批量生成
+
+# 清理测试输出
+make clean
+```
+
+测试结果保存在 `test_output/` 目录。
 
 ## 核心逻辑
 
@@ -122,35 +172,7 @@ mac_retina,2880,1800
 - 同一counter+batch的所有设备使用相同seed，确保内容一致
 - 支持多批次生成，提供更多变化
 - 自动跳过已存在文件
-- 生成尺寸保持设备宽高比，总像素约1024x1024
-
-### 分辨率计算策略
-
-生成尺寸计算（libs.py中`calculate_generation_size`）：
-
-```python
-aspect_ratio = device_width / device_height
-gen_width = int(math.sqrt(1048576 * aspect_ratio))
-gen_height = int(math.sqrt(1048576 / aspect_ratio))
-```
-
-确保生成图片：
-1. 保持设备原始宽高比
-2. 总像素数接近1024×1024（SDXL最佳训练尺寸）
-
-### 批量调整策略（resize.py）
-
-智能选择缩放方式：
-
-```python
-if device_pixels > gen_pixels:
-    # 目标更大 -> AI超分
-    upscale_by = math.sqrt(device_pixels / gen_pixels)
-    image_data = upscale(api, input_file, upscale_by)
-else:
-    # 目标更小 -> PIL LANCZOS缩放
-    resize_image(input_file, output_file, device_width, device_height)
-```
+- **直接生成设备原始分辨率**，无需后期缩放
 
 ## 代码规范
 
@@ -173,8 +195,8 @@ else:
 - `convert_to_jpg(png_filepath: Path, quality: int = 95) -> None`: PNG转JPG
 
 **设备分辨率**:
-- `calculate_generation_size(device_width: int, device_height: int, target_area: int = 1024 * 1024) -> tuple[int, int]`: 计算生成尺寸
 - `get_all_devices(pixels_csv: str) -> list[dict]`: 读取设备列表
+- `calculate_generation_size(device_width: int, device_height: int, target_area: int = 1024 * 1024) -> tuple[int, int]`: 计算生成尺寸（保留供其他用途）
 
 ### Workflow模块函数
 
