@@ -16,7 +16,8 @@ from PIL import Image
 
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
-from libs import upscale, save_image, resize_image, convert_to_jpg, calculate_generation_size, get_all_devices, read_img_from_byte
+import upscale as upscale_module
+from libs import save_image, resize_image, convert_to_jpg, calculate_generation_size, get_all_devices, read_img_from_byte
 
 
 def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, input_dir: Path, convert_jpg: bool = False) -> None:
@@ -56,7 +57,7 @@ def proc_device(api: ComfyApiWrapper, wf: ComfyWorkflowWrapper, device: dict, in
         if device_pixels > gen_pixels:
             # 需要upscale
             logging.info(f"    Upscale {input_file.name} -> {output_file.name}")
-            image_data = upscale(api, wf, str(input_file))
+            image_data = upscale_module.upscale(api, str(input_file))
             img = read_img_from_byte(image_data)
             img_resized = img.resize((device_width, device_height), Image.Resampling.LANCZOS)
             img_resized.save(output_file)

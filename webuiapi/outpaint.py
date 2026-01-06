@@ -209,6 +209,25 @@ WORKFLOW_STR = '''
 
 
 def outpaint(api: ComfyApiWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes:
+    """
+    使用SDXL inpainting模型进行图片扩展（outpainting）
+
+    在图片四周扩展指定像素，使用AI填充扩展区域，保持画面连贯性。
+
+    Args:
+        api: ComfyUI API wrapper实例
+        image_filepath: 输入图片文件路径
+        left: 左侧扩展像素数
+        top: 顶部扩展像素数
+        right: 右侧扩展像素数
+        bottom: 底部扩展像素数
+
+    Returns:
+        扩展后的图片字节数据（PNG格式）
+
+    Raises:
+        AssertionError: 如果返回的图片数量不是1张
+    """
     wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
 
     logging.info(f'upload image {image_filepath}')

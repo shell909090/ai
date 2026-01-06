@@ -165,6 +165,22 @@ WORKFLOW_STR = '''
 
 
 def zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:
+    """
+    使用z-image-turbo workflow生成图片
+
+    Args:
+        api: ComfyUI API wrapper实例
+        prompt: 文本提示词
+        seed: 随机数种子，用于确保可重现性
+        width: 生成图片宽度，默认1024
+        height: 生成图片高度，默认1024
+
+    Returns:
+        生成的图片字节数据（PNG格式）
+
+    Raises:
+        AssertionError: 如果返回的图片数量不是1张
+    """
     wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
 
     # 设置提示词和随机种子

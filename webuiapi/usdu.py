@@ -180,6 +180,22 @@ WORKFLOW_STR = '''
 
 
 def usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes:
+    """
+    使用Ultimate SD Upscale workflow进行图片超分
+
+    该方法会上传图片到服务器，使用SDXL模型和ControlNet进行高质量超分辨率处理。
+
+    Args:
+        api: ComfyUI API wrapper实例
+        image_filepath: 输入图片文件路径
+        upscale_by: 放大倍数（例如2.0表示放大2倍）
+
+    Returns:
+        超分后的图片字节数据（PNG格式）
+
+    Raises:
+        AssertionError: 如果返回的图片数量不是1张
+    """
     wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
 
     logging.info(f'upload image {image_filepath}')

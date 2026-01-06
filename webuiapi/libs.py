@@ -18,25 +18,44 @@ from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 
 
 class ComfyWorkflow(ComfyWorkflowWrapper):
+    """
+    ComfyUI workflow wrapper class
 
-    def __init__(self, data: dict):
+    Extends ComfyWorkflowWrapper from comfy-api-simplified to provide
+    a dict-based initialization interface for workflow data.
+    """
+
+    def __init__(self, data: dict) -> None:
+        """
+        Initialize workflow with data dictionary
+
+        Args:
+            data: Workflow data as a dictionary (from JSON)
+        """
         dict.__init__(self, data)    
 
 
 def read_img_from_byte(image_data: bytes) -> Image.Image:
     """
-    Read an image from raw byte data.
+    从字节数据读取图片
 
     Args:
-        image_data: Raw image bytes (e.g., PNG, JPEG, etc.)
+        image_data: 原始图片字节数据 (PNG, JPEG等格式)
 
     Returns:
-        PIL Image object loaded from the byte data
+        PIL Image对象
     """
     return Image.open(BytesIO(image_data))
 
 
 def save_image(image_data: bytes, output_filepath: Path) -> None:
+    """
+    保存图片数据到PNG文件
+
+    Args:
+        image_data: 图片字节数据
+        output_filepath: 输出文件路径，会自动转换为.png后缀
+    """
     output_file_png = Path(output_filepath).with_suffix('.png')
     with open(output_file_png, "wb") as f:
         f.write(image_data)
@@ -44,7 +63,15 @@ def save_image(image_data: bytes, output_filepath: Path) -> None:
 
 
 def resize_image(input_filepath: Path, output_filepath: Path, target_width: int, target_height: int) -> None:
-    """使用PIL调整图片尺寸"""
+    """
+    使用PIL调整图片尺寸
+
+    Args:
+        input_filepath: 输入图片路径
+        output_filepath: 输出图片路径
+        target_width: 目标宽度
+        target_height: 目标高度
+    """
     img = Image.open(input_filepath)
     img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
     img_resized.save(output_filepath, 'PNG')
@@ -52,7 +79,13 @@ def resize_image(input_filepath: Path, output_filepath: Path, target_width: int,
 
 
 def convert_to_jpg(png_filepath: Path, quality: int = 95) -> None:
-    """将PNG转换为JPG"""
+    """
+    将PNG图片转换为JPG格式
+
+    Args:
+        png_filepath: PNG文件路径
+        quality: JPG质量 (1-100，默认95)
+    """
     jpg_filepath = png_filepath.with_suffix('.jpg')
     img = Image.open(png_filepath)
 
@@ -70,20 +103,19 @@ def convert_to_jpg(png_filepath: Path, quality: int = 95) -> None:
     logging.info(f"Converted to JPG: {jpg_filepath.name}")
 
 
-def get_device_resolution(pixels_csv: str, device_id: str) -> tuple[int, int]:
-    """从pixels.csv读取指定设备的分辨率"""
-    with open(pixels_csv, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row['device_id'] == device_id:
-                return int(row['width']), int(row['height'])
-    raise ValueError(f"设备 '{device_id}' 未在 {pixels_csv} 中找到")
-
-
 def calculate_generation_size(device_width: int, device_height: int, target_area: int = 1024 * 1024) -> tuple[int, int]:
     """
-    根据设备分辨率计算生成图像尺寸。
-    保持设备的纵横比，总像素数接近target_area (默认1024*1024)。
+    根据设备分辨率计算生成图像尺寸
+
+    保持设备的纵横比，总像素数接近target_area (默认1024*1024，SDXL训练尺寸)
+
+    Args:
+        device_width: 设备宽度
+        device_height: 设备高度
+        target_area: 目标像素总数，默认1048576 (1024*1024)
+
+    Returns:
+        (生成宽度, 生成高度) 元组
     """
     aspect_ratio = device_width / device_height
     # new_width * new_height = target_area
@@ -96,7 +128,15 @@ def calculate_generation_size(device_width: int, device_height: int, target_area
 
 
 def get_all_devices(pixels_csv: str) -> list[dict]:
-    """读取pixels.csv中的所有设备"""
+    """
+    从CSV文件读取所有设备信息
+
+    Args:
+        pixels_csv: CSV文件路径，需包含 device_id, width, height 列
+
+    Returns:
+        设备信息列表，每个设备包含 device_id, width, height
+    """
     devices = []
     with open(pixels_csv, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -107,31 +147,3 @@ def get_all_devices(pixels_csv: str) -> list[dict]:
                 'height': int(row['height'])
             })
     return devices
-
-
-def filter_devices_by_ratio(devices: list[dict]) -> list[dict]:
-    """
-    过滤掉相同纵横比的设备，只保留最高分辨率。
-    例如: 3840x2160 和 1920x1080 都是 16:9，只保留 3840x2160
-    """
-    ratio_groups = {}
-
-    for device in devices:
-        width = device['width']
-        height = device['height']
-
-        # 计算最简比例 (使用GCD)
-        gcd = math.gcd(width, height)
-        ratio = (width // gcd, height // gcd)
-
-        # 按比例分组，保留分辨率最高的
-        if ratio not in ratio_groups:
-            ratio_groups[ratio] = device
-        else:
-            # 比较分辨率大小（使用实际像素数）
-            current_pixels = width * height
-            existing_pixels = ratio_groups[ratio]['width'] * ratio_groups[ratio]['height']
-            if current_pixels > existing_pixels:
-                ratio_groups[ratio] = device
-
-    return list(ratio_groups.values())
