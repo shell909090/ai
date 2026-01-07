@@ -12,7 +12,7 @@ import math
 from io import BytesIO
 from pathlib import Path
 
-from comfy_api_simplified import ComfyWorkflowWrapper
+from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 from PIL import Image
 
 
