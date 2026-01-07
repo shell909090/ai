@@ -16,21 +16,23 @@
 * 使用 ruff 进行静态检查，配置 McCabe 复杂度阈值为 10。
 * 编码规范遵循PEP-8。
 * 每次修改源码后，如果需要，更新README.md。
+* 删除无用代码，删除头部无效import
 
 # 文件和用途
 
 * envs: 忽略，本地变量
 * gen-images.py: 批量生成图片。
-* libs.py: 公共库。
+* libs: 目录，公共库。
+  * outpaint.py: 扩图workflow。
+  * upscale.py: 超分workflow。这里只用模型超分，不重绘，也不调整分辨率，只负责直接扩大4倍。
+  * usdu.py: 超分workflow。重绘，调整分辨率。
+  * zit.py: z-image-turbo图片生成workflow。
+  * *.py: 公共库。
 * Makefile: 管理项目常用指令。目前主要是测试指令。
-* outpaint.py: 扩图workflow。
 * *.csv: 都是分辨率定义文件。
 * README.md: 使用文档，每次代码更新都要跟随更新。
 * test\_theme.txt/test\_variations.txt: 测试用的theme和variations。
-* upscale.py: 超分workflow。这里只用模型超分，不重绘，也不调整分辨率，只负责直接扩大4倍。
-* usdu.py: 超分workflow。重绘，调整分辨率。
 * wf.py: workflow的入口脚本。从命令行读取多种参数，调用对应workflow执行。
-* zit.py: z-image-turbo图片生成workflow。
 
 ## gen-images的核心逻辑
 

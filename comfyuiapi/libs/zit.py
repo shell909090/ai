@@ -10,7 +10,7 @@ import json
 import logging
 from os import path
 
-from libs import ComfyApiWrapper, ComfyWorkflow
+from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
 # qwen_3_4b.safetensors
 # ae.safetensors

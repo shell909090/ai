@@ -20,10 +20,7 @@ from enum import Enum
 from PIL import Image
 from comfy_api_simplified import ComfyApiWrapper
 
-import zit
-import upscale
-import usdu
-from libs import save_image, get_all_devices, read_img_from_byte, convert_to_jpg
+from libs import zit, upscale, usdu, save_image, get_all_devices, read_img_from_byte, convert_to_jpg
 
 
 class UpscaleMode(Enum):

@@ -70,22 +70,22 @@ def main() -> None:
     api = ComfyApiWrapper(args.url)
 
     if args.workflow == 'usdu':
-        import usdu
+        from libs import usdu
         image_data = usdu.usdu(api, args.input, args.upscale_by)
         save_image(image_data, Path(args.output))
 
     elif args.workflow == 'upscale':
-        import upscale
+        from libs import upscale
         image_data = upscale.upscale(api, args.input)
         save_image(image_data, Path(args.output))
 
     elif args.workflow == 'outpaint':
-        import outpaint
+        from libs import outpaint
         image_data = outpaint.outpaint(api, args.input, args.left, args.top, args.right, args.bottom)
         save_image(image_data, Path(args.output))
 
     elif args.workflow == 'zit':
-        import zit
+        from libs import zit
         image_data = zit.zit(api, args.prompt, random.randint(2**20, 2**64))
         save_image(image_data, Path(args.output))
 

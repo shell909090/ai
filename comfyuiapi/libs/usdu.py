@@ -10,7 +10,7 @@ import json
 import logging
 from os import path
 
-from libs import ComfyApiWrapper, ComfyWorkflow
+from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
 # 4x-UltraSharp.pth
 # sd_xl_base_1.0.safetensors
