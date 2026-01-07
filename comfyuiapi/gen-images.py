@@ -31,7 +31,8 @@ def gen_image_for_device(
     prompt: str,
     seed: int,
     device: Optional[dict],
-    convert_jpg: bool = False
+    convert_jpg: bool = False,
+    enable_upscale: bool = True
 ) -> Optional[dict]:
     """
     为单个设备生成基础图片（不进行超分）
@@ -45,6 +46,7 @@ def gen_image_for_device(
         seed: 随机数种子
         device: 设备信息字典，包含 device_id, width, height；如果为None则不指定设备
         convert_jpg: 是否将生成的PNG转换为JPG格式
+        enable_upscale: 是否启用大分辨率超分功能（默认True）
 
     Returns:
         如果需要超分，返回包含超分信息的字典；否则返回None
@@ -69,13 +71,13 @@ def gen_image_for_device(
         logging.info(f"Skipping {output_filepath.name}: file already exists")
         return None
 
-    # 计算生成分辨率：如果总像素超过1.5*1024*1024，需要缩放
+    # 计算生成分辨率：如果启用超分且总像素超过1.5*1024*1024，需要缩放
     gen_width, gen_height = target_width, target_height
     total_pixels = gen_width * gen_height
     need_upscale = False
 
-    # 如果超过1.5*1024*1024，循环乘以2/3直到不超过1024*1024
-    if total_pixels > 1.5 * 1024 * 1024:
+    # 如果启用超分功能且超过1.5*1024*1024，循环乘以2/3直到不超过1024*1024
+    if enable_upscale and total_pixels > 1.5 * 1024 * 1024:
         need_upscale = True
         gen_width = int(gen_width * 2 / 3)
         gen_height = int(gen_height * 2 / 3)
@@ -87,7 +89,7 @@ def gen_image_for_device(
             gen_height = int(gen_height * 2 / 3)
             total_pixels = gen_width * gen_height
 
-    logging.info(f"Target: {target_width}x{target_height}, Generation: {gen_width}x{gen_height}, Need upscale: {need_upscale}")
+    logging.info(f"Target: {target_width}x{target_height}, Generation: {gen_width}x{gen_height}, Need upscale: {need_upscale}, Upscale enabled: {enable_upscale}")
 
     # 如果需要超分，先检查临时文件是否已存在
     if need_upscale:
@@ -170,7 +172,8 @@ def gen_images_for_variation(
     prompt: str,
     devices: list[dict],
     batch_size: int = 1,
-    convert_jpg: bool = False
+    convert_jpg: bool = False,
+    enable_upscale: bool = True
 ) -> list[dict]:
     """
     为一个变奏生成所有批次的基础图片
@@ -183,6 +186,7 @@ def gen_images_for_variation(
         devices: 设备信息列表，每个设备包含 device_id, width, height
         batch_size: 批次数量
         convert_jpg: 是否将生成的PNG转换为JPG格式
+        enable_upscale: 是否启用大分辨率超分功能（默认True）
 
     Returns:
         需要超分的任务列表
@@ -198,13 +202,13 @@ def gen_images_for_variation(
         # 为所有设备生成基础图片
         if not devices:
             # 没有指定设备，生成默认分辨率
-            task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, None, convert_jpg)
+            task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, None, convert_jpg, enable_upscale)
             if task:
                 upscale_tasks.append(task)
         else:
             # 为每个设备生成图片
             for device in devices:
-                task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device, convert_jpg)
+                task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device, convert_jpg, enable_upscale)
                 if task:
                     upscale_tasks.append(task)
 
@@ -242,6 +246,9 @@ def main() -> None:
     parser.add_argument('--jpg', '-j',
                         action='store_true',
                         help='将生成的PNG图片转换为JPG格式')
+    parser.add_argument('--no-upscale',
+                        action='store_true',
+                        help='禁用大分辨率超分功能，直接生成原始分辨率（可能导致图片质量下降）')
     args = parser.parse_args()
 
     if not args.url:
@@ -277,6 +284,11 @@ def main() -> None:
     # 收集所有超分任务
     all_upscale_tasks = []
 
+    # 确定是否启用超分功能（默认启用，--no-upscale禁用）
+    enable_upscale = not args.no_upscale
+    if not enable_upscale:
+        logging.warning("Upscaling is disabled. Large resolution images will be generated directly (may cause quality issues)")
+
     # 读取变奏并生成基础图片
     counter = 0
     with open(args.variations, 'r', encoding='utf-8') as fi:
@@ -289,7 +301,7 @@ def main() -> None:
             logging.info(f"Processing counter {counter}")
 
             # 为该变奏生成所有批次的基础图片
-            tasks = gen_images_for_variation(api, output_dir, counter, prompt, devices, args.batches, args.jpg)
+            tasks = gen_images_for_variation(api, output_dir, counter, prompt, devices, args.batches, args.jpg, enable_upscale)
             all_upscale_tasks.extend(tasks)
 
             counter += 1

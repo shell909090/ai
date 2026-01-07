@@ -131,6 +131,9 @@ mac_retina,2880,1800
 
 # 生成PNG并自动转换为JPG
 ./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --jpg
+
+# 禁用大分辨率超分功能（直接生成原始分辨率，可能影响质量）
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --no-upscale
 ```
 
 生成的文件命名规则：
@@ -139,6 +142,15 @@ mac_retina,2880,1800
 - 如果使用`--jpg`参数，会同时生成`.png`和`.jpg`文件
 
 例如：`000_00_iphone_15_16.png`、`000_01_iphone_15_16.png`、`001_00_win_hd_monitor.png`
+
+**命令行参数说明**：
+- `-t/--theme`: 主题文件路径
+- `-v/--variations`: 变奏文件路径
+- `-o/--output-dir`: 输出目录
+- `-p/--pixels-csv`: 设备分辨率CSV文件（可选）
+- `-b/--batches`: 每个变奏生成的批次数（默认1）
+- `-j/--jpg`: 将PNG转换为JPG格式
+- `--no-upscale`: 禁用大分辨率超分功能（默认启用）
 
 ### 使用独立workflow
 
@@ -207,10 +219,17 @@ make clean
 
 #### 智能分辨率处理
 
-**缩放策略**：
+**缩放策略**（默认启用）：
 - 如果总像素 > 1.5M (1.5×1024×1024)，先生成较小的基础图片，再超分放大
 - 缩放算法：循环乘以2/3，直到总像素 ≤ 1M
 - 示例：3840×2160 (8.3M) → 2560×1440 (3.7M) → 1707×960 (1.64M) → 1138×640 (0.73M)
+- 优点：避免图片扭曲、断肢等问题
+- 缺点：需要额外的超分时间
+
+**禁用超分（`--no-upscale`）**：
+- 直接使用原始分辨率生成图片
+- 优点：生成速度快，无需超分处理
+- 缺点：大分辨率（>1.5M像素）可能出现图片质量问题
 
 **断点续传**：
 - 检查临时基础图片是否已存在
