@@ -1,199 +1,71 @@
-# CLAUDE.md
+# 项目核心定位
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+功能：基于 ComfyUI 工作流，为不同设备分辨率批量生成 AI 壁纸。
+技术栈：Python, ComfyUI API (comfy-api-simplified), uv (包管理), Pillow。
+核心理念：模块化工作流，将 ComfyUI 的 JSON 配置硬编码在 Python 模块中作为字符串，实现“代码即工作流”。
 
-## Project Overview
+# 代码规范
 
-This is a ComfyUI-based wallpaper generation toolkit that uses AI image generation workflows to create wallpapers for multiple device resolutions. The project uses a modular architecture where each ComfyUI workflow is embedded as a string in its own Python module.
+* 使用logging处理日志。
+* 每种workflow一个py文件，JSON格式的workflow以字符串形式保存其中。提供一个或多个函数，供外部调用。
+* 测试和构建过程使用Makefile控制
+* 环境使用uv管理
+* 强制执行 Type Annotations。
+* 公有函数必须包含详尽的 Docstrings (Args, Returns, Raises)。
+* 函数的McCabe复杂度尽量不要超过10。
+* 使用 ruff 进行静态检查，配置 McCabe 复杂度阈值为 10。
+* 编码规范遵循PEP-8。
+* 每次修改源码后，如果需要，更新README.md。
 
-## Architecture
+# 文件和用途
 
-### Code Standards
+* envs: 忽略，本地变量
+* gen-images.py: 批量生成图片。
+* libs.py: 公共库。
+* Makefile: 管理项目常用指令。目前主要是测试指令。
+* outpaint.py: 扩图workflow。
+* *.csv: 都是分辨率定义文件。
+* README.md: 使用文档，每次代码更新都要跟随更新。
+* test\_theme.txt/test\_variations.txt: 测试用的theme和variations。
+* upscale.py: 超分workflow。这里只用模型超分，不重绘，也不调整分辨率，只负责直接扩大4倍。
+* usdu.py: 超分workflow。重绘，调整分辨率。
+* wf.py: workflow的入口脚本。从命令行读取多种参数，调用对应workflow执行。
+* zit.py: z-image-turbo图片生成workflow。
 
-1. Use `logging` module for all output
-2. Each workflow is a separate Python file with embedded JSON workflow string
-3. Each workflow module provides function(s) for external calls
-4. All shared logic goes in `libs.py`
-5. All functions must have complete type annotations
-6. All public functions must have detailed docstrings (Args, Returns, Raises)
+## gen-images的核心逻辑
 
-### Script Organization
+合成逻辑：
+每次合成有4个关键参数，主题，变奏，随机数，分辨率。合成逻辑如下：
+1. 命令行参数theme，读取主题。
+2. 命令行参数variations，读取变奏。
+3. 每行一个变奏，和主题混合，生成提示词。
+4. 每个提示词，给一个序列ID，作为文件编号。对于同一个序列ID，提示词一样。
+5. 每个提示词，可以生成多个批次。每个批次，给一个批次ID。同时生成一个随机数。每一个序列ID的每一个批次ID，随机数一样。
+6. 如果指定了分辨率规范文件，读取里面所有分辨率。
+7. 目标文件名为{文件编号}_{批次编号}_{device_id}.png，如果没有指定分辨率规范文件，{文件编号}_{批次编号}.png。
 
-The codebase follows a **modular workflow architecture**:
+分辨率细节：
+* 由于所有模型都有分辨率极限，因此在总像素（width*height）超过特定值（估计在1024\*1024到2048\*2048之间）之后，需要结合使用超分过程（upscale或USDU）。否则容易出现图片扭曲，断肢等现象。
+* 由于ComfyUI的特性，频繁切换模型性能极低。因此超分需要在zit模型全部跑完之后。而且如果有多种超分过程，每种的所有执行需要连续。
+* 断点续算：zit过程跑的时候总有中断的情况。所以万一中断了，那么跑出来的中间文件，就不必再跑了。
 
-1. **libs.py**: Shared library containing all reusable functions
-   - Image I/O: `save_image()`, `read_img_from_byte()`, `resize_image()`, `convert_to_jpg()`
-   - Device resolution utilities: `get_device_resolution()`, `calculate_generation_size()`, `get_all_devices()`, `filter_devices_by_ratio()`
-   - ComfyUI wrapper: `ComfyWorkflow` class
+具体如下：
+1. 拿到一张图，判断总像素是否超过了1.5\*1024\*1024。我们称之为临界尺寸。
+2. 如果没超过，直接调用zit.zit生成。
+3. 如果超过了，需要将图等比例缩放到临界尺寸以下。基本就是width*height=1.5\*1024\*1024。
+4. 接着看放大倍率。我们约定目标width/中间width为放大倍率factor。如果factor<=2，那么使用upscale过程。如果factor>2，使用usdu过程。
+5. 根据算出来的width和height，调用zit.zit，生成中间临时文件。
+6. 全部图片/中间图片生成完之后，判断是否有临时文件需要放大。
+7. 如果有，调用对应的超分workflow，生成目标图片。
+8. 使用PIL，读取目标图片分辨率。如果不严格等于要求的分辨率，直接用PIL进行小幅缩放。
+9. 清理所有临时文件。
 
-2. **Workflow modules** (each contains embedded JSON workflow as string):
-   - **zit.py**: z-image-turbo image generation - `zit(api, prompt, seed, width, height) -> bytes`
-   - **usdu.py**: Ultimate SD Upscale - `usdu(api, input_file, upscale_by) -> bytes`
-   - **upscale.py**: 4x model upscale - `upscale(api, input_file) -> bytes`
-   - **outpaint.py**: Image extension - `outpaint(api, input_file, left, top, right, bottom) -> bytes`
+同时，upscale超分过程，应当有args flag控制。分为以下几种状态：
+1. 智能控制。逻辑如上。（默认值）
+2. 锁定使用upscale。
+3. 锁定使用usdu。
+4. 锁定不使用超分，直接生成目标图片。
 
-3. **Entry point scripts**:
-   - **wf.py**: CLI entry point - calls workflow modules based on `--workflow` parameter
-   - **gen-images.py**: Batch generation - generates wallpapers for all devices using `zit.py`
-   - **resize.py**: Batch resize - adjusts existing images to all device resolutions
+# workflow规范
 
-### Key Design Patterns
-
-**Device Resolution Calculation**: The `calculate_generation_size()` function in libs.py ensures generated images maintain device aspect ratios while keeping total pixels ≈ 1024×1024 (SDXL training size):
-```python
-gen_width = int(math.sqrt(1048576 * aspect_ratio))
-gen_height = int(math.sqrt(1048576 / aspect_ratio))
-```
-
-**File Naming Convention**:
-- Generated images with devices: `{counter:03d}_{batch:02d}_{device_id}.png` (gen-images.py)
-- Generated images without devices: `{counter:03d}_{batch:02d}.png` (gen-images.py)
-- Device-specific resized: `{counter:03d}_{device_id}.png` (resize.py)
-
-**ComfyUI Integration**:
-- Uses `comfy-api-simplified` library
-- `ComfyApiWrapper(url)`: API client for queuing and retrieving results
-- `ComfyWorkflow`: Custom wrapper class in libs.py extending `ComfyWorkflowWrapper`
-- Workflows are embedded as JSON strings in Python files, loaded via `json.loads()`
-
-### Workflow Modules Implementation Pattern
-
-Each workflow module follows this pattern:
-
-```python
-import json
-from libs import ComfyApiWrapper, ComfyWorkflow
-
-WORKFLOW_STR = '''
-{
-  "node_id": {
-    "inputs": {...},
-    "class_type": "NodeType",
-    "_meta": {"title": "节点名称"}
-  }
-}
-'''
-
-def workflow_function(api: ComfyApiWrapper, ...) -> bytes:
-    wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
-    wf.set_node_param("节点名称", "param_name", value)
-    results = api.queue_and_wait_images(wf, "预览图像")
-    return next(iter(results.values()))
-```
-
-Node names in workflows are in Chinese (e.g., "CLIP文本编码", "K采样器", "空Latent图像（SD3）", "预览图像")
-
-## Development Commands
-
-### Setup
-```bash
-# Install dependencies (using uv)
-uv sync
-
-# Or using pip
-pip install comfy-api-simplified pillow websockets
-```
-
-### Running Scripts
-
-**Set ComfyUI API URL** (to avoid repeating --url):
-```bash
-export COMFYUI_API_URL=http://192.168.33.4:8188/
-```
-
-**Generate wallpapers**:
-```bash
-# Generate for all devices
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv
-
-# Generate without device specification (default 1024x1024)
-./gen-images.py -t theme.txt -v variations.txt -o output/
-
-# Generate multiple batches per variation
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --batches 5
-
-# Batch resize existing images to all devices
-./resize.py --input-dir output/ --pixels-csv pixels.csv --jpg
-
-# Use individual workflows
-./wf.py --workflow zit --prompt "prompt text" --output output.png
-./wf.py --workflow usdu --input input.png --output output.png --upscale-by 2.0
-```
-
-### Device Resolution Table Format
-
-The `pixels.csv` file defines target devices:
-```csv
-device_id,width,height
-iphone_15_16,1179,2556
-win_hd_monitor,1920,1080
-```
-
-## Important Implementation Details
-
-### gen-images.py Core Logic
-
-The script implements this workflow:
-1. Read theme from `--theme` file
-2. Read variations from `--variations` file (one per line)
-3. Combine theme + variation to create final prompt
-4. Assign sequential counter ID to each variation
-5. For each variation, generate multiple batches (specified by `--batches`, default 1)
-6. For each counter+batch combination, generate a random seed
-7. If `--pixels-csv` specified, generate images for all device resolutions; otherwise generate default 1024x1024
-8. Output filename: `{counter:03d}_{batch:02d}_{device_id}.png` (with devices) or `{counter:03d}_{batch:02d}.png` (without devices)
-
-**Device Filtering**:
-- When `--pixels-csv` is provided, the script filters devices by aspect ratio via `filter_devices_by_ratio()` to avoid generating duplicate aspect ratios
-- Only the highest resolution device for each unique aspect ratio is kept
-
-**Key behavior**: Same counter+batch uses identical seed across all devices to ensure visual consistency, but different batches have different seeds to provide variety
-
-### Resize Strategy (resize.py)
-
-The script intelligently chooses between AI upscaling and PIL downscaling:
-```python
-if device_pixels > gen_pixels:
-    # AI upscale via ComfyUI
-    upscale_by = math.sqrt(device_pixels / gen_pixels)
-    image_data = upscale(api, wf, input_file, upscale_by)
-else:
-    # PIL downscale
-    resize_image(input_file, output_file, device_width, device_height)
-```
-
-### Seed Handling
-
-- **gen-images.py**: Same counter+batch combination uses identical seed across all devices to ensure visual consistency
-- Different batches of the same variation get different seeds to provide variety
-- Seeds are generated using `random.randint(2**20, 2**64)`
-
-### Batch Generation
-
-The `--batches` parameter allows generating multiple variations of each prompt:
-- counter: Sequence ID for each variation (0, 1, 2, ...)
-- batch: Batch ID for each generation of a variation (0, 1, 2, ..., batches-1)
-- Each counter+batch pair gets a unique random seed
-- All devices for the same counter+batch use the same seed
-
-## Code Modification Guidelines
-
-When adding new scripts or modifying existing ones:
-
-1. **Put shared logic in libs.py** - All reusable functions belong in libs.py, not individual scripts
-2. **Embed workflows as strings** - Workflow JSON should be embedded as `WORKFLOW_STR` in Python files, not separate JSON files
-3. **Follow the import pattern**: `from libs import function1, function2, ...`
-4. **Use consistent arg parsing**: Entry point scripts follow the same pattern with `--url/-u`, `--output/-o`, etc.
-5. **Maintain file naming conventions**:
-   - gen-images.py uses `{counter:03d}_{batch:02d}_{device_id}.png` or `{counter:03d}_{batch:02d}.png`
-   - counter = variation sequence ID, batch = batch number within that variation
-6. **ComfyUI node names are Chinese**: The workflow JSON files use Chinese node names - preserve these when modifying workflows
-7. **Use logging module**: Always use `logging.info()`, `logging.error()`, etc. instead of `print()`
-8. **Type annotations**: All function parameters and return types must have type hints
-9. **Documentation**: All public functions must have docstrings with Args, Returns, and Raises sections
-
-## File Organization
-
-- **Input files**: `theme.txt` (main prompt), `variations.txt` (per-image variations), `pixels.csv` (device table)
-- **Output files**: Generated in user-specified directories with automatic naming
-- **Workflow definitions**: Embedded as strings in workflow Python modules (zit.py, usdu.py, upscale.py, outpaint.py)
+工作流嵌入：禁止使用外部 JSON 文件，必须将工作流 JSON 以 WORKFLOW_STR 常量形式写在 Python 模块内。
