@@ -13,7 +13,7 @@ import logging
 import argparse
 from pathlib import Path
 
-from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
+from comfy_api_simplified import ComfyApiWrapper
 
 from libs import save_image
 

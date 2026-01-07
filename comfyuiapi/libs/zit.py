@@ -8,7 +8,6 @@
 '''
 import json
 import logging
-from os import path
 
 from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
