@@ -12,8 +12,6 @@ from os import path
 
 from libs import ComfyApiWrapper, ComfyWorkflow
 
-# 4x-UltraSharp.pth
-
 
 WORKFLOW_STR = '''
 {
@@ -28,7 +26,7 @@ WORKFLOW_STR = '''
   },
   "2": {
     "inputs": {
-      "model_name": "4x-UltraSharp.pth"
+      "model_name": "RealESRGAN_x2.pth"
     },
     "class_type": "UpscaleModelLoader",
     "_meta": {

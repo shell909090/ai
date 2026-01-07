@@ -31,7 +31,7 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 ├── wf.py                 # workflow入口脚本
 ├── zit.py                # z-image-turbo图片生成workflow
 ├── usdu.py               # Ultimate SD Upscale超分workflow
-├── upscale.py            # 4倍模型超分workflow
+├── upscale.py            # 2倍模型超分workflow (RealESRGAN)
 ├── outpaint.py           # 扩图workflow
 ├── gen-images.py         # 批量生成脚本
 ├── Makefile              # 测试自动化
@@ -89,8 +89,8 @@ mac_retina,2880,1800
 - **SDXL Checkpoint**: `sd_xl_base_1.0.safetensors`
 - **ControlNet**: `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors`
 
-#### 4倍模型超分 (upscale.py)
-- **Upscale Model**: `4x-UltraSharp.pth`
+#### 2倍模型超分 (upscale.py)
+- **Upscale Model**: `RealESRGAN_x2.pth`
 
 #### 图片扩展 (outpaint.py)
 - **SDXL Inpainting**: `sd_xl_base_1.0_inpainting_0.1.safetensors`
@@ -104,8 +104,10 @@ mac_retina,2880,1800
 - `z_image_turbo_bf16_nsfw_v2.safetensors` - Z-Image Turbo扩散模型
   - [HuggingFace下载 (标准bf16版本)](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors)
   - [HuggingFace下载](https://huggingface.co/tewea/z_image_turbo_bf16_nsfw/blob/main/z_image_turbo_bf16_nsfw_v2.safetensors)
-- `4x-UltraSharp.pth` - 4倍超分辨率模型
+- `4x-UltraSharp.pth` - 4倍超分辨率模型 (用于usdu.py)
   - [HuggingFace下载](https://huggingface.co/Kim2091/UltraSharp/blob/main/4x-UltraSharp.pth)
+- `RealESRGAN_x2.pth` - 2倍超分辨率模型 (用于upscale.py)
+  - [HuggingFace下载](https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pth)
 - `sd_xl_base_1.0.safetensors` - SDXL基础模型
   - [HuggingFace下载](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/sd_xl_base_1.0.safetensors)
 - `sd_xl_base_1.0_inpainting_0.1.safetensors` - SDXL修复模型
@@ -161,7 +163,7 @@ mac_retina,2880,1800
 # 超分（Ultimate SD Upscale）
 ./wf.py --workflow usdu --input input.png --output output.png --upscale-by 2.0
 
-# 模型超分（4倍）
+# 模型超分（2倍，RealESRGAN）
 ./wf.py --workflow upscale --input input.png --output output.png
 
 # 扩图
@@ -181,7 +183,7 @@ make test
 
 # 运行单个workflow测试
 make test-zit         # 测试图片生成
-make test-upscale     # 测试4倍超分
+make test-upscale     # 测试2倍超分 (RealESRGAN)
 make test-usdu        # 测试Ultimate SD Upscale
 make test-outpaint    # 测试扩图
 make test-gen-images  # 测试批量生成
@@ -211,7 +213,7 @@ make clean
 
 所有基础图片生成完成后，统一处理需要超分的图片：
 1. 收集所有超分任务
-2. 批量调用upscale进行4倍放大
+2. 批量调用upscale进行2倍放大（使用RealESRGAN_x2）
 3. 使用PIL精确缩放到目标尺寸
 4. 保存最终图片
 5. 可选转换为JPG格式
@@ -275,7 +277,7 @@ make clean
 - `zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes`: 生成图片
 
 **upscale.py**:
-- `upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes`: 4倍模型超分
+- `upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes`: 2倍模型超分（RealESRGAN_x2）
 
 **usdu.py**:
 - `usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes`: Ultimate SD Upscale超分
