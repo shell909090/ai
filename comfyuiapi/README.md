@@ -134,8 +134,17 @@ mac_retina,2880,1800
 # 生成PNG并自动转换为JPG
 ./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --jpg
 
-# 禁用大分辨率超分功能（直接生成原始分辨率，可能影响质量）
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --no-upscale
+# 使用智能超分模式（默认，根据放大倍率自动选择upscale或usdu）
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode auto
+
+# 锁定使用RealESRGAN 2倍超分
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode upscale
+
+# 锁定使用USDU超分
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode usdu
+
+# 禁用超分，直接生成目标分辨率（可能影响大分辨率图片质量）
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode none
 ```
 
 生成的文件命名规则：
@@ -152,7 +161,11 @@ mac_retina,2880,1800
 - `-p/--pixels-csv`: 设备分辨率CSV文件（可选）
 - `-b/--batches`: 每个变奏生成的批次数（默认1）
 - `-j/--jpg`: 将PNG转换为JPG格式
-- `--no-upscale`: 禁用大分辨率超分功能（默认启用）
+- `--upscale-mode`: 超分模式，可选值：
+  - `auto`（默认）：智能选择，放大倍率≤2用RealESRGAN，>2用USDU
+  - `upscale`：锁定使用RealESRGAN 2倍超分
+  - `usdu`：锁定使用Ultimate SD Upscale
+  - `none`：禁用超分，直接生成目标分辨率
 
 ### 使用独立workflow
 
@@ -194,6 +207,14 @@ make clean
 
 测试结果保存在 `test_output/` 目录。
 
+**测试设备配置** (`test_pixels.csv`)：
+- `phone` (1080×1920)：竖屏，2.07M像素，需要upscale超分
+- `tablet` (1536×2048)：竖屏，3.15M像素，factor≈1.45，使用upscale超分
+- `desktop` (1920×1080)：横屏，2.07M像素，factor≈1.18，使用upscale超分
+- `4k` (3840×2160)：横屏，8.29M像素，factor≈2.35，**使用usdu超分**
+
+4K设备与desktop成2倍关系，专门用于测试usdu超分流程。
+
 ## 核心逻辑
 
 ### gen-images.py工作流程
@@ -213,25 +234,40 @@ make clean
 
 所有基础图片生成完成后，统一处理需要超分的图片：
 1. 收集所有超分任务
-2. 批量调用upscale进行2倍放大（使用RealESRGAN_x2）
-3. 使用PIL精确缩放到目标尺寸
-4. 保存最终图片
-5. 可选转换为JPG格式
-6. 自动清理临时文件
+2. 按超分方法分组（upscale组和usdu组），避免频繁切换模型
+3. 先批量处理所有RealESRGAN任务（2倍放大）
+4. 再批量处理所有USDU任务（可变倍率放大）
+5. 使用PIL精确缩放到目标尺寸
+6. 保存最终图片
+7. 可选转换为JPG格式
+8. 自动清理临时文件
 
 #### 智能分辨率处理
 
-**缩放策略**（默认启用）：
-- 如果总像素 > 1.5M (1.5×1024×1024)，先生成较小的基础图片，再超分放大
-- 缩放算法：循环乘以2/3，直到总像素 ≤ 1M
-- 示例：3840×2160 (8.3M) → 2560×1440 (3.7M) → 1707×960 (1.64M) → 1138×640 (0.73M)
-- 优点：避免图片扭曲、断肢等问题
-- 缺点：需要额外的超分时间
+**临界尺寸**：1.5M像素 (1.5×1024×1024)
 
-**禁用超分（`--no-upscale`）**：
-- 直接使用原始分辨率生成图片
-- 优点：生成速度快，无需超分处理
-- 缺点：大分辨率（>1.5M像素）可能出现图片质量问题
+**超分模式**：
+
+1. **auto（智能模式，默认）**：
+   - 总像素 ≤ 1.5M：直接生成目标分辨率
+   - 总像素 > 1.5M：等比例缩放到1.5M，根据放大倍率选择超分方法
+     - 放大倍率 ≤ 2：使用RealESRGAN_x2（2倍超分）
+     - 放大倍率 > 2：使用Ultimate SD Upscale（可变倍率超分）
+   - 缩放算法：保持宽高比，width × height = 1.5M
+   - 示例：3840×2160 (8.3M) → 1536×864 (1.33M，factor=2.5) → 使用USDU放大2.5倍
+
+2. **upscale（锁定RealESRGAN）**：
+   - 所有超过1.5M的图片均使用RealESRGAN_x2进行2倍超分
+   - 适合放大倍率较小的场景
+
+3. **usdu（锁定USDU）**：
+   - 所有超过1.5M的图片均使用Ultimate SD Upscale
+   - 适合需要高质量重绘的大倍率放大
+
+4. **none（禁用超分）**：
+   - 直接使用目标分辨率生成图片
+   - 优点：生成速度快，无需超分处理
+   - 缺点：大分辨率（>1.5M像素）可能出现图片扭曲、断肢等质量问题
 
 **断点续传**：
 - 检查临时基础图片是否已存在

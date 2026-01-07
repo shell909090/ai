@@ -8,19 +8,30 @@
 '''
 import os
 import sys
+import math
 import random
 import logging
 import argparse
 import tempfile
 from pathlib import Path
 from typing import Optional
+from enum import Enum
 
 from PIL import Image
 from comfy_api_simplified import ComfyApiWrapper
 
 import zit
 import upscale
+import usdu
 from libs import save_image, get_all_devices, read_img_from_byte, convert_to_jpg
+
+
+class UpscaleMode(Enum):
+    """超分模式枚举"""
+    AUTO = "auto"       # 智能控制：根据factor自动选择upscale或usdu
+    UPSCALE = "upscale"  # 锁定使用upscale
+    USDU = "usdu"        # 锁定使用usdu
+    NONE = "none"        # 禁用超分，直接生成目标图片
 
 
 def gen_image_for_device(
@@ -32,7 +43,7 @@ def gen_image_for_device(
     seed: int,
     device: Optional[dict],
     convert_jpg: bool = False,
-    enable_upscale: bool = True
+    upscale_mode: UpscaleMode = UpscaleMode.AUTO
 ) -> Optional[dict]:
     """
     为单个设备生成基础图片（不进行超分）
@@ -46,7 +57,7 @@ def gen_image_for_device(
         seed: 随机数种子
         device: 设备信息字典，包含 device_id, width, height；如果为None则不指定设备
         convert_jpg: 是否将生成的PNG转换为JPG格式
-        enable_upscale: 是否启用大分辨率超分功能（默认True）
+        upscale_mode: 超分模式（AUTO/UPSCALE/USDU/NONE）
 
     Returns:
         如果需要超分，返回包含超分信息的字典；否则返回None
@@ -55,7 +66,8 @@ def gen_image_for_device(
             'target_filepath': Path,  # 目标图片路径
             'target_width': int,
             'target_height': int,
-            'convert_jpg': bool
+            'convert_jpg': bool,
+            'upscale_method': str  # 'upscale' 或 'usdu'
         }
     """
     # 确定输出文件名和目标分辨率
@@ -71,25 +83,41 @@ def gen_image_for_device(
         logging.info(f"Skipping {output_filepath.name}: file already exists")
         return None
 
-    # 计算生成分辨率：如果启用超分且总像素超过1.5*1024*1024，需要缩放
-    gen_width, gen_height = target_width, target_height
-    total_pixels = gen_width * gen_height
+    # 临界尺寸：1.5 * 1024 * 1024
+    CRITICAL_SIZE = 1.5 * 1024 * 1024
+    total_pixels = target_width * target_height
     need_upscale = False
+    upscale_method = None
 
-    # 如果启用超分功能且超过1.5*1024*1024，循环乘以2/3直到不超过1024*1024
-    if enable_upscale and total_pixels > 1.5 * 1024 * 1024:
+    # 计算生成分辨率
+    gen_width, gen_height = target_width, target_height
+
+    # 如果upscale_mode不是NONE且总像素超过临界尺寸，需要缩放
+    if upscale_mode != UpscaleMode.NONE and total_pixels > CRITICAL_SIZE:
         need_upscale = True
-        gen_width = int(gen_width * 2 / 3)
-        gen_height = int(gen_height * 2 / 3)
-        total_pixels = gen_width * gen_height
 
-        # 循环缩放直到不超过1024*1024
-        while total_pixels > 1024 * 1024:
-            gen_width = int(gen_width * 2 / 3)
-            gen_height = int(gen_height * 2 / 3)
-            total_pixels = gen_width * gen_height
+        # 等比例缩放到临界尺寸：width * height = CRITICAL_SIZE
+        aspect_ratio = target_width / target_height
+        gen_width = int(math.sqrt(CRITICAL_SIZE * aspect_ratio))
+        gen_height = int(math.sqrt(CRITICAL_SIZE / aspect_ratio))
 
-    logging.info(f"Target: {target_width}x{target_height}, Generation: {gen_width}x{gen_height}, Need upscale: {need_upscale}, Upscale enabled: {enable_upscale}")
+        # 计算放大倍率
+        factor = target_width / gen_width
+
+        # 根据upscale_mode决定使用哪个超分方法
+        if upscale_mode == UpscaleMode.AUTO:
+            # 智能模式：factor <= 2 用 upscale，factor > 2 用 usdu
+            upscale_method = 'upscale' if factor <= 2 else 'usdu'
+        elif upscale_mode == UpscaleMode.UPSCALE:
+            upscale_method = 'upscale'
+        elif upscale_mode == UpscaleMode.USDU:
+            upscale_method = 'usdu'
+
+        logging.info(f"Target: {target_width}x{target_height}, Generation: {gen_width}x{gen_height}, "
+                    f"Factor: {factor:.2f}, Method: {upscale_method}, Mode: {upscale_mode.value}")
+    else:
+        logging.info(f"Target: {target_width}x{target_height}, Generation: {gen_width}x{gen_height}, "
+                    f"Mode: {upscale_mode.value}, Direct generation (no upscale needed)")
 
     # 如果需要超分，先检查临时文件是否已存在
     if need_upscale:
@@ -111,7 +139,8 @@ def gen_image_for_device(
             'target_filepath': output_filepath,
             'target_width': target_width,
             'target_height': target_height,
-            'convert_jpg': convert_jpg
+            'convert_jpg': convert_jpg,
+            'upscale_method': upscale_method
         }
     else:
         # 不需要超分，直接生成并保存最终图片
@@ -133,17 +162,35 @@ def process_upscale_task(api: ComfyApiWrapper, task: dict) -> None:
 
     Args:
         api: ComfyUI API wrapper
-        task: 超分任务字典，包含 base_filepath, target_filepath, target_width, target_height, convert_jpg
+        task: 超分任务字典，包含 base_filepath, target_filepath, target_width, target_height, convert_jpg, upscale_method
     """
     base_filepath = task['base_filepath']
     target_filepath = task['target_filepath']
     target_width = task['target_width']
     target_height = task['target_height']
     convert_jpg = task['convert_jpg']
+    upscale_method = task['upscale_method']
 
-    # 调用upscale进行4倍放大
-    logging.info(f"Upscaling {base_filepath}")
-    upscaled_data = upscale.upscale(api, str(base_filepath))
+    # 根据upscale_method调用对应的超分workflow
+    logging.info(f"Upscaling {base_filepath} using {upscale_method}")
+
+    if upscale_method == 'upscale':
+        # 使用RealESRGAN_x2进行2倍放大
+        upscaled_data = upscale.upscale(api, str(base_filepath))
+    elif upscale_method == 'usdu':
+        # 使用USDU进行超分，计算放大倍数
+        # 读取基础图片获取实际尺寸
+        base_img = Image.open(base_filepath)
+        base_width, base_height = base_img.size
+        base_img.close()
+
+        # 计算放大倍数
+        upscale_by = target_width / base_width
+        logging.info(f"USDU upscale factor: {upscale_by:.2f}")
+
+        upscaled_data = usdu.usdu(api, str(base_filepath), upscale_by)
+    else:
+        raise ValueError(f"Unknown upscale method: {upscale_method}")
 
     # 读取放大后的图片
     img = read_img_from_byte(upscaled_data)
@@ -173,7 +220,7 @@ def gen_images_for_variation(
     devices: list[dict],
     batch_size: int = 1,
     convert_jpg: bool = False,
-    enable_upscale: bool = True
+    upscale_mode: UpscaleMode = UpscaleMode.AUTO
 ) -> list[dict]:
     """
     为一个变奏生成所有批次的基础图片
@@ -186,7 +233,7 @@ def gen_images_for_variation(
         devices: 设备信息列表，每个设备包含 device_id, width, height
         batch_size: 批次数量
         convert_jpg: 是否将生成的PNG转换为JPG格式
-        enable_upscale: 是否启用大分辨率超分功能（默认True）
+        upscale_mode: 超分模式（AUTO/UPSCALE/USDU/NONE）
 
     Returns:
         需要超分的任务列表
@@ -202,13 +249,13 @@ def gen_images_for_variation(
         # 为所有设备生成基础图片
         if not devices:
             # 没有指定设备，生成默认分辨率
-            task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, None, convert_jpg, enable_upscale)
+            task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, None, convert_jpg, upscale_mode)
             if task:
                 upscale_tasks.append(task)
         else:
             # 为每个设备生成图片
             for device in devices:
-                task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device, convert_jpg, enable_upscale)
+                task = gen_image_for_device(api, output_dir, counter, batch, prompt, seed, device, convert_jpg, upscale_mode)
                 if task:
                     upscale_tasks.append(task)
 
@@ -246,9 +293,10 @@ def main() -> None:
     parser.add_argument('--jpg', '-j',
                         action='store_true',
                         help='将生成的PNG图片转换为JPG格式')
-    parser.add_argument('--no-upscale',
-                        action='store_true',
-                        help='禁用大分辨率超分功能，直接生成原始分辨率（可能导致图片质量下降）')
+    parser.add_argument('--upscale-mode',
+                        choices=['auto', 'upscale', 'usdu', 'none'],
+                        default='auto',
+                        help='超分模式: auto=智能选择(默认), upscale=锁定2倍RealESRGAN, usdu=锁定USDU, none=禁用超分')
     args = parser.parse_args()
 
     if not args.url:
@@ -284,10 +332,9 @@ def main() -> None:
     # 收集所有超分任务
     all_upscale_tasks = []
 
-    # 确定是否启用超分功能（默认启用，--no-upscale禁用）
-    enable_upscale = not args.no_upscale
-    if not enable_upscale:
-        logging.warning("Upscaling is disabled. Large resolution images will be generated directly (may cause quality issues)")
+    # 解析超分模式
+    upscale_mode = UpscaleMode(args.upscale_mode)
+    logging.info(f"Upscale mode: {upscale_mode.value}")
 
     # 读取变奏并生成基础图片
     counter = 0
@@ -301,17 +348,32 @@ def main() -> None:
             logging.info(f"Processing counter {counter}")
 
             # 为该变奏生成所有批次的基础图片
-            tasks = gen_images_for_variation(api, output_dir, counter, prompt, devices, args.batches, args.jpg, enable_upscale)
+            tasks = gen_images_for_variation(api, output_dir, counter, prompt, devices, args.batches, args.jpg, upscale_mode)
             all_upscale_tasks.extend(tasks)
 
             counter += 1
 
-    # 统一处理所有超分任务
+    # 统一处理所有超分任务，按方法分组以避免频繁切换模型
     if all_upscale_tasks:
         logging.info(f"All base images generated. Processing {len(all_upscale_tasks)} upscale tasks")
-        for i, task in enumerate(all_upscale_tasks, 1):
-            logging.info(f"Upscaling task {i}/{len(all_upscale_tasks)}")
-            process_upscale_task(api, task)
+
+        # 按超分方法分组
+        upscale_tasks = [task for task in all_upscale_tasks if task['upscale_method'] == 'upscale']
+        usdu_tasks = [task for task in all_upscale_tasks if task['upscale_method'] == 'usdu']
+
+        # 先处理所有upscale任务
+        if upscale_tasks:
+            logging.info(f"Processing {len(upscale_tasks)} RealESRGAN upscale tasks")
+            for i, task in enumerate(upscale_tasks, 1):
+                logging.info(f"RealESRGAN task {i}/{len(upscale_tasks)}")
+                process_upscale_task(api, task)
+
+        # 再处理所有usdu任务
+        if usdu_tasks:
+            logging.info(f"Processing {len(usdu_tasks)} USDU upscale tasks")
+            for i, task in enumerate(usdu_tasks, 1):
+                logging.info(f"USDU task {i}/{len(usdu_tasks)}")
+                process_upscale_task(api, task)
 
         # 收集所有唯一的基础图片文件路径
         base_files = set()

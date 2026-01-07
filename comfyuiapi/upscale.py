@@ -67,16 +67,16 @@ WORKFLOW_STR = '''
 
 def upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes:
     """
-    使用4x-UltraSharp模型进行图片超分
+    使用RealESRGAN_x2模型进行图片超分
 
-    该方法使用纯模型超分，不进行重绘，直接放大4倍。适用于快速放大图片。
+    该方法使用纯模型超分，不进行重绘，直接放大2倍。适用于快速放大图片。
 
     Args:
         api: ComfyUI API wrapper实例
         image_filepath: 输入图片文件路径
 
     Returns:
-        超分后的图片字节数据（PNG格式），分辨率为原图的4倍
+        超分后的图片字节数据（PNG格式），分辨率为原图的2倍
 
     Raises:
         AssertionError: 如果返回的图片数量不是1张
