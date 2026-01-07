@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-'''
+"""
 @date: 2026-01-03
 @author: Shell.Xu
 @copyright: 2026, Shell.Xu <shell909090@gmail.com>
 @license: BSD-3-clause
-'''
+"""
+
 import json
-import logging
 
 from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
@@ -16,7 +15,7 @@ from libs.libs import ComfyApiWrapper, ComfyWorkflow
 # z_image_turbo_bf16_nsfw_v2.safetensors
 
 
-WORKFLOW_STR = '''
+WORKFLOW_STR = """
 {
   "39": {
     "inputs": {
@@ -160,7 +159,7 @@ WORKFLOW_STR = '''
     }
   }
 }
-'''
+"""
 
 
 def zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes:

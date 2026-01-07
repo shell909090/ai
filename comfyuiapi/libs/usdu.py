@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-'''
+"""
 @date: 2026-01-03
 @author: Shell.Xu
 @copyright: 2026, Shell.Xu <shell909090@gmail.com>
 @license: BSD-3-clause
-'''
+"""
+
 import json
 import logging
 from os import path
@@ -17,7 +17,7 @@ from libs.libs import ComfyApiWrapper, ComfyWorkflow
 # SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors
 
 
-WORKFLOW_STR = '''
+WORKFLOW_STR = """
 {
   "1": {
     "inputs": {
@@ -176,7 +176,7 @@ WORKFLOW_STR = '''
     }
   }
 }
-'''
+"""
 
 
 def usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes:
@@ -198,10 +198,10 @@ def usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes:
     """
     wf = ComfyWorkflow(json.loads(WORKFLOW_STR))
 
-    logging.info(f'upload image {image_filepath}')
+    logging.info(f"upload image {image_filepath}")
     rslt = api.upload_image(image_filepath)
-    server_filepath = path.join(rslt['subfolder'], rslt['name'])
-    logging.debug(f'Server side filepath: {server_filepath}')
+    server_filepath = path.join(rslt["subfolder"], rslt["name"])
+    logging.debug(f"Server side filepath: {server_filepath}")
 
     wf.set_node_param("加载图像", "image", server_filepath)
     wf.set_node_param("Ultimate SD Upscale", "upscale_by", upscale_by)

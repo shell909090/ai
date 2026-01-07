@@ -6,17 +6,18 @@
 
 # 代码规范
 
-* 使用logging处理日志。
-* 每种workflow一个py文件，JSON格式的workflow以字符串形式保存其中。提供一个或多个函数，供外部调用。
-* 测试和构建过程使用Makefile控制
-* 环境使用uv管理
+* 禁止自动git提交
+* 编码规范遵循PEP-8。
 * 强制执行 Type Annotations。
 * 公有函数必须包含详尽的 Docstrings (Args, Returns, Raises)。
+* 环境使用uv管理
 * 函数的McCabe复杂度尽量不要超过10。
 * 使用 ruff 进行静态检查，配置 McCabe 复杂度阈值为 10。
-* 编码规范遵循PEP-8。
+* 测试和构建过程使用Makefile控制
 * 每次修改源码后，如果需要，更新README.md。
 * 删除无用代码，删除头部无效import
+* 使用logging处理日志。
+* 每种workflow一个py文件，JSON格式的workflow以字符串形式保存其中。提供一个或多个函数，供外部调用。
 
 # 文件和用途
 
