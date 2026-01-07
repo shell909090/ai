@@ -1,4 +1,4 @@
-.PHONY: test test-zit test-usdu test-upscale test-outpaint clean setup
+.PHONY: test test-zit test-usdu test-upscale test-outpaint clean setup lint format format-check
 
 # 默认目标
 all: test
@@ -80,15 +80,41 @@ clean:
 	@rm -rf $(TEST_DIR)
 	@echo "✓ Test directory cleaned"
 
+# Ruff静态检查和格式化
+lint:
+	@echo "=== Running ruff linter ==="
+	@uv run ruff check . --config pyproject.toml
+	@echo "✓ Lint check completed"
+
+format:
+	@echo "=== Running ruff formatter ==="
+	@uv run ruff format . --config pyproject.toml
+	@uv run ruff check . --fix --config pyproject.toml
+	@echo "✓ Format completed"
+
+format-check:
+	@echo "=== Checking code format ==="
+	@uv run ruff format . --check --config pyproject.toml
+	@echo "✓ Format check completed"
+
 # 帮助信息
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Testing:"
 	@echo "  make test             - Run all workflow tests"
 	@echo "  make test-zit         - Test zit (image generation)"
-	@echo "  make test-upscale     - Test upscale (4x model upscale)"
+	@echo "  make test-upscale     - Test upscale (2x model upscale)"
 	@echo "  make test-usdu        - Test usdu (Ultimate SD Upscale)"
 	@echo "  make test-outpaint    - Test outpaint (image extension)"
 	@echo "  make test-gen-images  - Test gen-images (batch generation)"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make lint             - Run ruff linter (PEP-8, McCabe complexity ≤10)"
+	@echo "  make format           - Auto-format code with ruff"
+	@echo "  make format-check     - Check code format without modifying"
+	@echo ""
+	@echo "Maintenance:"
 	@echo "  make clean            - Clean test output directory"
 	@echo "  make setup            - Create test directory"
 	@echo ""

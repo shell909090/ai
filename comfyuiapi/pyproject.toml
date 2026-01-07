@@ -1,7 +1,7 @@
 [project]
 name = "comfyuiapi"
 version = "0.1.0"
-description = "Add your description here"
+description = "ComfyUI wallpaper generation toolkit"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,3 +9,73 @@ dependencies = [
     "pillow>=12.1.0",
     "websockets>=15.0.1",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.4",
+]
+
+[tool.ruff]
+# Python version target
+target-version = "py312"
+
+# Line length (PEP 8 default)
+line-length = 120
+
+# Source code directories
+src = ["."]
+
+# Exclude patterns
+exclude = [
+    ".git",
+    ".ruff_cache",
+    "__pycache__",
+    "test_output",
+    "envs",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Enable rule sets
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "C90",   # mccabe complexity
+    "ANN",   # flake8-annotations (type hints)
+    "S",     # flake8-bandit (security)
+    "SIM",   # flake8-simplify
+    "RET",   # flake8-return
+    "ARG",   # flake8-unused-arguments
+]
+
+# Disable specific rules
+ignore = [
+    "ANN101", # Missing type annotation for self
+    "ANN102", # Missing type annotation for cls
+    "ANN401", # Dynamically typed expressions (Any)
+    "S101",   # Use of assert
+    "S311",   # Random for non-cryptographic purposes
+]
+
+# McCabe complexity threshold (CLAUDE.md requirement)
+mccabe.max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Allow unused imports in __init__.py
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Line endings
+line-ending = "auto"
