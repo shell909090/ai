@@ -15,6 +15,9 @@ from pathlib import Path
 from comfy_api_simplified import ComfyApiWrapper, ComfyWorkflowWrapper
 from PIL import Image
 
+# Re-export ComfyApiWrapper for convenience
+__all__ = ["ComfyApiWrapper", "ComfyWorkflow"]
+
 
 class ComfyWorkflow(ComfyWorkflowWrapper):
     """

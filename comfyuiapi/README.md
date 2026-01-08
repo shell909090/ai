@@ -27,12 +27,14 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 
 ```
 .
-├── libs.py               # 公共库函数
+├── libs/                 # 公共库和workflow模块
+│   ├── __init__.py       # 模块导出
+│   ├── libs.py           # 公共库函数
+│   ├── zit.py            # z-image-turbo图片生成workflow
+│   ├── usdu.py           # Ultimate SD Upscale超分workflow
+│   ├── upscale.py        # 2倍模型超分workflow (RealESRGAN)
+│   └── outpaint.py       # 扩图workflow
 ├── wf.py                 # workflow入口脚本
-├── zit.py                # z-image-turbo图片生成workflow
-├── usdu.py               # Ultimate SD Upscale超分workflow
-├── upscale.py            # 2倍模型超分workflow (RealESRGAN)
-├── outpaint.py           # 扩图workflow
 ├── gen-images.py         # 批量生成脚本
 ├── Makefile              # 测试自动化
 ├── theme.txt             # 主题提示词
@@ -145,6 +147,9 @@ mac_retina,2880,1800
 
 # 禁用超分，直接生成目标分辨率（可能影响大分辨率图片质量）
 ./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode none
+
+# 保留中间文件（原图和放大图）用于调试或重复使用
+./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --keep-intermediates
 ```
 
 生成的文件命名规则：
@@ -166,6 +171,7 @@ mac_retina,2880,1800
   - `upscale`：锁定使用RealESRGAN 2倍超分
   - `usdu`：锁定使用Ultimate SD Upscale
   - `none`：禁用超分，直接生成目标分辨率
+- `--keep-intermediates`: 保留中间文件（原图和放大图），默认会自动清理
 
 ### 使用独立workflow
 
@@ -246,15 +252,21 @@ make clean
 
 **临界尺寸**：1.5M像素 (1.5×1024×1024)
 
+**分辨率桶**：为避免频繁切换GPU运算，所有生成分辨率会向上取整到64的倍数。例如：
+- 1555×1011, 1556×1010, 1559×1008 都会规约到 1600×1024
+- 这样可以将多个相近分辨率合并到同一个"分辨率桶"，减少重复计算
+
 **超分模式**：
 
 1. **auto（智能模式，默认）**：
    - 总像素 ≤ 1.5M：直接生成目标分辨率
-   - 总像素 > 1.5M：等比例缩放到1.5M，根据放大倍率选择超分方法
+   - 总像素 > 1.5M：等比例缩放到1.5M（并规约到分辨率桶），根据放大倍率选择超分方法
      - 放大倍率 ≤ 2：使用RealESRGAN_x2（2倍超分）
      - 放大倍率 > 2：使用Ultimate SD Upscale（可变倍率超分）
-   - 缩放算法：保持宽高比，width × height = 1.5M
-   - 示例：3840×2160 (8.3M) → 1536×864 (1.33M，factor=2.5) → 使用USDU放大2.5倍
+   - 缩放算法：保持宽高比，width × height = 1.5M，然后向上取整到64的倍数
+   - 放大倍率计算：factor = max(目标width/原图width, 目标height/原图height)
+   - 裁切算法：使用PIL ImageOps.fit，保持放大图长宽比，缩放至能覆盖目标尺寸的最小尺寸，居中裁切
+   - 示例：3840×2160 (8.3M) → 1536×896（桶化，1.38M） → factor=max(3840/1536, 2160/896)=2.5 → 使用USDU放大2.5倍 → 裁切到3840×2160
 
 2. **upscale（锁定RealESRGAN）**：
    - 所有超过1.5M的图片均使用RealESRGAN_x2进行2倍超分
@@ -269,10 +281,20 @@ make clean
    - 优点：生成速度快，无需超分处理
    - 缺点：大分辨率（>1.5M像素）可能出现图片扭曲、断肢等质量问题
 
+**超分缓存优化**：
+- 多个设备可能共享同一个放大图（当它们的原图和放大参数相同时）
+- 放大图以 `{序号}_{批次}_upscaled_{方法}_{宽}x{高}.png` 命名
+- 处理超分任务前先检查缓存，避免重复计算
+- 例如：phone和tablet都需要1536×896的基础图放大2倍，只需upscale一次
+
 **断点续传**：
-- 检查临时基础图片是否已存在
+- 检查临时基础图片和放大图是否已存在
 - 存在则跳过生成，直接使用现有文件
 - 支持中断后继续执行
+
+**中间文件清理**：
+- 默认自动清理所有中间文件（原图和放大图）
+- 使用 `--keep-intermediates` 保留中间文件用于调试或重复使用
 
 #### 关键特性
 
@@ -286,16 +308,17 @@ make clean
 ## 代码规范
 
 1. 使用logging模块处理所有日志输出
-2. 每个workflow独立为一个Python文件
-3. workflow JSON以字符串形式嵌入Python代码
+2. 每个workflow独立为一个Python文件，位于libs/目录下
+3. workflow JSON以字符串形式嵌入Python代码（WORKFLOW_STR常量）
 4. 提供函数接口供外部调用
-5. 公共逻辑放入libs.py
+5. 公共逻辑放入libs/libs.py
 6. 所有函数都包含完整的类型注解（Type Annotations）
 7. 所有公共函数都包含详细的docstring文档（参数、返回值、异常）
+8. 使用ruff进行静态检查，McCabe复杂度阈值为10
 
 ## API文档
 
-### libs.py 公共函数
+### libs/libs.py 公共函数
 
 **图片I/O**:
 - `read_img_from_byte(image_data: bytes) -> Image.Image`: 从字节数据读取图片
@@ -309,19 +332,19 @@ make clean
 
 ### Workflow模块函数
 
-**zit.py**:
+**libs/zit.py**:
 - `zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes`: 生成图片
 
-**upscale.py**:
+**libs/upscale.py**:
 - `upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes`: 2倍模型超分（RealESRGAN_x2）
 
-**usdu.py**:
+**libs/usdu.py**:
 - `usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes`: Ultimate SD Upscale超分
 
-**outpaint.py**:
+**libs/outpaint.py**:
 - `outpaint(api: ComfyApiWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes`: 图片扩展
 
-所有函数都包含完整的类型注解和docstring文档。
+所有函数都包含完整的类型注解和docstring文档。可通过 `from libs import zit, upscale, usdu, outpaint` 导入使用。
 
 ## 许可证
 

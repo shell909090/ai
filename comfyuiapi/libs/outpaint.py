@@ -6,6 +6,7 @@
 @license: BSD-3-clause
 """
 
+# ruff: noqa: E501
 import json
 import logging
 from os import path
