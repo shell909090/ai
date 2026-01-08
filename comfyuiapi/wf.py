@@ -43,6 +43,11 @@ def main() -> None:
     parser.add_argument("--right", type=int, default=0, help="右侧扩展像素 (默认: 0)")
     parser.add_argument("--bottom", type=int, default=0, help="底部扩展像素 (默认: 0)")
     parser.add_argument("--prompt", "-p", help="提示词")
+    parser.add_argument(
+        "--model-name",
+        "-m",
+        help="放大模型名称 (仅用于upscale, 例如: RealESRGAN_x2.pth, RealESRGAN_x4.pth, 4x-UltraSharp.pth)",
+    )
     parser.add_argument("rest", nargs="*", type=str)
     args = parser.parse_args()
 
@@ -64,7 +69,10 @@ def main() -> None:
     elif args.workflow == "upscale":
         from libs import upscale
 
-        image_data = upscale.upscale(api, args.input)
+        if args.model_name:
+            image_data = upscale.upscale(api, args.input, args.model_name)
+        else:
+            image_data = upscale.upscale(api, args.input)
         save_image(image_data, Path(args.output))
 
     elif args.workflow == "aurasr":

@@ -37,7 +37,7 @@ def get_devices_with_upscale_info(pixels_csv: str, upscale_mode: str = "auto") -
 
     Args:
         pixels_csv: CSV文件路径，需包含 device_id, width, height 列
-        upscale_mode: 超分模式 ("auto"/"upscale"/"usdu")
+        upscale_mode: 超分模式 ("auto"/"upscale2x"/"upscale4x"/"aurasr"/"usdu")
 
     Returns:
         设备信息列表，每个设备包含:
@@ -49,7 +49,7 @@ def get_devices_with_upscale_info(pixels_csv: str, upscale_mode: str = "auto") -
         - gen_width: 生成宽度（如果需要超分）
         - gen_height: 生成高度（如果需要超分）
         - factor: 放大倍率（如果需要超分）
-        - upscale_method: 超分方法 ("upscale"/"usdu"，如果需要超分）
+        - upscale_method: 超分方法 ("upscale2x"/"upscale4x"/"aurasr"/"usdu"，如果需要超分）
         - upscaled_width: 放大后宽度（如果需要超分）
         - upscaled_height: 放大后高度（如果需要超分）
     """
@@ -77,11 +77,16 @@ def get_devices_with_upscale_info(pixels_csv: str, upscale_mode: str = "auto") -
                 device_info["gen_height"] = gen_height
                 device_info["factor"] = factor
 
-                # 根据upscale_mode确定使用哪个超分方法
+                # 根据upscale_mode确定使用哪个超分方法（统一的method名称）
                 if upscale_mode == "auto":
-                    upscale_method = "upscale" if factor <= 2 else "usdu"
-                elif upscale_mode == "upscale":
-                    upscale_method = "upscale"
+                    # 智能模式：factor<=2使用upscale2x，factor>2使用aurasr
+                    upscale_method = "upscale2x" if factor <= 2 else "aurasr"
+                elif upscale_mode == "upscale2x":
+                    upscale_method = "upscale2x"
+                elif upscale_mode == "upscale4x":
+                    upscale_method = "upscale4x"
+                elif upscale_mode == "aurasr":
+                    upscale_method = "aurasr"
                 elif upscale_mode == "usdu":
                     upscale_method = "usdu"
                 else:
@@ -89,15 +94,25 @@ def get_devices_with_upscale_info(pixels_csv: str, upscale_mode: str = "auto") -
 
                 device_info["upscale_method"] = upscale_method
 
-                # 计算放大后的尺寸
-                if upscale_method == "upscale":
-                    # RealESRGAN_x2 固定放大2倍
+                # 计算放大后的尺寸（根据method名称推断放大倍数）
+                if upscale_method == "upscale2x":
+                    # upscale2x 固定放大2倍
                     device_info["upscaled_width"] = gen_width * 2
                     device_info["upscaled_height"] = gen_height * 2
-                else:
+                elif upscale_method == "upscale4x":
+                    # upscale4x 固定放大4倍
+                    device_info["upscaled_width"] = gen_width * 4
+                    device_info["upscaled_height"] = gen_height * 4
+                elif upscale_method == "aurasr":
+                    # aurasr 固定放大4倍
+                    device_info["upscaled_width"] = gen_width * 4
+                    device_info["upscaled_height"] = gen_height * 4
+                elif upscale_method == "usdu":
                     # USDU根据factor放大
                     device_info["upscaled_width"] = int(gen_width * factor)
                     device_info["upscaled_height"] = int(gen_height * factor)
+                else:
+                    raise ValueError(f"Unknown upscale method: {upscale_method}")
             else:
                 # 不需要超分，直接生成
                 device_info["gen_width"] = width
@@ -145,13 +160,25 @@ def print_devices_table(devices: list[dict]) -> None:
                 method = "none"
                 upscaled = "-"
 
-            print(f"{device['device_id']:<20} {target_size:<12} {pixels_m:<8} {gen_size:<12} {factor:<7} {method:<8} {upscaled:<12}")
+            print(
+                f"{device['device_id']:<20} {target_size:<12} {pixels_m:<8} "
+                f"{gen_size:<12} {factor:<7} {method:<8} {upscaled:<12}"
+            )
         print("-" * 120)
         return
 
     # Use prettytable if available
     table = PrettyTable()
-    table.field_names = ["Device ID", "Target Size", "Pixels", "Need Upscale", "Gen Size", "Factor", "Method", "Upscaled Size"]
+    table.field_names = [
+        "Device ID",
+        "Target Size",
+        "Pixels",
+        "Need Upscale",
+        "Gen Size",
+        "Factor",
+        "Method",
+        "Upscaled Size",
+    ]
     table.align["Device ID"] = "l"
     table.align["Target Size"] = "r"
     table.align["Pixels"] = "r"

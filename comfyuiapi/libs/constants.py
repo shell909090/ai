@@ -17,8 +17,10 @@ CRITICAL_SIZE = 1.5 * 1024 * 1024
 class UpscaleMode(Enum):
     """超分模式枚举"""
 
-    AUTO = "auto"  # 智能控制：根据factor自动选择upscale或usdu
-    UPSCALE = "upscale"  # 锁定使用upscale
+    AUTO = "auto"  # 智能控制：factor<=2使用upscale2x，factor>2使用aurasr4x
+    UPSCALE2X = "upscale2x"  # 锁定使用upscale + RealESRGAN_x2.pth
+    UPSCALE4X = "upscale4x"  # 锁定使用upscale + RealESRGAN_x4.pth
+    AURASR = "aurasr"  # 锁定使用aurasr (4x)
     USDU = "usdu"  # 锁定使用usdu
     NONE = "none"  # 禁用超分，直接生成目标图片
 

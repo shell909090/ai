@@ -50,15 +50,25 @@ def _create_upscale_task(
     Returns:
         超分任务字典
     """
-    # 计算放大后的目标尺寸（用于缓存文件名）
-    if upscale_method == "upscale":
-        # RealESRGAN_x2固定放大2倍
+    # 计算放大后的目标尺寸（根据method名称推断放大倍数）
+    if upscale_method == "upscale2x":
+        # upscale2x 固定放大2倍
         upscaled_width = gen_width * 2
         upscaled_height = gen_height * 2
-    else:
+    elif upscale_method == "upscale4x":
+        # upscale4x 固定放大4倍
+        upscaled_width = gen_width * 4
+        upscaled_height = gen_height * 4
+    elif upscale_method == "aurasr":
+        # aurasr 固定放大4倍
+        upscaled_width = gen_width * 4
+        upscaled_height = gen_height * 4
+    elif upscale_method == "usdu":
         # USDU根据factor放大
         upscaled_width = int(gen_width * factor)
         upscaled_height = int(gen_height * factor)
+    else:
+        raise ValueError(f"Unknown upscale method: {upscale_method}")
 
     return {
         "base_filepath": base_filepath,
@@ -140,10 +150,14 @@ def gen_image_for_device(
 
         # 根据upscale_mode决定使用哪个超分方法
         if upscale_mode == UpscaleMode.AUTO:
-            # 智能模式：factor <= 2 用 upscale，factor > 2 用 usdu
-            upscale_method = "upscale" if factor <= 2 else "usdu"
-        elif upscale_mode == UpscaleMode.UPSCALE:
-            upscale_method = "upscale"
+            # 智能模式：factor<=2使用upscale2x，factor>2使用aurasr
+            upscale_method = "upscale2x" if factor <= 2 else "aurasr"
+        elif upscale_mode == UpscaleMode.UPSCALE2X:
+            upscale_method = "upscale2x"
+        elif upscale_mode == UpscaleMode.UPSCALE4X:
+            upscale_method = "upscale4x"
+        elif upscale_mode == UpscaleMode.AURASR:
+            upscale_method = "aurasr"
         elif upscale_mode == UpscaleMode.USDU:
             upscale_method = "usdu"
 
@@ -277,9 +291,12 @@ def main() -> None:
     parser.add_argument("--jpg", "-j", action="store_true", help="将生成的PNG图片转换为JPG格式")
     parser.add_argument(
         "--upscale-mode",
-        choices=["auto", "upscale", "usdu", "none"],
+        choices=["auto", "upscale2x", "upscale4x", "aurasr", "usdu", "none"],
         default="auto",
-        help="超分模式: auto=智能选择(默认), upscale=锁定2倍RealESRGAN, usdu=锁定USDU, none=禁用超分",
+        help=(
+            "超分模式: auto=智能选择(默认，factor<=2用upscale2x，factor>2用aurasr), "
+            "upscale2x/upscale4x=锁定RealESRGAN 2x/4x, aurasr=锁定AuraSR(4x), usdu=锁定USDU, none=禁用超分"
+        ),
     )
     args = parser.parse_args()
 

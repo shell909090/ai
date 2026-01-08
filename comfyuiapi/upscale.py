@@ -15,6 +15,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
 
@@ -32,6 +33,9 @@ _device_spec.loader.exec_module(_device_module)
 
 from libs.constants import CRITICAL_SIZE, calculate_base_resolution
 from libs.device import get_all_devices, get_devices_with_upscale_info, print_devices_table
+
+if TYPE_CHECKING:
+    from comfy_api_simplified import ComfyApiWrapper
 
 
 def discover_base_images(output_dir: Path) -> list[tuple[Path, int, int, int, int]]:
@@ -83,7 +87,7 @@ def reconstruct_upscale_tasks(
         base_images: discover_base_images()返回的元组列表
         pixels_csv: 设备分辨率CSV文件路径（可选）
         convert_jpg: 是否转换为JPG格式
-        upscale_mode_str: 超分模式字符串 ("auto"/"upscale"/"usdu")
+        upscale_mode_str: 超分模式字符串 ("auto"/"upscale2x"/"upscale4x"/"aurasr"/"usdu")
 
     Returns:
         与process_all_upscale_tasks()兼容的任务字典列表
@@ -150,25 +154,40 @@ def reconstruct_upscale_tasks(
 
             base_filepath = base_image_map[base_key]
 
-            # 根据upscale_mode确定使用哪个超分方法
+            # 根据upscale_mode确定使用哪个超分方法（统一的method名称）
             if upscale_mode_str == "auto":
-                upscale_method = "upscale" if factor <= 2 else "usdu"
-            elif upscale_mode_str == "upscale":
-                upscale_method = "upscale"
+                # 智能模式：factor<=2使用upscale2x，factor>2使用aurasr
+                upscale_method = "upscale2x" if factor <= 2 else "aurasr"
+            elif upscale_mode_str == "upscale2x":
+                upscale_method = "upscale2x"
+            elif upscale_mode_str == "upscale4x":
+                upscale_method = "upscale4x"
+            elif upscale_mode_str == "aurasr":
+                upscale_method = "aurasr"
             elif upscale_mode_str == "usdu":
                 upscale_method = "usdu"
             else:
                 raise ValueError(f"Unknown upscale mode: {upscale_mode_str}")
 
-            # 计算放大后的尺寸
-            if upscale_method == "upscale":
-                # RealESRGAN_x2 固定放大2倍
+            # 计算放大后的尺寸（根据method名称推断放大倍数）
+            if upscale_method == "upscale2x":
+                # upscale2x 固定放大2倍
                 upscaled_width = gen_width * 2
                 upscaled_height = gen_height * 2
-            else:
+            elif upscale_method == "upscale4x":
+                # upscale4x 固定放大4倍
+                upscaled_width = gen_width * 4
+                upscaled_height = gen_height * 4
+            elif upscale_method == "aurasr":
+                # aurasr 固定放大4倍
+                upscaled_width = gen_width * 4
+                upscaled_height = gen_height * 4
+            elif upscale_method == "usdu":
                 # USDU根据factor放大
                 upscaled_width = int(gen_width * factor)
                 upscaled_height = int(gen_height * factor)
+            else:
+                raise ValueError(f"Unknown upscale method: {upscale_method}")
 
             # 创建任务字典
             task = {
@@ -206,7 +225,7 @@ def process_upscale_task(api: ComfyApiWrapper, task: dict, upscale_cache: dict) 
     Returns:
         缓存的放大图文件路径
     """
-    from libs import upscale, usdu
+    from libs import aurasr, upscale, usdu
     from libs.image import save_image
 
     base_filepath = task["base_filepath"]
@@ -233,9 +252,19 @@ def process_upscale_task(api: ComfyApiWrapper, task: dict, upscale_cache: dict) 
     # 未缓存，需要执行超分
     logging.info(f"Upscaling {base_filepath} using {upscale_method}")
 
-    if upscale_method == "upscale":
+    # 从method名称推断workflow类型和模型
+    if upscale_method == "aurasr":
+        # aurasr 固定4倍放大
+        logging.info("AuraSR upscale (4x)")
+        upscaled_data = aurasr.aurasr(api, str(base_filepath))
+    elif upscale_method == "upscale2x":
         # 使用RealESRGAN_x2进行2倍放大
-        upscaled_data = upscale.upscale(api, str(base_filepath))
+        logging.info("RealESRGAN upscale 2x")
+        upscaled_data = upscale.upscale(api, str(base_filepath), "RealESRGAN_x2.pth")
+    elif upscale_method == "upscale4x":
+        # 使用RealESRGAN_x4进行4倍放大
+        logging.info("RealESRGAN upscale 4x")
+        upscaled_data = upscale.upscale(api, str(base_filepath), "RealESRGAN_x4.pth")
     elif upscale_method == "usdu":
         # 使用USDU进行超分
         logging.info(f"USDU upscale factor: {factor:.2f}")
@@ -305,20 +334,38 @@ def process_all_upscale_tasks(api: ComfyApiWrapper, all_upscale_tasks: list[dict
     # 缓存字典：记录已经生成的upscaled图片
     upscale_cache = {}
 
-    # 按超分方法分组
-    upscale_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "upscale"]
+    # 按超分方法分组（按workflow类型分组以避免频繁切换模型）
+    upscale2x_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "upscale2x"]
+    upscale4x_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "upscale4x"]
+    aurasr_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "aurasr"]
     usdu_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "usdu"]
 
-    # Phase 2: 先处理所有upscale任务（生成放大图）
+    # Phase 2: 先处理所有upscale2x任务
     task_to_upscaled = {}  # 记录每个任务对应的放大图路径
-    if upscale_tasks:
-        logging.info(f"Processing {len(upscale_tasks)} RealESRGAN upscale tasks")
-        for i, task in enumerate(upscale_tasks, 1):
-            logging.info(f"RealESRGAN task {i}/{len(upscale_tasks)}")
+    if upscale2x_tasks:
+        logging.info(f"Processing {len(upscale2x_tasks)} upscale2x tasks")
+        for i, task in enumerate(upscale2x_tasks, 1):
+            logging.info(f"upscale2x task {i}/{len(upscale2x_tasks)}")
             upscaled_filepath = process_upscale_task(api, task, upscale_cache)
             task_to_upscaled[id(task)] = upscaled_filepath
 
-    # Phase 3: 再处理所有usdu任务（生成放大图）
+    # Phase 2b: 处理所有upscale4x任务
+    if upscale4x_tasks:
+        logging.info(f"Processing {len(upscale4x_tasks)} upscale4x tasks")
+        for i, task in enumerate(upscale4x_tasks, 1):
+            logging.info(f"upscale4x task {i}/{len(upscale4x_tasks)}")
+            upscaled_filepath = process_upscale_task(api, task, upscale_cache)
+            task_to_upscaled[id(task)] = upscaled_filepath
+
+    # Phase 2c: 处理所有aurasr任务
+    if aurasr_tasks:
+        logging.info(f"Processing {len(aurasr_tasks)} AuraSR upscale tasks")
+        for i, task in enumerate(aurasr_tasks, 1):
+            logging.info(f"AuraSR task {i}/{len(aurasr_tasks)}")
+            upscaled_filepath = process_upscale_task(api, task, upscale_cache)
+            task_to_upscaled[id(task)] = upscaled_filepath
+
+    # Phase 3: 处理所有usdu任务
     if usdu_tasks:
         logging.info(f"Processing {len(usdu_tasks)} USDU upscale tasks")
         for i, task in enumerate(usdu_tasks, 1):
@@ -389,9 +436,12 @@ def main() -> None:
     parser.add_argument("--jpg", "-j", action="store_true", help="转换为JPG格式")
     parser.add_argument(
         "--upscale-mode",
-        choices=["auto", "upscale", "usdu"],
+        choices=["auto", "upscale2x", "upscale4x", "aurasr", "usdu"],
         default="auto",
-        help="超分模式: auto=智能选择(默认), upscale=锁定RealESRGAN, usdu=锁定USDU",
+        help=(
+            "超分模式: auto=智能选择(默认，factor<=2用upscale2x，factor>2用aurasr), "
+            "upscale2x/upscale4x=锁定RealESRGAN 2x/4x, aurasr=锁定AuraSR(4x), usdu=锁定USDU"
+        ),
     )
     parser.add_argument(
         "--keep-intermediates",

@@ -93,11 +93,14 @@ mac_retina,2880,1800
 - **SDXL Checkpoint**: `sd_xl_base_1.0.safetensors`
 - **ControlNet**: `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors`
 
-#### 2倍模型超分 (libs/upscale.py)
-- **Upscale Model**: `RealESRGAN_x2.pth`
+#### 模型超分 (libs/upscale.py)
+- **Upscale Model**: `RealESRGAN_x2.pth` (2倍放大)
+- **Upscale Model**: `RealESRGAN_x4.pth` (4倍放大)
+- **Upscale Model**: `4x-UltraSharp.pth` (4倍放大)
 
-#### 4倍模型超分 (libs/aurasr.py)
-- **Upscale Model**: `Aura-SR/model.safetensors`
+#### AuraSR超分 (libs/aurasr.py)
+- **Upscale Model**: `Aura-SR/model.safetensors` (4倍放大)
+- **GAN Model**: `4x-UltraSharp.pth`
 
 #### 图片扩展 (outpaint.py)
 - **SDXL Inpainting**: `sd_xl_base_1.0_inpainting_0.1.safetensors`
@@ -111,10 +114,12 @@ mac_retina,2880,1800
 - `z_image_turbo_bf16_nsfw_v2.safetensors` - Z-Image Turbo扩散模型
   - [HuggingFace下载 (标准bf16版本)](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors)
   - [HuggingFace下载](https://huggingface.co/tewea/z_image_turbo_bf16_nsfw/blob/main/z_image_turbo_bf16_nsfw_v2.safetensors)
-- `4x-UltraSharp.pth` - 4倍超分辨率模型 (用于usdu.py)
+- `4x-UltraSharp.pth` - 4倍超分辨率模型 (用于usdu.py和aurasr.py)
   - [HuggingFace下载](https://huggingface.co/Kim2091/UltraSharp/blob/main/4x-UltraSharp.pth)
 - `RealESRGAN_x2.pth` - 2倍超分辨率模型 (用于upscale.py)
   - [HuggingFace下载](https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pth)
+- `RealESRGAN_x4.pth` - 4倍超分辨率模型 (用于upscale.py)
+  - [HuggingFace下载](https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x4.pth)
 - `sd_xl_base_1.0.safetensors` - SDXL基础模型
   - [HuggingFace下载](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/sd_xl_base_1.0.safetensors)
 - `sd_xl_base_1.0_inpainting_0.1.safetensors` - SDXL修复模型
@@ -160,8 +165,10 @@ mac_retina,2880,1800
 - `-b/--batches`: 每个变奏生成的批次数（默认1）
 - `-j/--jpg`: 将PNG转换为JPG格式（仅对直接生成的最终图片有效）
 - `--upscale-mode`: 超分模式，可选值：
-  - `auto`（默认）：智能选择，放大倍率≤2用RealESRGAN，>2用USDU
-  - `upscale`：锁定使用RealESRGAN 2倍超分
+  - `auto`（默认）：智能选择，factor≤2用upscale2x，factor>2用aurasr
+  - `upscale2x`：锁定使用upscale + RealESRGAN_x2.pth (2倍放大)
+  - `upscale4x`：锁定使用upscale + RealESRGAN_x4.pth (4倍放大)
+  - `aurasr`：锁定使用AuraSR (4倍放大)
   - `usdu`：锁定使用Ultimate SD Upscale
   - `none`：禁用超分，直接生成目标分辨率
 
@@ -184,8 +191,10 @@ mac_retina,2880,1800
 ./upscale.py -u $API -o output/ -p pixels.csv --keep-intermediates
 
 # 强制使用特定超分方法
-./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode upscale  # 锁定RealESRGAN
-./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode usdu     # 锁定USDU
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode aurasr     # 锁定AuraSR (4x)
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode upscale2x  # 锁定RealESRGAN 2x
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode upscale4x  # 锁定RealESRGAN 4x
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode usdu       # 锁定USDU
 ```
 
 **upscale.py 命令行参数**：
@@ -193,7 +202,7 @@ mac_retina,2880,1800
 - `-o/--output-dir`: 输出目录（包含base images，必需）
 - `-p/--pixels-csv`: 设备分辨率CSV文件（必需，用于确定目标分辨率）
 - `-j/--jpg`: 将最终PNG转换为JPG格式
-- `--upscale-mode`: 超分模式（auto/upscale/usdu，默认auto）
+- `--upscale-mode`: 超分模式（auto/upscale2x/upscale4x/aurasr/usdu，默认auto）
 - `--keep-intermediates`: 保留中间文件（原图和放大图），默认会自动清理
 
 **输出文件**：
@@ -230,10 +239,11 @@ ls output/*.png | grep -v base | grep -v upscaled
 # 超分（Ultimate SD Upscale）
 ./wf.py --workflow usdu --input input.png --output output.png --upscale-by 2.0
 
-# 模型超分（2倍，RealESRGAN）
-./wf.py --workflow upscale --input input.png --output output.png
+# 模型超分（RealESRGAN，支持指定模型）
+./wf.py --workflow upscale --input input.png --output output.png  # 默认使用RealESRGAN_x2.pth
+./wf.py --workflow upscale --input input.png --output output.png -m RealESRGAN_x4.pth  # 使用4x模型
 
-# 模型超分（4倍，AuraSR）
+# 模型超分（AuraSR，4倍放大）
 ./wf.py --workflow aurasr --input input.png --output output.png
 
 # 扩图
@@ -253,8 +263,8 @@ make test
 
 # 运行单个workflow测试
 make test-zit         # 测试图片生成
-make test-upscale     # 测试2倍超分 (RealESRGAN)
-make test-aurasr      # 测试4倍超分 (AuraSR)
+make test-upscale     # 测试RealESRGAN超分 (2倍)
+make test-aurasr      # 测试AuraSR超分 (4倍)
 make test-usdu        # 测试Ultimate SD Upscale
 make test-outpaint    # 测试扩图
 make test-gen-images  # 测试批量生成
@@ -266,12 +276,12 @@ make clean
 测试结果保存在 `test_output/` 目录。
 
 **测试设备配置** (`test_pixels.csv`)：
-- `phone` (1080×1920)：竖屏，2.07M像素，需要upscale超分
-- `tablet` (1536×2048)：竖屏，3.15M像素，factor≈1.45，使用upscale超分
-- `desktop` (1920×1080)：横屏，2.07M像素，factor≈1.18，使用upscale超分
-- `4k` (3840×2160)：横屏，8.29M像素，factor≈2.35，**使用usdu超分**
+- `phone` (1080×1920)：竖屏，2.07M像素，factor≈1.40，使用upscale2x超分
+- `tablet` (1536×2048)：竖屏，3.15M像素，factor≈1.45，使用upscale2x超分
+- `desktop` (1920×1080)：横屏，2.07M像素，factor≈1.18，使用upscale2x超分
+- `4k` (3840×2160)：横屏，8.29M像素，factor≈2.35，**使用aurasr超分**
 
-4K设备与desktop成2倍关系，专门用于测试usdu超分流程。
+4K设备与desktop成2倍关系，专门用于测试aurasr超分流程（factor>2）。
 
 ## 核心逻辑
 
@@ -296,10 +306,12 @@ make clean
 
 1. **发现base images**：扫描输出目录中的 `*_base_*.png` 文件
 2. **重建任务列表**：根据base images和目标分辨率构建超分任务
-3. **Phase 2 - upscale超分**：批量处理所有RealESRGAN任务（factor≤2）
-4. **Phase 3 - USDU超分**：批量处理所有USDU任务（factor>2）
-5. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将放大图裁切到目标尺寸
-6. **清理**：删除中间文件（除非使用--keep-intermediates）
+3. **Phase 2 - upscale2x超分**：批量处理所有upscale2x任务（auto模式，factor≤2）
+4. **Phase 2b - upscale4x超分**：批量处理upscale4x任务（如果使用--upscale-mode upscale4x）
+5. **Phase 2c - AuraSR超分**：批量处理AuraSR任务（auto模式，factor>2或--upscale-mode aurasr）
+6. **Phase 3 - USDU超分**：批量处理USDU任务（如果使用--upscale-mode usdu）
+7. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将放大图裁切到目标尺寸
+8. **清理**：删除中间文件（除非使用--keep-intermediates）
 
 两步分离的优势：
 - 可以在超分前检查base images，删除不满意的图片
@@ -318,23 +330,31 @@ make clean
 
 1. **auto（智能模式，默认）**：
    - 总像素 ≤ 1.5M：直接生成目标分辨率
-   - 总像素 > 1.5M：等比例缩放到1.5M（并规约到分辨率桶），根据放大倍率选择超分方法
-     - 放大倍率 ≤ 2：使用RealESRGAN_x2（2倍超分）
-     - 放大倍率 > 2：使用Ultimate SD Upscale（可变倍率超分）
+   - 总像素 > 1.5M：等比例缩放到1.5M（并规约到分辨率桶），根据放大倍率智能选择超分方法
+     - 放大倍率 ≤ 2：使用upscale2x（纯GAN，2倍超分）
+     - 放大倍率 > 2：使用aurasr（GAN+图像空间重绘，4倍超分）
    - 缩放算法：保持宽高比，width × height = 1.5M，然后向上取整到64的倍数
    - 放大倍率计算：factor = max(目标width/原图width, 目标height/原图height)
    - 裁切算法：使用PIL ImageOps.fit，保持放大图长宽比，缩放至能覆盖目标尺寸的最小尺寸，居中裁切
-   - 示例：3840×2160 (8.3M) → 1536×896（桶化，1.38M） → factor=max(3840/1536, 2160/896)=2.5 → 使用USDU放大2.5倍 → 裁切到3840×2160
+   - 示例：3840×2160 (8.3M) → 1536×896（桶化，1.38M） → factor=max(3840/1536, 2160/896)=2.5 → 使用aurasr放大4倍 → 裁切到3840×2160
 
-2. **upscale（锁定RealESRGAN）**：
-   - 所有超过1.5M的图片均使用RealESRGAN_x2进行2倍超分
-   - 适合放大倍率较小的场景
+2. **upscale2x（锁定RealESRGAN 2x）**：
+   - 所有超过1.5M的图片均使用upscale + RealESRGAN_x2.pth（纯GAN，2倍超分）
+   - 速度最快，适合放大倍率≤2的场景
 
-3. **usdu（锁定USDU）**：
-   - 所有超过1.5M的图片均使用Ultimate SD Upscale
-   - 适合需要高质量重绘的大倍率放大
+3. **upscale4x（锁定RealESRGAN 4x）**：
+   - 所有超过1.5M的图片均使用upscale + RealESRGAN_x4.pth（纯GAN，4倍超分）
+   - 速度快，适合放大倍率≤4的场景
 
-4. **none（禁用超分）**：
+4. **aurasr（锁定AuraSR）**：
+   - 所有超过1.5M的图片均使用aurasr（4倍超分，带图像空间重绘）
+   - 速度快，效果好，推荐用于factor>2的场景
+
+5. **usdu（锁定USDU）**：
+   - 所有超过1.5M的图片均使用Ultimate SD Upscale（GAN+SD重绘）
+   - 速度较慢，但支持可变倍率，适合需要高质量重绘的大倍率放大
+
+6. **none（禁用超分）**：
    - 直接使用目标分辨率生成图片
    - 优点：生成速度快，无需超分处理
    - 缺点：大分辨率（>1.5M像素）可能出现图片扭曲、断肢等质量问题
@@ -391,10 +411,10 @@ make clean
 - `zit(api: ComfyApiWrapper, prompt: str, seed: int, width: int = 1024, height: int = 1024) -> bytes`: 生成图片
 
 **libs/upscale.py**:
-- `upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes`: 2倍模型超分（RealESRGAN_x2）
+- `upscale(api: ComfyApiWrapper, image_filepath: str, model_name: str = "RealESRGAN_x2.pth") -> bytes`: 模型超分（支持RealESRGAN_x2/x4, 4x-UltraSharp）
 
 **libs/aurasr.py**:
-- `aurasr(api: ComfyApiWrapper, image_filepath: str, model_name: str = "4x-UltraSharp.pth") -> bytes`: 4倍模型超分（AuraSR）
+- `aurasr(api: ComfyApiWrapper, image_filepath: str) -> bytes`: AuraSR超分（4倍）
 
 **libs/usdu.py**:
 - `usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes`: Ultimate SD Upscale超分

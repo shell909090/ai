@@ -16,7 +16,7 @@ WORKFLOW_STR = """
 {
   "1": {
     "inputs": {
-      "image": ""
+      "image": "013_00_base_1728x960.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -33,7 +33,7 @@ WORKFLOW_STR = """
       "offload_to_cpu": false,
       "Purge Cache": null,
       "image": [
-        "6",
+        "1",
         0
       ]
     },
@@ -53,49 +53,23 @@ WORKFLOW_STR = """
     "_meta": {
       "title": "预览图像"
     }
-  },
-  "5": {
-    "inputs": {
-      "model_name": "4x-UltraSharp.pth"
-    },
-    "class_type": "UpscaleModelLoader",
-    "_meta": {
-      "title": "加载放大模型"
-    }
-  },
-  "6": {
-    "inputs": {
-      "upscale_model": [
-        "5",
-        0
-      ],
-      "image": [
-        "1",
-        0
-      ]
-    },
-    "class_type": "ImageUpscaleWithModel",
-    "_meta": {
-      "title": "使用模型放大图像"
-    }
   }
 }
 """
 
 
-def aurasr(api: ComfyApiWrapper, image_filepath: str, model_name: str ="4x-UltraSharp.pth") -> bytes:
+def aurasr(api: ComfyApiWrapper, image_filepath: str) -> bytes:
     """
-    使用模型进行图片超分
+    使用AuraSR进行图片超分
 
-    该方法使用纯模型超分，不进行重绘，直接放大2倍。适用于快速放大图片。
+    该方法使用GAN超分后接图像空间重绘，速度快效果好，固定放大4倍。
 
     Args:
         api: ComfyUI API wrapper实例
         image_filepath: 输入图片文件路径
-        model_name: 可选RealESRGAN_x2.pth, RealESRGAN_x4.pth, 4x-UltraSharp.pth三种。
 
     Returns:
-        超分后的图片字节数据（PNG格式），分辨率为原图的2倍
+        超分后的图片字节数据（PNG格式），分辨率为原图的4倍
 
     Raises:
         AssertionError: 如果返回的图片数量不是1张
@@ -108,7 +82,6 @@ def aurasr(api: ComfyApiWrapper, image_filepath: str, model_name: str ="4x-Ultra
     logging.debug(f"Server side filepath: {server_filepath}")
 
     wf.set_node_param("加载图像", "image", server_filepath)
-    wf.set_node_param("加载放大模型", "model_name", model_name)
 
     results = api.queue_and_wait_images(wf, "预览图像")
     assert len(results) == 1, f"Expected 1 image, got {len(results)}"
