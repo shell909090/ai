@@ -321,14 +321,11 @@ make clean
 ### libs/libs.py 公共函数
 
 **图片I/O**:
-- `read_img_from_byte(image_data: bytes) -> Image.Image`: 从字节数据读取图片
 - `save_image(image_data: bytes, output_filepath: Path) -> None`: 保存图片为PNG
-- `resize_image(input_filepath: Path, output_filepath: Path, target_width: int, target_height: int) -> None`: 调整图片尺寸
 - `convert_to_jpg(png_filepath: Path, quality: int = 95) -> None`: PNG转JPG
 
 **设备分辨率**:
 - `get_all_devices(pixels_csv: str) -> list[dict]`: 读取设备列表
-- `calculate_generation_size(device_width: int, device_height: int, target_area: int = 1024 * 1024) -> tuple[int, int]`: 计算生成尺寸（保留供其他用途）
 
 ### Workflow模块函数
 

@@ -13,10 +13,6 @@ from os import path
 
 from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
-# sd_xl_base_1.0_inpainting_0.1.safetensors
-# SDXL/sdxl_vae.safetensors
-
-
 WORKFLOW_STR = """
 {
   "3": {

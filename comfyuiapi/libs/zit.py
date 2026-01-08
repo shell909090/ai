@@ -10,11 +10,6 @@ import json
 
 from libs.libs import ComfyApiWrapper, ComfyWorkflow
 
-# qwen_3_4b.safetensors
-# ae.safetensors
-# z_image_turbo_bf16_nsfw_v2.safetensors
-
-
 WORKFLOW_STR = """
 {
   "39": {
