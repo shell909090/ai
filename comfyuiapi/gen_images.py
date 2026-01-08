@@ -8,40 +8,14 @@
 
 import argparse
 import logging
-import math
 import os
 import random
 import sys
-from enum import Enum
 from pathlib import Path
 
 from comfy_api_simplified import ComfyApiWrapper
-from PIL import Image, ImageOps
 
-from libs import convert_to_jpg, get_all_devices, save_image, upscale, usdu, zit
-
-
-class UpscaleMode(Enum):
-    """超分模式枚举"""
-
-    AUTO = "auto"  # 智能控制：根据factor自动选择upscale或usdu
-    UPSCALE = "upscale"  # 锁定使用upscale
-    USDU = "usdu"  # 锁定使用usdu
-    NONE = "none"  # 禁用超分，直接生成目标图片
-
-
-def round_to_bucket(value: int, bucket_size: int = 64) -> int:
-    """
-    将分辨率向上取整到最近的桶大小
-
-    Args:
-        value: 原始分辨率值
-        bucket_size: 桶大小，默认64
-
-    Returns:
-        向上取整后的分辨率值
-    """
-    return ((value + bucket_size - 1) // bucket_size) * bucket_size
+from libs import CRITICAL_SIZE, UpscaleMode, calculate_base_resolution, convert_to_jpg, get_all_devices, save_image, zit
 
 
 def _create_upscale_task(
@@ -150,8 +124,6 @@ def gen_image_for_device(
         logging.info(f"Skipping {output_filepath.name}: file already exists")
         return None
 
-    # 临界尺寸：1.5 * 1024 * 1024
-    CRITICAL_SIZE = 1.5 * 1024 * 1024  # noqa: N806
     total_pixels = target_width * target_height
     need_upscale = False
     upscale_method = None
@@ -163,17 +135,8 @@ def gen_image_for_device(
     if upscale_mode != UpscaleMode.NONE and total_pixels > CRITICAL_SIZE:
         need_upscale = True
 
-        # 等比例缩放到临界尺寸：width * height = CRITICAL_SIZE
-        aspect_ratio = target_width / target_height
-        gen_width = int(math.sqrt(CRITICAL_SIZE * aspect_ratio))
-        gen_height = int(math.sqrt(CRITICAL_SIZE / aspect_ratio))
-
-        # 分辨率桶：向上取整到64的倍数
-        gen_width = round_to_bucket(gen_width)
-        gen_height = round_to_bucket(gen_height)
-
-        # 计算放大倍率：取宽度和高度放大比例的最大值
-        factor = max(target_width / gen_width, target_height / gen_height)
+        # 计算基础图片分辨率和放大倍率
+        gen_width, gen_height, factor = calculate_base_resolution(target_width, target_height)
 
         # 根据upscale_mode决定使用哪个超分方法
         if upscale_mode == UpscaleMode.AUTO:
@@ -235,94 +198,6 @@ def gen_image_for_device(
     return None
 
 
-def process_upscale_task(api: ComfyApiWrapper, task: dict, upscale_cache: dict) -> Path:
-    """
-    处理单个超分任务，使用缓存避免重复计算
-
-    Args:
-        api: ComfyUI API wrapper
-        task: 超分任务字典
-        upscale_cache: 缓存字典，key为缓存文件路径，value为已完成标记
-
-    Returns:
-        缓存的放大图文件路径
-    """
-    base_filepath = task["base_filepath"]
-    upscale_method = task["upscale_method"]
-    counter = task["counter"]
-    batch = task["batch"]
-    factor = task["factor"]
-    upscaled_width = task["upscaled_width"]
-    upscaled_height = task["upscaled_height"]
-
-    # 生成缓存文件名
-    output_dir = base_filepath.parent
-    upscaled_filepath = (
-        output_dir / f"{counter:03d}_{batch:02d}_upscaled_{upscale_method}_{upscaled_width}x{upscaled_height}.png"
-    )
-
-    # 检查缓存：如果已经存在，直接返回
-    if upscaled_filepath in upscale_cache or upscaled_filepath.exists():
-        if upscaled_filepath not in upscale_cache:
-            logging.info(f"Using cached upscaled image: {upscaled_filepath}")
-            upscale_cache[upscaled_filepath] = True
-        return upscaled_filepath
-
-    # 未缓存，需要执行超分
-    logging.info(f"Upscaling {base_filepath} using {upscale_method}")
-
-    if upscale_method == "upscale":
-        # 使用RealESRGAN_x2进行2倍放大
-        upscaled_data = upscale.upscale(api, str(base_filepath))
-    elif upscale_method == "usdu":
-        # 使用USDU进行超分
-        logging.info(f"USDU upscale factor: {factor:.2f}")
-        upscaled_data = usdu.usdu(api, str(base_filepath), factor)
-    else:
-        raise ValueError(f"Unknown upscale method: {upscale_method}")
-
-    # 保存到缓存
-    save_image(upscaled_data, upscaled_filepath)
-    logging.info(f"Saved upscaled image to {upscaled_filepath}")
-    upscale_cache[upscaled_filepath] = True
-
-    return upscaled_filepath
-
-
-def process_crop_task(task: dict, upscaled_filepath: Path) -> None:
-    """
-    处理裁切任务：将放大图裁切到目标尺寸
-
-    Args:
-        task: 超分任务字典
-        upscaled_filepath: 放大图文件路径
-    """
-    target_filepath = task["target_filepath"]
-    target_width = task["target_width"]
-    target_height = task["target_height"]
-    convert_jpg = task["convert_jpg"]
-
-    # 读取放大后的图片
-    img = Image.open(upscaled_filepath)
-    actual_width, actual_height = img.size
-    logging.info(f"Cropping from {actual_width}x{actual_height} to {target_width}x{target_height}")
-
-    # Phase 4: 使用 ImageOps.fit 裁切/适应到目标尺寸
-    # 保持放大图长宽比，缩放至能覆盖目标尺寸的最小尺寸，然后居中裁切
-    if actual_width != target_width or actual_height != target_height:
-        logging.info(f"Fitting from {actual_width}x{actual_height} to {target_width}x{target_height}")
-        img = ImageOps.fit(img, (target_width, target_height), Image.LANCZOS, centering=(0.5, 0.5))
-
-    # 保存最终图片
-    img.save(target_filepath, "PNG")
-    logging.info(f"Saved to {target_filepath}")
-
-    # 如果需要转换为JPG
-    if convert_jpg:
-        logging.info(f"Converting {target_filepath} to JPG")
-        convert_to_jpg(target_filepath)
-
-
 def gen_images_for_variation(
     api: ComfyApiWrapper,
     output_dir: Path,
@@ -375,93 +250,15 @@ def gen_images_for_variation(
     return upscale_tasks
 
 
-def process_all_upscale_tasks(api: ComfyApiWrapper, all_upscale_tasks: list[dict], keep_intermediates: bool) -> None:
-    """
-    统一处理所有超分任务，按方法分组以避免频繁切换模型，使用缓存避免重复计算
-
-    Args:
-        api: ComfyUI API wrapper
-        all_upscale_tasks: 所有超分任务列表
-        keep_intermediates: 是否保留中间文件（原图和放大图）
-    """
-    if not all_upscale_tasks:
-        return
-
-    logging.info(f"All base images generated. Processing {len(all_upscale_tasks)} upscale tasks")
-
-    # 缓存字典：记录已经生成的upscaled图片
-    upscale_cache = {}
-
-    # 按超分方法分组
-    upscale_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "upscale"]
-    usdu_tasks = [task for task in all_upscale_tasks if task["upscale_method"] == "usdu"]
-
-    # Phase 1: 先处理所有upscale任务（生成放大图）
-    task_to_upscaled = {}  # 记录每个任务对应的放大图路径
-    if upscale_tasks:
-        logging.info(f"Processing {len(upscale_tasks)} RealESRGAN upscale tasks")
-        for i, task in enumerate(upscale_tasks, 1):
-            logging.info(f"RealESRGAN task {i}/{len(upscale_tasks)}")
-            upscaled_filepath = process_upscale_task(api, task, upscale_cache)
-            task_to_upscaled[id(task)] = upscaled_filepath
-
-    # Phase 2: 再处理所有usdu任务（生成放大图）
-    if usdu_tasks:
-        logging.info(f"Processing {len(usdu_tasks)} USDU upscale tasks")
-        for i, task in enumerate(usdu_tasks, 1):
-            logging.info(f"USDU task {i}/{len(usdu_tasks)}")
-            upscaled_filepath = process_upscale_task(api, task, upscale_cache)
-            task_to_upscaled[id(task)] = upscaled_filepath
-
-    # Phase 3: 处理所有裁切任务（将放大图裁切到目标尺寸）
-    logging.info(f"Processing {len(all_upscale_tasks)} crop tasks")
-    for i, task in enumerate(all_upscale_tasks, 1):
-        upscaled_filepath = task_to_upscaled[id(task)]
-        logging.info(f"Crop task {i}/{len(all_upscale_tasks)}")
-        process_crop_task(task, upscaled_filepath)
-
-    # Phase 4: 清理中间文件（如果需要）
-    _cleanup_intermediate_files(all_upscale_tasks, upscale_cache, keep_intermediates)
-
-
-def _cleanup_intermediate_files(all_upscale_tasks: list[dict], upscale_cache: dict, keep_intermediates: bool) -> None:
-    """
-    清理中间文件（原图和放大图）
-
-    Args:
-        all_upscale_tasks: 所有超分任务列表
-        upscale_cache: 缓存字典
-        keep_intermediates: 是否保留中间文件
-    """
-    if not keep_intermediates:
-        # 收集所有唯一的基础图片和放大图文件路径
-        base_files = set()
-        upscaled_files = set()
-        for task in all_upscale_tasks:
-            base_files.add(task["base_filepath"])
-        for upscaled_filepath in upscale_cache:
-            upscaled_files.add(upscaled_filepath)
-
-        # 删除所有临时基础图片文件
-        logging.info(f"Cleaning up {len(base_files)} base images and {len(upscaled_files)} upscaled images")
-        for base_filepath in base_files:
-            if base_filepath.exists():
-                os.unlink(base_filepath)
-                logging.debug(f"Deleted base image {base_filepath}")
-        for upscaled_filepath in upscaled_files:
-            if upscaled_filepath.exists():
-                os.unlink(upscaled_filepath)
-                logging.debug(f"Deleted upscaled image {upscaled_filepath}")
-    else:
-        logging.info("Keeping intermediate files (base images and upscaled images)")
-
-
 def main() -> None:
     """
-    批量生成图片主函数
+    批量生成图片主函数 (Phase 1: Generation)
 
     从命令行参数读取配置，为每个变奏生成多个批次的图片。
     支持设备模式和默认模式。
+
+    对于分辨率超过临界尺寸的图片，生成base images供upscale.py处理。
+    对于分辨率未超过临界尺寸的图片，直接生成最终图片。
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -483,11 +280,6 @@ def main() -> None:
         choices=["auto", "upscale", "usdu", "none"],
         default="auto",
         help="超分模式: auto=智能选择(默认), upscale=锁定2倍RealESRGAN, usdu=锁定USDU, none=禁用超分",
-    )
-    parser.add_argument(
-        "--keep-intermediates",
-        action="store_true",
-        help="保留中间文件（原图和放大图），不自动清理",
     )
     args = parser.parse_args()
 
@@ -523,9 +315,6 @@ def main() -> None:
     # 初始化ComfyUI API
     api = ComfyApiWrapper(args.url)
 
-    # 收集所有超分任务
-    all_upscale_tasks = []
-
     # 解析超分模式
     upscale_mode = UpscaleMode(args.upscale_mode)
     logging.info(f"Upscale mode: {upscale_mode.value}")
@@ -541,16 +330,14 @@ def main() -> None:
             prompt = f"{theme}\n{v}"
             logging.info(f"Processing counter {counter}")
 
-            # 为该变奏生成所有批次的基础图片
-            tasks = gen_images_for_variation(
+            # 为该变奏生成所有批次的基础图片或最终图片
+            gen_images_for_variation(
                 api, output_dir, counter, prompt, devices, args.batches, args.jpg, upscale_mode
             )
-            all_upscale_tasks.extend(tasks)
 
             counter += 1
 
-    # 统一处理所有超分任务
-    process_all_upscale_tasks(api, all_upscale_tasks, args.keep_intermediates)
+    logging.info("All images generated. Use upscale.py to process base images if needed.")
 
 
 if __name__ == "__main__":

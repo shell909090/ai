@@ -35,7 +35,8 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 │   ├── upscale.py        # 2倍模型超分workflow (RealESRGAN)
 │   └── outpaint.py       # 扩图workflow
 ├── wf.py                 # workflow入口脚本
-├── gen-images.py         # 批量生成脚本
+├── gen_images.py         # 批量生成脚本 (Phase 1)
+├── upscale.py            # 批量超分脚本 (Phases 2-4)
 ├── Makefile              # 测试自动化
 ├── theme.txt             # 主题提示词
 ├── variations.txt        # 变奏提示词（每行一个）
@@ -123,55 +124,96 @@ mac_retina,2880,1800
 
 ### 批量生成壁纸
 
+批量生成壁纸采用两步工作流：
+
+#### 第一步：生成基础图片 (gen_images.py)
+
 ```bash
-# 为所有设备生成壁纸
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv
+# 为所有设备生成基础图片
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv
 
 # 生成默认分辨率（1024x1024）
-./gen-images.py -t theme.txt -v variations.txt -o output/
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/
 
 # 每个变奏生成多个批次
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --batches 3
-
-# 生成PNG并自动转换为JPG
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --jpg
-
-# 使用智能超分模式（默认，根据放大倍率自动选择upscale或usdu）
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode auto
-
-# 锁定使用RealESRGAN 2倍超分
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode upscale
-
-# 锁定使用USDU超分
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode usdu
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv -b 3
 
 # 禁用超分，直接生成目标分辨率（可能影响大分辨率图片质量）
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --upscale-mode none
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv --upscale-mode none
 
-# 保留中间文件（原图和放大图）用于调试或重复使用
-./gen-images.py -t theme.txt -v variations.txt -o output/ --pixels-csv pixels.csv --keep-intermediates
+# 生成PNG并转换为JPG（仅针对直接生成的最终图片）
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv -j
 ```
 
-生成的文件命名规则：
-- 有设备表：`{序号:03d}_{批次:02d}_{device_id}.png`
-- 无设备表：`{序号:03d}_{批次:02d}.png`
-- 如果使用`--jpg`参数，会同时生成`.png`和`.jpg`文件
-
-例如：`000_00_iphone_15_16.png`、`000_01_iphone_15_16.png`、`001_00_win_hd_monitor.png`
-
-**命令行参数说明**：
-- `-t/--theme`: 主题文件路径
-- `-v/--variations`: 变奏文件路径
-- `-o/--output-dir`: 输出目录
+**gen_images.py 命令行参数**：
+- `-u/--url`: ComfyUI API URL (或从环境变量COMFYUI_API_URL读取)
+- `-t/--theme`: 主题文件路径（必需）
+- `-v/--variations`: 变奏文件路径（必需）
+- `-o/--output-dir`: 输出目录（必需）
 - `-p/--pixels-csv`: 设备分辨率CSV文件（可选）
 - `-b/--batches`: 每个变奏生成的批次数（默认1）
-- `-j/--jpg`: 将PNG转换为JPG格式
+- `-j/--jpg`: 将PNG转换为JPG格式（仅对直接生成的最终图片有效）
 - `--upscale-mode`: 超分模式，可选值：
   - `auto`（默认）：智能选择，放大倍率≤2用RealESRGAN，>2用USDU
   - `upscale`：锁定使用RealESRGAN 2倍超分
   - `usdu`：锁定使用Ultimate SD Upscale
   - `none`：禁用超分，直接生成目标分辨率
+
+**输出文件**：
+- 分辨率 ≤ 1.5M像素：直接生成最终图片 `{counter:03d}_{batch:02d}_{device_id}.png`
+- 分辨率 > 1.5M像素：生成基础图片 `{counter:03d}_{batch:02d}_base_{width}x{height}.png`
+
+#### 第二步：超分放大 (upscale.py)
+
+生成基础图片后，可以浏览检查。如果不满意，删除对应的base图片重新生成。然后运行upscale.py进行超分放大：
+
+```bash
+# 超分所有基础图片
+./upscale.py -u $API -o output/ -p pixels.csv
+
+# 转换为JPG格式
+./upscale.py -u $API -o output/ -p pixels.csv -j
+
+# 保留中间文件（原图和放大图）用于调试
+./upscale.py -u $API -o output/ -p pixels.csv --keep-intermediates
+
+# 强制使用特定超分方法
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode upscale  # 锁定RealESRGAN
+./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode usdu     # 锁定USDU
+```
+
+**upscale.py 命令行参数**：
+- `-u/--url`: ComfyUI API URL (或从环境变量COMFYUI_API_URL读取，必需)
+- `-o/--output-dir`: 输出目录（包含base images，必需）
+- `-p/--pixels-csv`: 设备分辨率CSV文件（必需，用于确定目标分辨率）
+- `-j/--jpg`: 将最终PNG转换为JPG格式
+- `--upscale-mode`: 超分模式（auto/upscale/usdu，默认auto）
 - `--keep-intermediates`: 保留中间文件（原图和放大图），默认会自动清理
+
+**输出文件**：
+- 最终图片：`{counter:03d}_{batch:02d}_{device_id}.png`（或 `{counter:03d}_{batch:02d}.png` 无设备ID时）
+- 中间文件（--keep-intermediates时保留）：
+  - 基础图片：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
+  - 放大图片：`{counter:03d}_{batch:02d}_upscaled_{method}_{width}x{height}.png`
+
+#### 完整工作流示例
+
+```bash
+# 1. 设置API URL
+export COMFYUI_API_URL=http://192.168.1.1:8188/
+
+# 2. 生成基础图片
+./gen_images.py -t theme.txt -v variations.txt -o output/ -p pixels.csv -b 3
+
+# 3. 检查基础图片，删除不满意的
+ls output/*_base_*.png
+
+# 4. 超分放大并转换为JPG
+./upscale.py -o output/ -p pixels.csv -j
+
+# 5. 查看最终图片
+ls output/*.png | grep -v base | grep -v upscaled
+```
 
 ### 使用独立workflow
 
@@ -223,9 +265,9 @@ make clean
 
 ## 核心逻辑
 
-### gen-images.py工作流程
+### 两步工作流程
 
-#### 第一阶段：生成所有基础图片
+#### Phase 1: gen_images.py - 生成基础图片
 
 1. 从`theme.txt`读取主题提示词
 2. 从`variations.txt`读取变奏（每行一个）
@@ -233,20 +275,26 @@ make clean
 4. 每个提示词分配一个序列ID（counter）
 5. 每个提示词可生成多个批次（batch），通过`--batches`参数指定
 6. 每个序列ID的每个批次生成一个随机数种子
-7. 如果指定了分辨率表，为所有设备生成对应分辨率图片
-8. 文件命名：`{counter:03d}_{batch:02d}_{device_id}.png`（有设备表）或 `{counter:03d}_{batch:02d}.png`（无设备表）
+7. 对每个设备分辨率：
+   - 如果总像素 ≤ 1.5M：直接生成最终图片
+   - 如果总像素 > 1.5M：生成base图片供超分使用
+8. 文件命名：
+   - 最终图片：`{counter:03d}_{batch:02d}_{device_id}.png`
+   - Base图片：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
 
-#### 第二阶段：批量超分处理
+#### Phases 2-4: upscale.py - 批量超分处理
 
-所有基础图片生成完成后，统一处理需要超分的图片：
-1. 收集所有超分任务
-2. 按超分方法分组（upscale组和usdu组），避免频繁切换模型
-3. 先批量处理所有RealESRGAN任务（2倍放大）
-4. 再批量处理所有USDU任务（可变倍率放大）
-5. 使用PIL精确缩放到目标尺寸
-6. 保存最终图片
-7. 可选转换为JPG格式
-8. 自动清理临时文件
+1. **发现base images**：扫描输出目录中的 `*_base_*.png` 文件
+2. **重建任务列表**：根据base images和目标分辨率构建超分任务
+3. **Phase 2 - upscale超分**：批量处理所有RealESRGAN任务（factor≤2）
+4. **Phase 3 - USDU超分**：批量处理所有USDU任务（factor>2）
+5. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将放大图裁切到目标尺寸
+6. **清理**：删除中间文件（除非使用--keep-intermediates）
+
+两步分离的优势：
+- 可以在超分前检查base images，删除不满意的图片
+- 支持断点续传：如果upscale中断，可以继续执行
+- 避免重复生成：只需重新运行upscale.py即可调整超分参数
 
 #### 智能分辨率处理
 

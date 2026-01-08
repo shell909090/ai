@@ -10,7 +10,7 @@ import json
 import logging
 from os import path
 
-from libs.libs import ComfyApiWrapper, ComfyWorkflow
+from libs.workflow import ComfyApiWrapper, ComfyWorkflow
 
 WORKFLOW_STR = """
 {
@@ -64,15 +64,16 @@ WORKFLOW_STR = """
 """
 
 
-def upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes:
+def upscale(api: ComfyApiWrapper, image_filepath: str, model_name: str ="RealESRGAN_x2.pth") -> bytes:
     """
-    使用RealESRGAN_x2模型进行图片超分
+    使用模型进行图片超分
 
     该方法使用纯模型超分，不进行重绘，直接放大2倍。适用于快速放大图片。
 
     Args:
         api: ComfyUI API wrapper实例
         image_filepath: 输入图片文件路径
+        model_name: 可选RealESRGAN_x2.pth, RealESRGAN_x4.pth, 4x-UltraSharp.pth三种。
 
     Returns:
         超分后的图片字节数据（PNG格式），分辨率为原图的2倍
@@ -88,6 +89,7 @@ def upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes:
     logging.debug(f"Server side filepath: {server_filepath}")
 
     wf.set_node_param("加载图像", "image", server_filepath)
+    wf.set_node_param("加载放大模型", "model_name", model_name)
 
     results = api.queue_and_wait_images(wf, "预览图像")
     assert len(results) == 1, f"Expected 1 image, got {len(results)}"

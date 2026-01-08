@@ -8,7 +8,7 @@
 
 import json
 
-from libs.libs import ComfyApiWrapper, ComfyWorkflow
+from libs.workflow import ComfyApiWrapper, ComfyWorkflow
 
 WORKFLOW_STR = """
 {
