@@ -33,6 +33,7 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 │   ├── zit.py            # z-image-turbo图片生成workflow
 │   ├── usdu.py           # Ultimate SD Upscale超分workflow
 │   ├── upscale.py        # 2倍模型超分workflow (RealESRGAN)
+│   ├── aurasr.py         # 4倍模型超分workflow (AuraSR)
 │   └── outpaint.py       # 扩图workflow
 ├── wf.py                 # workflow入口脚本
 ├── gen_images.py         # 批量生成脚本 (Phase 1)
@@ -92,8 +93,11 @@ mac_retina,2880,1800
 - **SDXL Checkpoint**: `sd_xl_base_1.0.safetensors`
 - **ControlNet**: `SDXL/controlnet-tile-sdxl-1.0/diffusion_pytorch_model.safetensors`
 
-#### 2倍模型超分 (upscale.py)
+#### 2倍模型超分 (libs/upscale.py)
 - **Upscale Model**: `RealESRGAN_x2.pth`
+
+#### 4倍模型超分 (libs/aurasr.py)
+- **Upscale Model**: `Aura-SR/model.safetensors`
 
 #### 图片扩展 (outpaint.py)
 - **SDXL Inpainting**: `sd_xl_base_1.0_inpainting_0.1.safetensors`
@@ -119,6 +123,8 @@ mac_retina,2880,1800
   - [HuggingFace下载](https://huggingface.co/xinsir/controlnet-tile-sdxl-1.0/blob/main/diffusion_pytorch_model.safetensors)
 - `SDXL/sdxl_vae.safetensors` - SDXL VAE
   - [HuggingFace下载](https://huggingface.co/stabilityai/sdxl-vae/blob/main/sdxl_vae.safetensors)
+- `Aura-SR/model.safetensors` - AuraSR v2
+  - [HuggingFace下载](https://huggingface.co/fal/AuraSR-v2/blob/main/model.safetensors)
 
 ## 使用方法
 
@@ -227,6 +233,9 @@ ls output/*.png | grep -v base | grep -v upscaled
 # 模型超分（2倍，RealESRGAN）
 ./wf.py --workflow upscale --input input.png --output output.png
 
+# 模型超分（4倍，AuraSR）
+./wf.py --workflow aurasr --input input.png --output output.png
+
 # 扩图
 ./wf.py --workflow outpaint --input input.png --output output.png --left 100 --right 100
 ```
@@ -245,6 +254,7 @@ make test
 # 运行单个workflow测试
 make test-zit         # 测试图片生成
 make test-upscale     # 测试2倍超分 (RealESRGAN)
+make test-aurasr      # 测试4倍超分 (AuraSR)
 make test-usdu        # 测试Ultimate SD Upscale
 make test-outpaint    # 测试扩图
 make test-gen-images  # 测试批量生成
@@ -383,13 +393,16 @@ make clean
 **libs/upscale.py**:
 - `upscale(api: ComfyApiWrapper, image_filepath: str) -> bytes`: 2倍模型超分（RealESRGAN_x2）
 
+**libs/aurasr.py**:
+- `aurasr(api: ComfyApiWrapper, image_filepath: str, model_name: str = "4x-UltraSharp.pth") -> bytes`: 4倍模型超分（AuraSR）
+
 **libs/usdu.py**:
 - `usdu(api: ComfyApiWrapper, image_filepath: str, upscale_by: float) -> bytes`: Ultimate SD Upscale超分
 
 **libs/outpaint.py**:
 - `outpaint(api: ComfyApiWrapper, image_filepath: str, left: int, top: int, right: int, bottom: int) -> bytes`: 图片扩展
 
-所有函数都包含完整的类型注解和docstring文档。可通过 `from libs import zit, upscale, usdu, outpaint` 导入使用。
+所有函数都包含完整的类型注解和docstring文档。可通过 `from libs import zit, upscale, aurasr, usdu, outpaint` 导入使用。
 
 ## 许可证
 

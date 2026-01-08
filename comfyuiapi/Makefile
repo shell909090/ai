@@ -1,4 +1,4 @@
-.PHONY: test test-zit test-usdu test-upscale test-outpaint clean setup lint format format-check
+.PHONY: test test-zit test-usdu test-upscale test-aurasr test-outpaint clean setup lint format format-check
 
 # 默认目标
 all: test
@@ -36,6 +36,15 @@ test-upscale: test-zit
 		--output $(TEST_DIR)/test_upscale.png
 	@echo "✓ upscale test completed"
 
+# 测试 aurasr workflow (需要先生成一张图片)
+test-aurasr: test-zit
+	@echo "=== Testing aurasr workflow ==="
+	uv run ./wf.py --url $(COMFYUI_URL) \
+		--workflow aurasr \
+		--input $(TEST_DIR)/test_zit.png \
+		--output $(TEST_DIR)/test_aurasr.png
+	@echo "✓ aurasr test completed"
+
 # 测试 usdu workflow (需要先生成一张图片)
 test-usdu: test-zit
 	@echo "=== Testing usdu workflow ==="
@@ -68,7 +77,7 @@ test-gen-images: setup
 	@echo "✓ gen-images test completed"
 
 # 运行所有测试
-test: test-zit test-upscale test-usdu test-outpaint test-gen-images
+test: test-zit test-upscale test-aurasr test-usdu test-outpaint test-gen-images
 	@echo ""
 	@echo "=== All tests completed successfully! ==="
 	@echo "Results in $(TEST_DIR)/"
@@ -105,6 +114,7 @@ help:
 	@echo "  make test             - Run all workflow tests"
 	@echo "  make test-zit         - Test zit (image generation)"
 	@echo "  make test-upscale     - Test upscale (2x model upscale)"
+	@echo "  make test-aurasr      - Test aurasr (4x AuraSR upscale)"
 	@echo "  make test-usdu        - Test usdu (Ultimate SD Upscale)"
 	@echo "  make test-outpaint    - Test outpaint (image extension)"
 	@echo "  make test-gen-images  - Test gen-images (batch generation)"

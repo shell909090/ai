@@ -8,7 +8,7 @@
 
 # Re-export library functions for backward compatibility
 # Re-export workflow modules
-from libs import outpaint, upscale, usdu, zit
+from libs import aurasr, outpaint, upscale, usdu, zit
 from libs.constants import CRITICAL_SIZE, UpscaleMode, calculate_base_resolution, round_to_bucket
 from libs.device import get_all_devices, get_devices_with_upscale_info, print_devices_table
 from libs.image import convert_to_jpg, save_image
@@ -28,6 +28,7 @@ __all__ = [
     "convert_to_jpg",
     "zit",
     "upscale",
+    "aurasr",
     "usdu",
     "outpaint",
 ]

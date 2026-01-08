@@ -22,7 +22,7 @@ def main() -> None:
     """
     Workflow入口脚本主函数
 
-    根据命令行参数调用不同的workflow模块（zit, usdu, upscale, outpaint）。
+    根据命令行参数调用不同的workflow模块（zit, usdu, upscale, aurasr, outpaint）。
     统一处理参数解析和结果保存。
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -65,6 +65,12 @@ def main() -> None:
         from libs import upscale
 
         image_data = upscale.upscale(api, args.input)
+        save_image(image_data, Path(args.output))
+
+    elif args.workflow == "aurasr":
+        from libs import aurasr
+
+        image_data = aurasr.aurasr(api, args.input)
         save_image(image_data, Path(args.output))
 
     elif args.workflow == "outpaint":
