@@ -10,7 +10,7 @@ Device and CSV utilities
 
 import csv
 
-from libs.constants import CRITICAL_SIZE, calculate_base_resolution
+from libs.constants import CRITICAL_SIZE, calculate_base_resolution, get_bucket_for_device
 
 
 def get_all_devices(pixels_csv: str) -> list[dict]:
@@ -207,3 +207,121 @@ def print_devices_table(devices: list[dict]) -> None:
         table.add_row([device["device_id"], target_size, pixels_m, need_upscale, gen_size, factor, method, upscaled])
 
     print("\n" + str(table))
+
+
+def print_bucket_mapping_table(devices: list[dict], upscale_mode: str = "auto") -> None:
+    """
+    打印设备到4-bucket映射表
+
+    Args:
+        devices: get_all_devices()返回的设备列表
+        upscale_mode: 超分模式 ("auto"/"upscale2x"/"upscale4x"/"aurasr"/"usdu")
+    """
+    try:
+        from prettytable import PrettyTable
+    except ImportError:
+        # Fallback to simple text table if prettytable not available
+        print("\nDevice to Bucket Mapping:")
+        print("-" * 120)
+        print(
+            f"{'Device ID':<20} {'Device Size':<12} {'Aspect Ratio':<12} "
+            f"{'Bucket':<6} {'Bucket Size':<12} {'Factor':<7} {'Method':<10}"
+        )
+        print("-" * 120)
+        for device in devices:
+            device_size = f"{device['width']}x{device['height']}"
+            ar = device['width'] / device['height']
+
+            # Get bucket mapping
+            bucket_w, bucket_h, bucket_idx = get_bucket_for_device(device["width"], device["height"])
+            bucket_size = f"{bucket_w}x{bucket_h}"
+
+            # Calculate factor
+            factor = max(device['width'] / bucket_w, device['height'] / bucket_h)
+
+            # Determine upscale method
+            if upscale_mode == "auto":
+                method = "upscale2x" if factor <= 2 else "aurasr"
+            elif upscale_mode == "upscale2x":
+                method = "upscale2x"
+            elif upscale_mode == "upscale4x":
+                method = "upscale4x"
+            elif upscale_mode == "aurasr":
+                method = "aurasr"
+            elif upscale_mode == "usdu":
+                method = "usdu"
+            else:
+                method = upscale_mode
+
+            print(
+                f"{device['device_id']:<20} {device_size:<12} {ar:>11.3f} "
+                f"{bucket_idx:>5}  {bucket_size:<12} {factor:>6.2f}x {method:<10}"
+            )
+        print("-" * 120)
+        print("\nBucket Reference:")
+        print("  0: 896×1920   (ar < 0.6)       - Very tall/narrow phones")
+        print("  1: 1088×1472  (0.6 ≤ ar < 1.15) - Standard phones/tablets (portrait)")
+        print("  2: 1536×1024  (1.15 ≤ ar < 1.65) - Tablets/laptops (landscape)")
+        print("  3: 1728×960   (ar ≥ 1.65)       - Wide monitors/TVs")
+        return
+
+    # Use prettytable if available
+    table = PrettyTable()
+    table.field_names = [
+        "Device ID",
+        "Device Size",
+        "Aspect Ratio",
+        "Bucket",
+        "Bucket Size",
+        "Factor",
+        "Method",
+    ]
+    table.align["Device ID"] = "l"
+    table.align["Device Size"] = "r"
+    table.align["Aspect Ratio"] = "r"
+    table.align["Bucket"] = "c"
+    table.align["Bucket Size"] = "r"
+    table.align["Factor"] = "r"
+    table.align["Method"] = "c"
+
+    for device in devices:
+        device_size = f"{device['width']}x{device['height']}"
+        ar = device['width'] / device['height']
+
+        # Get bucket mapping
+        bucket_w, bucket_h, bucket_idx = get_bucket_for_device(device["width"], device["height"])
+        bucket_size = f"{bucket_w}x{bucket_h}"
+
+        # Calculate factor
+        factor = max(device['width'] / bucket_w, device['height'] / bucket_h)
+
+        # Determine upscale method
+        if upscale_mode == "auto":
+            method = "upscale2x" if factor <= 2 else "aurasr"
+        elif upscale_mode == "upscale2x":
+            method = "upscale2x"
+        elif upscale_mode == "upscale4x":
+            method = "upscale4x"
+        elif upscale_mode == "aurasr":
+            method = "aurasr"
+        elif upscale_mode == "usdu":
+            method = "usdu"
+        else:
+            method = upscale_mode
+
+        table.add_row([
+            device["device_id"],
+            device_size,
+            f"{ar:.3f}",
+            bucket_idx,
+            bucket_size,
+            f"{factor:.2f}x",
+            method,
+        ])
+
+    print("\n" + str(table))
+    print("\nBucket Reference:")
+    print("  0: 896×1920   (ar < 0.6)       - Very tall/narrow phones")
+    print("  1: 1088×1472  (0.6 ≤ ar < 1.15) - Standard phones/tablets (portrait)")
+    print("  2: 1536×1024  (1.15 ≤ ar < 1.65) - Tablets/laptops (landscape)")
+    print("  3: 1728×960   (ar ≥ 1.65)       - Wide monitors/TVs")

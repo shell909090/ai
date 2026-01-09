@@ -12,7 +12,7 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 
 随后使用主题+变奏，批量生成图片。ZIT会保持生成对象间近似一致。不一致或不好看的，丢弃即可。
 
-默认生成1024x1024分辨率。其他分辨率可以参考`test_pixels.csv`文件。
+系统使用4个标准分辨率桶（896×1920, 1088×1472, 1536×1024, 1728×960），根据设备宽高比自动匹配。具体设备分辨率可以参考`test_pixels.csv`文件格式。
 
 ## 特性
 
@@ -135,25 +135,31 @@ mac_retina,2880,1800
 
 ### 批量生成壁纸
 
-批量生成壁纸采用两步工作流：
+批量生成壁纸采用**两步工作流+4分辨率桶**架构：
 
 #### 第一步：生成基础图片 (gen_images.py)
 
-```bash
-# 为所有设备生成基础图片
-./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv
+gen_images.py根据变奏，生成4种标准分辨率的母图（base images），对应4个分辨率桶：
 
-# 生成默认分辨率（1024x1024）
+| Bucket | Resolution  | Aspect Ratio | Typical Devices |
+|--------|-------------|--------------|-----------------|
+| 0      | 896×1920    | < 0.6        | Very tall/narrow phones|
+| 1      | 1088×1472   | 0.6-1.15     | Standard phones/tablets (portrait)|
+| 2      | 1536×1024   | 1.15-1.65    | Tablets/laptops (landscape)|
+| 3      | 1728×960    | ≥ 1.65       | Wide monitors/TVs|
+
+```bash
+# 生成4张母图（每个变奏，每个批次）
 ./gen_images.py -u $API -t theme.txt -v variations.txt -o output/
 
 # 每个变奏生成多个批次
-./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv -b 3
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -b 3
 
-# 禁用超分，直接生成目标分辨率（可能影响大分辨率图片质量）
-./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv --upscale-mode none
+# 只生成特定分辨率桶（例如只生成横屏）
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ --buckets "2,3"
 
-# 生成PNG并转换为JPG（仅针对直接生成的最终图片）
-./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ -p pixels.csv -j
+# 只生成竖屏
+./gen_images.py -u $API -t theme.txt -v variations.txt -o output/ --buckets "0,1"
 ```
 
 **gen_images.py 命令行参数**：
@@ -161,34 +167,29 @@ mac_retina,2880,1800
 - `-t/--theme`: 主题文件路径（必需）
 - `-v/--variations`: 变奏文件路径（必需）
 - `-o/--output-dir`: 输出目录（必需）
-- `-p/--pixels-csv`: 设备分辨率CSV文件（可选）
 - `-b/--batches`: 每个变奏生成的批次数（默认1）
-- `-j/--jpg`: 将PNG转换为JPG格式（仅对直接生成的最终图片有效）
-- `--upscale-mode`: 超分模式，可选值：
-  - `auto`（默认）：智能选择，factor≤2用upscale2x，factor>2用aurasr
-  - `upscale2x`：锁定使用upscale + RealESRGAN_x2.pth (2倍放大)
-  - `upscale4x`：锁定使用upscale + RealESRGAN_x4.pth (4倍放大)
-  - `aurasr`：锁定使用AuraSR (4倍放大)
-  - `usdu`：锁定使用Ultimate SD Upscale
-  - `none`：禁用超分，直接生成目标分辨率
+- `--buckets`: 选择生成哪些分辨率桶（默认"0,1,2,3"全部生成）
+  - "0"：896×1920（超窄竖屏）
+  - "1"：1088×1472（标准竖屏）
+  - "2"：1536×1024（标准横屏）
+  - "3"：1728×960（超宽横屏）
 
 **输出文件**：
-- 分辨率 ≤ 1.5M像素：直接生成最终图片 `{counter:03d}_{batch:02d}_{device_id}.png`
-- 分辨率 > 1.5M像素：生成基础图片 `{counter:03d}_{batch:02d}_base_{width}x{height}.png`
+- 母图：`{counter:03d}_{batch:02d}_base_896x1920.png`
+- 母图：`{counter:03d}_{batch:02d}_base_1088x1472.png`
+- 母图：`{counter:03d}_{batch:02d}_base_1536x1024.png`
+- 母图：`{counter:03d}_{batch:02d}_base_1728x960.png`
 
 #### 第二步：超分放大 (upscale.py)
 
-生成基础图片后，可以浏览检查。如果不满意，删除对应的base图片重新生成。然后运行upscale.py进行超分放大：
+生成母图后，可以浏览检查。如果不满意，删除对应的base图片重新生成。然后运行upscale.py根据设备列表进行超分放大和适配：
 
 ```bash
-# 超分所有基础图片
+# 查看设备到分辨率桶的映射（不执行超分）
+./upscale.py -o output/ -p pixels.csv --show-table
+
+# 超分所有母图并适配到设备分辨率（所有最终图片自动转换为JPG）
 ./upscale.py -u $API -o output/ -p pixels.csv
-
-# 转换为JPG格式
-./upscale.py -u $API -o output/ -p pixels.csv -j
-
-# 保留中间文件（原图和放大图）用于调试
-./upscale.py -u $API -o output/ -p pixels.csv --keep-intermediates
 
 # 强制使用特定超分方法
 ./upscale.py -u $API -o output/ -p pixels.csv --upscale-mode aurasr     # 锁定AuraSR (4x)
@@ -198,18 +199,21 @@ mac_retina,2880,1800
 ```
 
 **upscale.py 命令行参数**：
-- `-u/--url`: ComfyUI API URL (或从环境变量COMFYUI_API_URL读取，必需)
-- `-o/--output-dir`: 输出目录（包含base images，必需）
-- `-p/--pixels-csv`: 设备分辨率CSV文件（必需，用于确定目标分辨率）
-- `-j/--jpg`: 将最终PNG转换为JPG格式
+- `-u/--url`: ComfyUI API URL (或从环境变量COMFYUI_API_URL读取，执行超分时必需)
+- `-o/--output-dir`: 输出目录（包含母图，必需）
+- `-p/--pixels-csv`: 设备分辨率CSV文件（**必需**，用于设备到分辨率桶的映射）
 - `--upscale-mode`: 超分模式（auto/upscale2x/upscale4x/aurasr/usdu，默认auto）
-- `--keep-intermediates`: 保留中间文件（原图和放大图），默认会自动清理
+- `--show-table`: 只显示设备到分辨率桶的映射表，不执行超分（无需API URL）
 
 **输出文件**：
-- 最终图片：`{counter:03d}_{batch:02d}_{device_id}.png`（或 `{counter:03d}_{batch:02d}.png` 无设备ID时）
-- 中间文件（--keep-intermediates时保留）：
-  - 基础图片：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
-  - 放大图片：`{counter:03d}_{batch:02d}_upscaled_{method}_{width}x{height}.png`
+- 最终图片（JPG）：`{counter:03d}_{batch:02d}_{device_id}.png`
+- 超分图片（保留）：`{counter:03d}_{batch:02d}_upscale2x_{width}x{height}.png` 或 `{counter:03d}_{batch:02d}_aurasr_{width}x{height}.png`
+- 母图（保留）：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
+
+**注意事项**：
+- upscale.py不再清理中间文件，所有母图和超分图都会保留
+- 如果设备所需的分辨率桶的母图不存在，upscale.py会报错并提示需要生成哪个bucket
+- 例如：设备需要bucket 2 (1536×1024)但母图不存在时，错误信息会提示运行 `gen_images.py --buckets 2`
 
 #### 完整工作流示例
 
@@ -217,17 +221,20 @@ mac_retina,2880,1800
 # 1. 设置API URL
 export COMFYUI_API_URL=http://192.168.1.1:8188/
 
-# 2. 生成基础图片
-./gen_images.py -t theme.txt -v variations.txt -o output/ -p pixels.csv -b 3
+# 2. 生成母图（4个标准分辨率）
+./gen_images.py -t theme.txt -v variations.txt -o output/ -b 3
 
-# 3. 检查基础图片，删除不满意的
+# 3. 检查母图，删除不满意的
 ls output/*_base_*.png
 
-# 4. 超分放大并转换为JPG
-./upscale.py -o output/ -p pixels.csv -j
+# 4. 查看设备到分辨率桶的映射
+./upscale.py -o output/ -p pixels.csv --show-table
 
-# 5. 查看最终图片
-ls output/*.png | grep -v base | grep -v upscaled
+# 5. 超分放大并适配到所有设备分辨率（自动转换为JPG）
+./upscale.py -o output/ -p pixels.csv
+
+# 6. 查看最终图片
+ls output/*.png | grep -v base | grep -v upscale | grep -v aurasr
 ```
 
 ### 使用独立workflow
@@ -285,103 +292,124 @@ make clean
 
 ## 核心逻辑
 
-### 两步工作流程
+### 两步工作流程 + 4分辨率桶架构
 
-#### Phase 1: gen_images.py - 生成基础图片
+#### Phase 1: gen_images.py - 生成母图
 
+gen_images.py生成4个标准分辨率的母图（base images），对应全球设备的4个纵横比区间：
+
+**4个分辨率桶**：
+- **Bucket 0**: 896×1920 (ar < 0.6) - 超窄竖屏手机
+- **Bucket 1**: 1088×1472 (0.6 ≤ ar < 1.15) - 标准竖屏手机/平板
+- **Bucket 2**: 1536×1024 (1.15 ≤ ar < 1.65) - 标准横屏平板/笔记本
+- **Bucket 3**: 1728×960 (ar ≥ 1.65) - 超宽横屏显示器/电视
+
+**生成流程**：
 1. 从`theme.txt`读取主题提示词
 2. 从`variations.txt`读取变奏（每行一个）
 3. 主题+变奏混合生成最终提示词
 4. 每个提示词分配一个序列ID（counter）
 5. 每个提示词可生成多个批次（batch），通过`--batches`参数指定
 6. 每个序列ID的每个批次生成一个随机数种子
-7. 对每个设备分辨率：
-   - 如果总像素 ≤ 1.5M：直接生成最终图片
-   - 如果总像素 > 1.5M：生成base图片供超分使用
-8. 文件命名：
-   - 最终图片：`{counter:03d}_{batch:02d}_{device_id}.png`
-   - Base图片：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
+7. 使用相同的seed，生成4张母图（4个标准分辨率）
+8. 文件命名：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
 
-#### Phases 2-4: upscale.py - 批量超分处理
+**优势**：
+- 简化生成：每个变奏只需生成4张图片，不管有多少设备
+- 高效缓存：所有设备共享4张母图
+- 灵活选择：可以只生成特定分辨率桶（--buckets参数）
 
-1. **发现base images**：扫描输出目录中的 `*_base_*.png` 文件
-2. **重建任务列表**：根据base images和目标分辨率构建超分任务
-3. **Phase 2 - upscale2x超分**：批量处理所有upscale2x任务（auto模式，factor≤2）
-4. **Phase 2b - upscale4x超分**：批量处理upscale4x任务（如果使用--upscale-mode upscale4x）
-5. **Phase 2c - AuraSR超分**：批量处理AuraSR任务（auto模式，factor>2或--upscale-mode aurasr）
-6. **Phase 3 - USDU超分**：批量处理USDU任务（如果使用--upscale-mode usdu）
-7. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将放大图裁切到目标尺寸
-8. **清理**：删除中间文件（除非使用--keep-intermediates）
+#### Phases 2-4: upscale.py - 超分、裁切、适配
+
+upscale.py将4张母图超分放大，并裁切适配到所有设备分辨率：
+
+**处理流程**：
+1. **发现母图**：扫描输出目录中的 `*_base_*.png` 文件
+2. **设备映射**：根据设备纵横比，映射到4个分辨率桶
+3. **重建任务**：为每个设备生成超分+裁切任务
+4. **Phase 2a - upscale2x超分**：批量处理所有upscale2x任务（auto模式，factor≤2）
+5. **Phase 2b - upscale4x超分**：批量处理upscale4x任务（如果使用--upscale-mode upscale4x）
+6. **Phase 2c - AuraSR超分**：批量处理AuraSR任务（auto模式，factor>2或--upscale-mode aurasr）
+7. **Phase 3 - USDU超分**：批量处理USDU任务（如果使用--upscale-mode usdu）
+8. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将超分图裁切到各设备分辨率
+9. **JPG转换**：所有最终图片强制转换为JPG格式
+
+**设备到分辨率桶映射示例**：
+- iPhone 15 (1179×2556, ar=0.46) → Bucket 0 (896×1920)
+- iPad Pro (1668×2388, ar=0.70) → Bucket 1 (1088×1472)
+- MacBook Pro (2880×1800, ar=1.60) → Bucket 2 (1536×1024)
+- 4K Monitor (3840×2160, ar=1.78) → Bucket 3 (1728×960)
 
 两步分离的优势：
-- 可以在超分前检查base images，删除不满意的图片
+- 可以在超分前检查母图，删除不满意的图片
 - 支持断点续传：如果upscale中断，可以继续执行
 - 避免重复生成：只需重新运行upscale.py即可调整超分参数
+- 设备扩展简单：添加新设备无需重新生成母图
 
 #### 智能分辨率处理
 
-**临界尺寸**：1.5M像素 (1.5×1024×1024)
+**4分辨率桶架构**：
 
-**分辨率桶**：为避免频繁切换GPU运算，所有生成分辨率会向上取整到64的倍数。例如：
-- 1555×1011, 1556×1010, 1559×1008 都会规约到 1600×1024
-- 这样可以将多个相近分辨率合并到同一个"分辨率桶"，减少重复计算
+所有设备根据纵横比（aspect ratio）自动映射到4个标准分辨率桶：
+
+| 纵横比范围 | 分辨率桶 | 典型设备 |
+|------------|----------|----------|
+| ar < 0.6   | 896×1920  | 超窄竖屏手机 |
+| 0.6 ≤ ar < 1.15 | 1088×1472 | 标准竖屏手机/平板 |
+| 1.15 ≤ ar < 1.65 | 1536×1024 | 标准横屏平板/笔记本 |
+| ar ≥ 1.65 | 1728×960 | 超宽横屏显示器/电视 |
 
 **超分模式**：
 
 1. **auto（智能模式，默认）**：
-   - 总像素 ≤ 1.5M：直接生成目标分辨率
-   - 总像素 > 1.5M：等比例缩放到1.5M（并规约到分辨率桶），根据放大倍率智能选择超分方法
-     - 放大倍率 ≤ 2：使用upscale2x（纯GAN，2倍超分）
-     - 放大倍率 > 2：使用aurasr（GAN+图像空间重绘，4倍超分）
-   - 缩放算法：保持宽高比，width × height = 1.5M，然后向上取整到64的倍数
-   - 放大倍率计算：factor = max(目标width/原图width, 目标height/原图height)
-   - 裁切算法：使用PIL ImageOps.fit，保持放大图长宽比，缩放至能覆盖目标尺寸的最小尺寸，居中裁切
-   - 示例：3840×2160 (8.3M) → 1536×896（桶化，1.38M） → factor=max(3840/1536, 2160/896)=2.5 → 使用aurasr放大4倍 → 裁切到3840×2160
+   - 根据设备分辨率和分辨率桶计算放大倍率：factor = max(device_width/bucket_width, device_height/bucket_height)
+   - factor ≤ 2：使用upscale2x（纯GAN，2倍超分）
+   - factor > 2：使用aurasr（GAN+图像空间重绘，4倍超分）
+   - 裁切算法：使用PIL ImageOps.fit，保持超分图长宽比，缩放至能覆盖目标尺寸的最小尺寸，居中裁切
+   - 示例：iPhone 15 (1179×2556, ar=0.46) → Bucket 0 (896×1920) → factor=max(1179/896, 2556/1920)=1.33 → 使用upscale2x放大2倍到1792×3840 → 裁切到1179×2556
 
 2. **upscale2x（锁定RealESRGAN 2x）**：
-   - 所有超过1.5M的图片均使用upscale + RealESRGAN_x2.pth（纯GAN，2倍超分）
-   - 速度最快，适合放大倍率≤2的场景
+   - 所有母图均使用upscale + RealESRGAN_x2.pth（纯GAN，2倍超分）
+   - 速度最快，适合factor≤2的场景
 
 3. **upscale4x（锁定RealESRGAN 4x）**：
-   - 所有超过1.5M的图片均使用upscale + RealESRGAN_x4.pth（纯GAN，4倍超分）
-   - 速度快，适合放大倍率≤4的场景
+   - 所有母图均使用upscale + RealESRGAN_x4.pth（纯GAN，4倍超分）
+   - 速度快，适合factor≤4的场景
 
 4. **aurasr（锁定AuraSR）**：
-   - 所有超过1.5M的图片均使用aurasr（4倍超分，带图像空间重绘）
+   - 所有母图均使用aurasr（4倍超分，带图像空间重绘）
    - 速度快，效果好，推荐用于factor>2的场景
 
 5. **usdu（锁定USDU）**：
-   - 所有超过1.5M的图片均使用Ultimate SD Upscale（GAN+SD重绘）
+   - 所有母图均使用Ultimate SD Upscale（GAN+SD重绘）
    - 速度较慢，但支持可变倍率，适合需要高质量重绘的大倍率放大
 
-6. **none（禁用超分）**：
-   - 直接使用目标分辨率生成图片
-   - 优点：生成速度快，无需超分处理
-   - 缺点：大分辨率（>1.5M像素）可能出现图片扭曲、断肢等质量问题
-
 **超分缓存优化**：
-- 多个设备可能共享同一个放大图（当它们的原图和放大参数相同时）
-- 放大图以 `{序号}_{批次}_upscaled_{方法}_{宽}x{高}.png` 命名
+- 同一分辨率桶的所有设备共享同一张超分图
+- 超分图以 `{序号}_{批次}_{方法}_{宽}x{高}.png` 命名（注意：无"upscaled"词）
 - 处理超分任务前先检查缓存，避免重复计算
-- 例如：phone和tablet都需要1536×896的基础图放大2倍，只需upscale一次
+- 示例：多个竖屏手机都映射到Bucket 1 (1088×1472)，只需upscale一次到2176×2944
 
 **断点续传**：
-- 检查临时基础图片和放大图是否已存在
+- 检查母图和超分图是否已存在
 - 存在则跳过生成，直接使用现有文件
 - 支持中断后继续执行
 
-**中间文件清理**：
-- 默认自动清理所有中间文件（原图和放大图）
-- 使用 `--keep-intermediates` 保留中间文件用于调试或重复使用
+**中间文件保留**：
+- 所有母图和超分图都会保留，不再自动清理
+- 便于调试、重用和扩展新设备
 
 #### 关键特性
 
-- 同一counter+batch的所有设备使用相同seed，确保内容一致
-- 支持多批次生成，提供更多变化
-- 自动跳过已存在的最终文件
-- 断点续传：跳过已生成的基础图片
-- 批量超分：避免频繁切换模型，提升性能
-- 自动清理：超分完成后删除临时文件
+- **4分辨率桶架构**：所有设备映射到4个标准分辨率，简化生成流程
+- **设备扩展简单**：添加新设备无需重新生成母图，只需运行upscale.py
+- **纵横比智能映射**：根据设备aspect ratio自动选择最合适的分辨率桶
+- **同一counter+batch使用相同seed**：所有分辨率桶保持内容一致
+- **支持多批次生成**：提供更多变化选择
+- **自动跳过已存在文件**：支持断点续传
+- **批量超分**：避免频繁切换模型，提升性能
+- **中间文件保留**：所有母图和超分图都保留，便于调试和重用
+- **强制JPG转换**：所有最终设备图片自动转换为JPG格式
 
 ## 代码规范
 

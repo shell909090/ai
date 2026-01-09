@@ -13,6 +13,17 @@ from enum import Enum
 # 临界尺寸：1.5M像素
 CRITICAL_SIZE = 1.5 * 1024 * 1024
 
+# 4 standard resolution buckets
+BUCKET_RESOLUTIONS = [
+    (896, 1920),    # Bucket 0: Very tall/narrow (ar < 0.6)
+    (1088, 1472),   # Bucket 1: Portrait (0.6 ≤ ar < 1.15)
+    (1536, 1024),   # Bucket 2: Landscape (1.15 ≤ ar < 1.65)
+    (1728, 960),    # Bucket 3: Wide (ar ≥ 1.65)
+]
+
+# Aspect ratio boundaries for bucket selection
+AR_THRESHOLDS = [0.6, 1.15, 1.65]
+
 
 class UpscaleMode(Enum):
     """超分模式枚举"""
@@ -25,9 +36,39 @@ class UpscaleMode(Enum):
     NONE = "none"  # 禁用超分，直接生成目标图片
 
 
+def get_bucket_for_device(width: int, height: int) -> tuple[int, int, int]:
+    """
+    Map device resolution to appropriate bucket based on aspect ratio.
+
+    Args:
+        width: Target device width
+        height: Target device height
+
+    Returns:
+        (bucket_width, bucket_height, bucket_index): Bucket resolution and index (0-3)
+    """
+    aspect_ratio = width / height
+
+    # Determine bucket index based on aspect ratio
+    if aspect_ratio < AR_THRESHOLDS[0]:
+        bucket_index = 0
+    elif aspect_ratio < AR_THRESHOLDS[1]:
+        bucket_index = 1
+    elif aspect_ratio < AR_THRESHOLDS[2]:
+        bucket_index = 2
+    else:
+        bucket_index = 3
+
+    bucket_width, bucket_height = BUCKET_RESOLUTIONS[bucket_index]
+    return bucket_width, bucket_height, bucket_index
+
+
 def round_to_bucket(value: int, bucket_size: int = 64) -> int:
     """
     将分辨率向上取整到最近的桶大小
+
+    DEPRECATED: This function is no longer used in the 4-bucket system.
+    Kept for backward compatibility with test code.
 
     Args:
         value: 原始分辨率值
@@ -42,6 +83,9 @@ def round_to_bucket(value: int, bucket_size: int = 64) -> int:
 def calculate_base_resolution(target_width: int, target_height: int) -> tuple[int, int, float]:
     """
     根据目标分辨率计算基础图片分辨率和放大倍率
+
+    DEPRECATED: This function is no longer used in the 4-bucket system.
+    Use get_bucket_for_device() instead. Kept for backward compatibility with test code.
 
     使用临界尺寸等比例缩放，并应用分辨率桶规约。
 
@@ -67,3 +111,5 @@ def calculate_base_resolution(target_width: int, target_height: int) -> tuple[in
     factor = max(target_width / gen_width, target_height / gen_height)
 
     return gen_width, gen_height, factor
+
+
