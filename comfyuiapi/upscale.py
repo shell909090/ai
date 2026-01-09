@@ -102,8 +102,8 @@ def reconstruct_upscale_tasks(
     # 对每个(counter, batch)组合，遍历所有设备
     for counter, batch in sorted(counter_batch_set):
         for device in devices:
-            # 确定目标文件名
-            target_filepath = output_dir / f"{counter:03d}_{batch:02d}_{device['device_id']}.png"
+            # 确定目标文件名（裁剪后直接存为JPG）
+            target_filepath = output_dir / f"{counter:03d}_{batch:02d}_{device['device_id']}.jpg"
 
             # 如果目标文件已存在，跳过（断点续传）
             if target_filepath.exists():
@@ -240,13 +240,11 @@ def process_upscale_task(api: ComfyApiWrapper, task: dict, upscale_cache: dict) 
 
 def process_crop_task(task: dict) -> None:
     """
-    处理裁切任务：将放大图裁切到目标尺寸，并强制转换为JPG
+    处理裁切任务：将放大图裁切到目标尺寸，直接保存为JPG
 
     Args:
         task: 超分任务字典
     """
-    from libs.image import convert_to_jpg
-
     upscaled_filepath = task["upscaled_filepath"]
     target_filepath = task["target_filepath"]
     target_width = task["target_width"]
@@ -272,13 +270,19 @@ def process_crop_task(task: dict) -> None:
     if actual_width != target_width or actual_height != target_height:
         img = ImageOps.fit(img, (target_width, target_height), Image.LANCZOS, centering=(0.5, 0.5))
 
-    # 保存最终图片（PNG格式）
-    img.save(target_filepath, "PNG")
-    logging.info(f"Saved to {target_filepath.name}")
+    # 转换为RGB（如果需要）
+    if img.mode in ("RGBA", "LA", "P"):
+        rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+        img = rgb_img
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
 
-    # 强制转换为JPG（按照新需求，所有最终图片都转JPG）
-    logging.info(f"Converting {target_filepath.name} to JPG")
-    convert_to_jpg(target_filepath)
+    # 直接保存为JPG（质量95）
+    img.save(target_filepath, "JPEG", quality=95)
+    logging.info(f"Saved to {target_filepath.name}")
 
 
 def process_all_upscale_tasks(api: ComfyApiWrapper, all_upscale_tasks: list[dict]) -> None:

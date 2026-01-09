@@ -18,7 +18,8 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 
 - 使用z-image-turbo模型快速生成高质量图片
 - 支持批量生成：根据主题和变奏自动生成多张图片
-- 多设备适配：直接生成原始设备分辨率，保持宽高比
+- 4-bucket分辨率架构：智能映射全球设备到4个标准分辨率桶，避免生成扭曲
+- 多设备适配：基于纵横比自动匹配最佳分辨率桶，超分裁切到目标尺寸
 - 多种workflow：图片生成、超分、扩图
 - 模块化架构：每个workflow独立封装为Python模块
 - 完整测试：Makefile提供所有workflow的自动化测试
@@ -29,16 +30,20 @@ AI壁纸生成工具集，基于ComfyUI的图像生成工作流，支持批量�
 .
 ├── libs/                 # 公共库和workflow模块
 │   ├── __init__.py       # 模块导出
-│   ├── libs.py           # 公共库函数
+│   ├── constants.py      # 常量定义（4-bucket配置、临界尺寸等）
+│   ├── device.py         # 设备和CSV工具函数
+│   ├── image.py          # 图片处理工具函数
+│   ├── workflow.py       # Workflow基础类
 │   ├── zit.py            # z-image-turbo图片生成workflow
 │   ├── usdu.py           # Ultimate SD Upscale超分workflow
-│   ├── upscale.py        # 2倍模型超分workflow (RealESRGAN)
-│   ├── aurasr.py         # 4倍模型超分workflow (AuraSR)
+│   ├── upscale.py        # RealESRGAN模型超分workflow (2x/4x)
+│   ├── aurasr.py         # AuraSR超分workflow (4x)
 │   └── outpaint.py       # 扩图workflow
 ├── wf.py                 # workflow入口脚本
 ├── gen_images.py         # 批量生成脚本 (Phase 1)
 ├── upscale.py            # 批量超分脚本 (Phases 2-4)
 ├── Makefile              # 测试自动化
+├── buckets.png           # 4-bucket分辨率设计解释图
 ├── theme.txt             # 主题提示词
 ├── variations.txt        # 变奏提示词（每行一个）
 ├── pixels.csv            # 设备分辨率表
@@ -148,6 +153,8 @@ gen_images.py根据变奏，生成4种标准分辨率的母图（base images）�
 | 2      | 1536×1024   | 1.15-1.65    | Tablets/laptops (landscape)|
 | 3      | 1728×960    | ≥ 1.65       | Wide monitors/TVs|
 
+这4个分辨率桶均位于1.5M像素临界线上（width × height ≈ 1.5M），在保证图片质量的同时避免生成扭曲。详细设计说明见 [buckets.png](buckets.png)，该图展示了在w×h=1.5Mpx曲线上，不同纵横比区间如何映射到4个标准分辨率点。其中Bucket 3 (1728×960) 略微偏离临界线，主要是为了适配16:9屏幕的大量占有率。
+
 ```bash
 # 生成4张母图（每个变奏，每个批次）
 ./gen_images.py -u $API -t theme.txt -v variations.txt -o output/
@@ -206,12 +213,13 @@ gen_images.py根据变奏，生成4种标准分辨率的母图（base images）�
 - `--show-table`: 只显示设备到分辨率桶的映射表，不执行超分（无需API URL）
 
 **输出文件**：
-- 最终图片（JPG）：`{counter:03d}_{batch:02d}_{device_id}.png`
+- 最终图片（JPG）：`{counter:03d}_{batch:02d}_{device_id}.jpg`
 - 超分图片（保留）：`{counter:03d}_{batch:02d}_upscale2x_{width}x{height}.png` 或 `{counter:03d}_{batch:02d}_aurasr_{width}x{height}.png`
 - 母图（保留）：`{counter:03d}_{batch:02d}_base_{width}x{height}.png`
 
 **注意事项**：
-- upscale.py不再清理中间文件，所有母图和超分图都会保留
+- upscale.py保留所有母图和超分图，但最终图片直接保存为JPG
+- 裁剪成本低，需要调整设备分辨率或重新裁剪时，只需重新运行upscale.py即可
 - 如果设备所需的分辨率桶的母图不存在，upscale.py会报错并提示需要生成哪个bucket
 - 例如：设备需要bucket 2 (1536×1024)但母图不存在时，错误信息会提示运行 `gen_images.py --buckets 2`
 
@@ -234,7 +242,7 @@ ls output/*_base_*.png
 ./upscale.py -o output/ -p pixels.csv
 
 # 6. 查看最终图片
-ls output/*.png | grep -v base | grep -v upscale | grep -v aurasr
+ls output/*.jpg
 ```
 
 ### 使用独立workflow
@@ -304,6 +312,8 @@ gen_images.py生成4个标准分辨率的母图（base images），对应全球�
 - **Bucket 2**: 1536×1024 (1.15 ≤ ar < 1.65) - 标准横屏平板/笔记本
 - **Bucket 3**: 1728×960 (ar ≥ 1.65) - 超宽横屏显示器/电视
 
+这4个分辨率均在1.5M像素临界线附近，避免AI模型生成扭曲。设计细节见 [buckets.png](buckets.png)。
+
 **生成流程**：
 1. 从`theme.txt`读取主题提示词
 2. 从`variations.txt`读取变奏（每行一个）
@@ -331,8 +341,7 @@ upscale.py将4张母图超分放大，并裁切适配到所有设备分辨率：
 5. **Phase 2b - upscale4x超分**：批量处理upscale4x任务（如果使用--upscale-mode upscale4x）
 6. **Phase 2c - AuraSR超分**：批量处理AuraSR任务（auto模式，factor>2或--upscale-mode aurasr）
 7. **Phase 3 - USDU超分**：批量处理USDU任务（如果使用--upscale-mode usdu）
-8. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将超分图裁切到各设备分辨率
-9. **JPG转换**：所有最终图片强制转换为JPG格式
+8. **Phase 4 - 裁切适配**：使用PIL ImageOps.fit将超分图裁切到各设备分辨率，直接保存为JPG
 
 **设备到分辨率桶映射示例**：
 - iPhone 15 (1179×2556, ar=0.46) → Bucket 0 (896×1920)
@@ -409,7 +418,7 @@ upscale.py将4张母图超分放大，并裁切适配到所有设备分辨率：
 - **自动跳过已存在文件**：支持断点续传
 - **批量超分**：避免频繁切换模型，提升性能
 - **中间文件保留**：所有母图和超分图都保留，便于调试和重用
-- **强制JPG转换**：所有最终设备图片自动转换为JPG格式
+- **裁剪后直接存JPG**：最终图片直接保存为JPG，裁剪成本低，可随时重新生成
 
 ## 代码规范
 
