@@ -14,11 +14,10 @@ from typing import Dict, Optional, Any
 
 import httpx
 from bs4 import BeautifulSoup
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
+import litellm
+from langchain_community.chat_models import ChatLiteLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
 
@@ -45,42 +44,28 @@ def setup_logging() -> None:
     logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 
-def create_llm(model: str) -> BaseChatModel:
+def validate_api_key(model: str) -> None:
     """
-    根据环境变量和模型名称创建相应的LLM实例。
+    验证所需的API密钥是否已设置。
 
-    决策次序：
-    1. 有GEMINI_API_KEY或GOOGLE_API_KEY -> 使用Google Gemini AI
-    2. 有OPENAI_API_KEY -> 使用OpenAI
-
-    支持自定义BASE_URL通过环境变量GEMINI_BASE_URL或OPENAI_BASE_URL。
+    使用 LiteLLM 的 validate_environment 函数检查模型所需的环境变量是否正确配置。
+    如果缺少必需的API密钥，则抛出异常。
 
     Args:
-        model: 要使用的模型名称，如 'gpt-4o-mini' 或 'gemini-pro'
+        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'）
 
     Returns:
-        BaseChatModel: 配置好的LLM实例（ChatGoogleGenerativeAI或ChatOpenAI）
+        None
 
     Raises:
-        ValueError: 当没有设置任何API密钥时抛出
+        Exception: 当环境变量验证失败时抛出（如缺少API密钥）
     """
-    gemini_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
-    openai_key = os.getenv('OPENAI_API_KEY')
-
-    if gemini_key:
-        kwargs: Dict[str, Any] = {'model': model, 'temperature': 0}
-        if base_url := os.getenv('GEMINI_BASE_URL'):
-            kwargs['base_url'] = base_url
-        logging.info(f"Using Google Gemini AI with model: {model}")
-        return ChatGoogleGenerativeAI(**kwargs)
-    elif openai_key:
-        kwargs = {'model': model, 'temperature': 0}
-        if base_url := os.getenv('OPENAI_BASE_URL'):
-            kwargs['base_url'] = base_url
-        logging.info(f"Using OpenAI with model: {model}")
-        return ChatOpenAI(**kwargs)
-    else:
-        raise ValueError('请设置 GEMINI_API_KEY/GOOGLE_API_KEY 或 OPENAI_API_KEY 环境变量')
+    logging.info(f"Validating environment for model: {model}")
+    validation_result = litellm.validate_environment(model)
+    if validation_result["keys_in_environment"] is False:
+        missing = validation_result["missing_keys"]
+        raise EnvironmentError(f"Don't have necessary environment {model}: {missing}")
+    logging.info(f"Environment validation passed for model: {model}")
 
 
 def get_article(url: str) -> Dict[str, str]:
@@ -209,21 +194,29 @@ def write_to_file(content: str, filepath: str) -> None:
         raise
 
 
-def create_chain(llm: BaseChatModel) -> Runnable:
+def create_chain(model: str) -> Runnable:
     """
     创建LangChain处理链。
 
-    配置prompt模板、LLM和输出解析器，构建完整的处理链。
+    使用LiteLLM创建LLM实例，配置prompt模板和输出解析器，构建完整的处理链。
+    在创建LLM之前会使用 litellm.validate_environment 验证环境变量是否正确配置。
 
     Args:
-        llm: 配置好的LLM实例
+        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'、'openai/gpt-4o-mini'）
 
     Returns:
         Runnable: 配置好的处理链（prompt | llm | parser）
 
     Raises:
-        无
+        Exception: 环境变量验证失败时抛出（如缺少API密钥）
     """
+    logging.info(f"Creating chain with model: {model}")
+
+    # 验证环境变量
+    validate_api_key(model)
+
+    llm = ChatLiteLLM(model=model, temperature=0)
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", "你是一个专业的文章摘要助手。请用中文对以下文章进行总结，提取关键信息和主要观点。"),
         ("user", "请总结以下文章：\n\n{content}")
@@ -264,6 +257,9 @@ def main() -> None:
 
     从命令行读取参数，配置LLM和处理链，循环处理所有文章URL。
 
+    注意：使用前必须设置相应的API密钥环境变量（如GROQ_API_KEY、OPENAI_API_KEY等），
+    程序会在启动时使用 litellm.validate_environment 验证环境变量，如果缺失会直接抛出异常。
+
     Args:
         无（从命令行读取）
 
@@ -271,7 +267,7 @@ def main() -> None:
         None
 
     Raises:
-        ValueError: API密钥未设置时抛出
+        Exception: 环境变量验证失败时抛出（如缺少API密钥）
         Exception: 文章处理过程中的各种异常
     """
     parser = argparse.ArgumentParser(
@@ -279,8 +275,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--model', '-m',
-        default=os.getenv('MODEL', 'gpt-4o-mini'),
-        help='LLM模型名称，默认从环境变量MODEL读取或使用gpt-4o-mini'
+        default=os.getenv('MODEL', 'groq/llama-3.3-70b-versatile'),
+        help='LLM模型名称，默认从环境变量MODEL读取或使用groq/llama-3.3-70b-versatile'
     )
     parser.add_argument(
         '--output', '-o',
@@ -297,8 +293,7 @@ def main() -> None:
 
     setup_logging()
 
-    llm = create_llm(args.model)
-    chain = create_chain(llm)
+    chain = create_chain(args.model)
 
     for url in args.rest:
         try:

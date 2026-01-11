@@ -8,7 +8,7 @@ dependencies = [
     "httpx",
     "beautifulsoup4",
     "lxml",
-    "langchain-openai",
-    "langchain-google-genai",
     "langchain-core",
+    "langchain-community",
+    "litellm",
 ]

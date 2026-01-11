@@ -5,8 +5,8 @@
 ## 技术栈
 
 - **语言**: Python 3.12+
-- **框架**: LangChain
-- **LLM**: 通过 LiteLLM 支持多种模型
+- **框架**: LangChain + LiteLLM
+- **LLM**: 通过 LiteLLM 统一接口支持多种供应商（OpenAI、Google Gemini、Anthropic Claude、Cohere 等）
 - **包管理**: uv
 
 ## 功能
@@ -31,29 +31,46 @@ uv pip install -e .
 
 ### API 密钥
 
-支持多种 LLM 供应商，按以下优先级选择：
+**重要**: 使用前必须设置相应的 API 密钥环境变量，程序会在启动时使用 `litellm.validate_environment` 验证环境变量，如果缺失会直接抛出异常。
 
-1. **Google Gemini** - 设置 `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`
-2. **OpenAI** - 设置 `OPENAI_API_KEY`
+使用 LiteLLM 统一接口，支持多种 LLM 供应商。LiteLLM 会根据环境变量自动识别供应商：
 
-可选配置自定义 API 端点：
+- **Groq** - 设置 `GROQ_API_KEY` (默认模型使用)
+- **OpenAI** - 设置 `OPENAI_API_KEY`
+- **Google Gemini** - 设置 `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`
+- **Anthropic Claude** - 设置 `ANTHROPIC_API_KEY`
+- **Cohere** - 设置 `COHERE_API_KEY`
+- 更多供应商请参考 [LiteLLM 文档](https://docs.litellm.ai/docs/providers)
 
-- `GEMINI_BASE_URL` - Gemini API 自定义端点
-- `OPENAI_BASE_URL` - OpenAI API 自定义端点
+可选配置自定义 API 端点（通过 LiteLLM 支持）：
+
+- `OPENAI_API_BASE` - OpenAI API 自定义端点
+- 其他供应商端点配置参考 LiteLLM 文档
 
 ### 模型选择
 
-通过环境变量或命令行参数指定模型：
+通过环境变量或命令行参数指定模型，遵循 LiteLLM 格式：
 
 ```bash
-# 环境变量
-export MODEL=gpt-4o-mini
+# 环境变量（推荐使用 provider/model 格式）
+export MODEL=groq/llama-3.3-70b-versatile     # 默认模型
+export MODEL=openai/gpt-4o-mini
+export MODEL=gemini/gemini-pro
+export MODEL=anthropic/claude-3-5-sonnet-20241022
 
 # 或通过命令行参数
-./read_nyt.py --model gpt-4o-mini
+./read_nyt.py --model groq/llama-3.3-70b-versatile
+./read_nyt.py --model openai/gpt-4o-mini
+./read_nyt.py --model gemini/gemini-pro
 ```
 
-模型选择原则参考 `../llms.txt`。
+**LiteLLM 模型格式说明**：
+
+- **推荐格式**: `provider/model` (如 `groq/llama-3.3-70b-versatile`、`openai/gpt-4o-mini`、`gemini/gemini-pro`)
+- **简化格式**: 对于常见模型，可省略 provider (如 `gpt-4o-mini`)，LiteLLM 会自动识别
+- 完整模型列表和格式请参考 [LiteLLM 文档](https://docs.litellm.ai/docs/providers)
+
+模型选择原则参考 `../CLAUDE.md`。
 
 ### 日志级别
 
@@ -79,14 +96,14 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 
 # 完整示例
 ./read_nyt.py \
-  --model gpt-4o-mini \
+  --model groq/llama-3.3-70b-versatile \
   --output summaries.txt \
   https://www.nytimes.com/2024/01/01/world/example-article.html
 ```
 
 ### 参数说明
 
-- `--model, -m`: 指定 LLM 模型名称（默认：环境变量 `MODEL` 或 `gpt-4o-mini`）
+- `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/llama-3.3-70b-versatile`）
 - `--output, -o`: 输出文件路径，摘要将追加到文件末尾
 - `rest`: 要处理的文章 URL 列表（位置参数）
 
@@ -130,9 +147,10 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 
 程序包含完善的错误处理和日志记录：
 
-- HTTP 请求失败会记录详细错误信息
-- 文章解析失败会跳过并继续处理下一篇
-- LLM 调用异常会被捕获并记录
+- **API 密钥验证**：启动时使用 `litellm.validate_environment` 验证环境变量，如缺失会立即抛出异常
+- **HTTP 请求失败**：会记录详细错误信息
+- **文章解析失败**：会跳过并继续处理下一篇
+- **LLM 调用异常**：会被捕获并记录
 
 ## 依赖项
 
@@ -140,9 +158,9 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 
 - `httpx` - HTTP 客户端
 - `beautifulsoup4` + `lxml` - HTML 解析
-- `langchain-openai` - OpenAI LLM 集成
-- `langchain-google-genai` - Google Gemini 集成
+- `langchain-community` - LangChain 社区集成（包含 ChatLiteLLM）
 - `langchain-core` - LangChain 核心功能
+- `litellm` - 统一的 LLM API 接口（通过 langchain-community 间接依赖）
 
 ## License
 

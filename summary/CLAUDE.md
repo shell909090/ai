@@ -21,6 +21,6 @@
 
 使用llm自动阅读new york time新闻，生成摘要。
 
-llm的选择原则参考../llms.txt。
+llm的选择原则参考../CLAUDE.md。
 
 支持多种供应商。
