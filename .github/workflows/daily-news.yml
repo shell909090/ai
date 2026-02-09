@@ -1,0 +1,63 @@
+name: Daily NYT News Summary
+
+on:
+  # 定时触发：每天北京时间早上 9:00（UTC 1:00）
+  schedule:
+    - cron: '0 1 * * *'
+
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: '时间范围（小时）'
+        required: false
+        default: '25'
+        type: string
+
+jobs:
+  summarize-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        working-directory: summary
+        run: uv sync
+
+      - name: Run news summarization
+        working-directory: summary
+        env:
+          # LLM API Key
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MODEL: ${{ secrets.MODEL }}
+
+          # Telegram Configuration
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # Logging
+          LOG_LEVEL: INFO
+        run: |
+          HOURS=${{ github.event.inputs.hours || '25' }}
+          uv run ./read_nyt_rss.py --hours $HOURS
+
+      - name: Upload summary artifact (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyt-summary-${{ github.run_number }}
+          path: summary/nyt_summary.txt
+          retention-days: 7
+          if-no-files-found: ignore

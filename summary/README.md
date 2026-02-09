@@ -196,6 +196,56 @@ source .env
 - `--hours`: 时间范围（小时），只处理指定时间内的新闻（默认：24）
 - `--rss-url`: RSS feed URL（默认：`https://cn.nytimes.com/rss/`）
 
+## GitHub Actions 自动化
+
+### 配置 Secrets
+
+在 GitHub 仓库设置中配置以下 Secrets（Settings → Secrets and variables → Actions）：
+
+| Secret 名称 | 说明 | 示例 |
+|------------|------|------|
+| `GROQ_API_KEY` | LLM API Key | `gsk_...` |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` |
+| `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` |
+| `MODEL` | 可选，模型名称 | `groq/llama-3.3-70b-versatile` |
+
+### 定时运行
+
+Workflow 配置为：
+- ⏰ **每天北京时间早上 9:00 自动运行**（UTC 1:00）
+- 📰 **抓取 25 小时内的新闻**（保证覆盖，避免遗漏）
+- 📱 **自动推送到 Telegram**
+
+### 手动触发
+
+1. 进入 GitHub 仓库的 **Actions** 标签
+2. 选择左侧的 **Daily NYT News Summary** workflow
+3. 点击右侧的 **Run workflow** 按钮
+4. 可选择自定义时间范围（默认 25 小时）
+5. 点击绿色的 **Run workflow** 按钮
+
+### 查看运行结果
+
+- **Telegram**：摘要会自动推送到配置的 Chat ID
+- **GitHub Actions**：在 Actions 标签查看运行日志
+- **Artifacts**：摘要文件会保存 7 天（可在 Actions 页面下载）
+
+### 工作流程
+
+```
+定时触发 (9:00 AM)
+    ↓
+检出代码
+    ↓
+安装 Python + uv
+    ↓
+安装依赖 (uv sync)
+    ↓
+运行脚本 (read_nyt_rss.py --hours 25)
+    ↓
+推送到 Telegram ✅
+```
+
 ## 开发
 
 ### 代码规范
