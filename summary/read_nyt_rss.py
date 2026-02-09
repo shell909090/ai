@@ -283,6 +283,166 @@ def write_to_file(content: str, filepath: str, mode: str = "a") -> None:
         raise
 
 
+def send_telegram_message(
+    bot_token: str, chat_id: str, text: str, parse_mode: str = "Markdown"
+) -> bool:
+    """
+    发送消息到 Telegram。
+
+    Args:
+        bot_token: Telegram Bot Token
+        chat_id: 目标 Chat ID
+        text: 消息内容
+        parse_mode: 解析模式，默认为 Markdown
+
+    Returns:
+        bool: 发送成功返回 True，失败返回 False
+
+    Raises:
+        无（内部捕获异常）
+    """
+    api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": int(chat_id), "text": text, "parse_mode": parse_mode}
+
+    try:
+        response = httpx.post(api_url, json=payload, timeout=10.0)
+        response.raise_for_status()
+        logging.info(f"Telegram message sent successfully (length: {len(text)})")
+        return True
+    except httpx.HTTPError as e:
+        logging.error(f"Failed to send Telegram message: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error sending Telegram message: {e}")
+        return False
+
+
+def format_article_for_telegram(
+    article: Dict[str, str], published: str, url: str
+) -> str:
+    """
+    格式化文章为 Telegram Markdown 格式。
+
+    Args:
+        article: 包含 'title' 和 'summary' 键的字典
+        published: 发布时间字符串
+        url: 原始文章链接
+
+    Returns:
+        str: 格式化后的 Markdown 文本
+
+    Raises:
+        无
+    """
+    title = article.get("title", "无标题")
+    summary = article.get("summary", "无摘要")
+
+    # 转义 Markdown 特殊字符（标题中可能有的）
+    # Telegram Markdown 对某些字符敏感，但我们使用 * 包裹标题
+    message = f"📌 *{title}*\n"
+    message += f"🕐 {published}\n"
+    message += f"🔗 [阅读原文]({url})\n\n"
+    message += summary
+
+    return message
+
+
+def split_long_message(text: str, max_length: int = 4096) -> List[str]:
+    """
+    将长消息分割为多个片段，确保每个片段不超过最大长度。
+
+    智能分割，优先在段落边界分割。
+
+    Args:
+        text: 要分割的文本
+        max_length: 单条消息最大长度，默认 4096
+
+    Returns:
+        List[str]: 分割后的消息列表
+
+    Raises:
+        无
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    remaining = text
+
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+
+        # 尝试在段落边界分割（双换行）
+        split_pos = remaining.rfind("\n\n", 0, max_length)
+        if split_pos == -1:
+            # 尝试在单换行分割
+            split_pos = remaining.rfind("\n", 0, max_length)
+        if split_pos == -1:
+            # 尝试在空格分割
+            split_pos = remaining.rfind(" ", 0, max_length)
+        if split_pos == -1:
+            # 强制截断
+            split_pos = max_length
+
+        chunks.append(remaining[:split_pos].strip())
+        remaining = remaining[split_pos:].strip()
+
+    return chunks
+
+
+def send_article_to_telegram(
+    bot_token: str,
+    chat_id: str,
+    article: Dict[str, str],
+    published: str,
+    url: str,
+) -> bool:
+    """
+    发送单篇文章到 Telegram，如果消息过长则自动分段。
+
+    Args:
+        bot_token: Telegram Bot Token
+        chat_id: 目标 Chat ID
+        article: 包含 'title' 和 'summary' 键的字典
+        published: 发布时间字符串
+        url: 原始文章链接
+
+    Returns:
+        bool: 所有消息发送成功返回 True，否则返回 False
+
+    Raises:
+        无（内部捕获异常）
+    """
+    message = format_article_for_telegram(article, published, url)
+    chunks = split_long_message(message)
+
+    if len(chunks) > 1:
+        logging.info(f"Article too long, splitting into {len(chunks)} parts")
+
+    success = True
+    for idx, chunk in enumerate(chunks, 1):
+        if len(chunks) > 1:
+            # 多段消息时添加页码标记
+            if idx == 1:
+                chunk_with_marker = chunk + f"\n\n_（续 {idx}/{len(chunks)}）_"
+            elif idx == len(chunks):
+                chunk_with_marker = f"_（{idx}/{len(chunks)}）_\n\n" + chunk
+            else:
+                chunk_with_marker = (
+                    f"_（{idx}/{len(chunks)}）_\n\n" + chunk + "\n\n_（续）_"
+                )
+        else:
+            chunk_with_marker = chunk
+
+        if not send_telegram_message(bot_token, chat_id, chunk_with_marker):
+            success = False
+            # 继续尝试发送剩余部分，不中断
+
+    return success
+
+
 def create_chain(model: str) -> Runnable:
     """
     创建LangChain处理链。
@@ -310,7 +470,21 @@ def create_chain(model: str) -> Runnable:
         [
             (
                 "system",
-                "你是一个专业的文章摘要助手。请用中文对以下文章进行总结，提取关键信息和主要观点。",
+                """你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
+
+摘要要求：
+1. 开篇：用1-2句话清晰说明"发生了什么事"
+2. 展开：详细阐述关键事实、背景、相关人物和具体细节
+3. 深化：解释事件的意义、影响或争议点
+4. 补充：如有重要数据、引言或相关信息，务必包含
+
+风格要求：
+- 信息完整，确保读者看完摘要后无需查看原文
+- 保留重要细节和具体事例，避免空泛概括
+- 语言客观但生动，准确传达原文核心内容和语气
+- 长度约400-500字（可根据原文复杂度适当调整）
+
+记住：读者依赖这份摘要来替代原文，不要过度精简。""",
             ),
             ("user", "请总结以下文章：\n\n{content}"),
         ]
@@ -319,7 +493,12 @@ def create_chain(model: str) -> Runnable:
 
 
 def process_rss_articles(
-    rss_url: str, chain: Runnable, output_file: str, hours: int = 24
+    rss_url: str,
+    chain: Runnable,
+    output_file: str,
+    hours: int = 24,
+    telegram_bot_token: Optional[str] = None,
+    telegram_chat_id: Optional[str] = None,
 ) -> None:
     """
     处理RSS feed中所有符合时间范围的文章。
@@ -329,6 +508,8 @@ def process_rss_articles(
         chain: LangChain处理链
         output_file: 输出文件路径
         hours: 时间范围（小时），默认24小时
+        telegram_bot_token: 可选的 Telegram Bot Token
+        telegram_chat_id: 可选的 Telegram Chat ID
 
     Returns:
         None
@@ -336,6 +517,13 @@ def process_rss_articles(
     Raises:
         Exception: RSS获取或文章处理失败时抛出
     """
+    # 检查是否启用 Telegram
+    telegram_enabled = bool(telegram_bot_token and telegram_chat_id)
+    if telegram_enabled:
+        logging.info("Telegram notification enabled")
+    else:
+        logging.info("Telegram notification disabled (missing token or chat_id)")
+
     # 获取RSS feed
     feed = fetch_rss_feed(rss_url)
 
@@ -344,7 +532,21 @@ def process_rss_articles(
 
     if not recent_entries:
         logging.info("No recent articles found in the RSS feed")
+        if telegram_enabled:
+            send_telegram_message(
+                telegram_bot_token,
+                telegram_chat_id,
+                f"📰 纽约时报中文网 - 最近{hours}小时无新闻",
+            )
         return
+
+    # 发送开始消息到 Telegram
+    if telegram_enabled:
+        start_msg = f"📰 *纽约时报中文网 - 最近{hours}小时新闻摘要*\n\n"
+        start_msg += f"🕒 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        start_msg += f"📊 文章总数: {len(recent_entries)}\n"
+        start_msg += "\n开始处理..."
+        send_telegram_message(telegram_bot_token, telegram_chat_id, start_msg)
 
     # 创建或清空输出文件，写入标题
     header = f"纽约时报中文网 - 最近{hours}小时新闻摘要\n"
@@ -355,6 +557,7 @@ def process_rss_articles(
 
     # 处理每篇文章
     success_count = 0
+    failed_articles = []  # 记录失败的文章
     for idx, entry in enumerate(recent_entries, 1):
         try:
             logging.info(
@@ -376,9 +579,20 @@ def process_rss_articles(
             # 同时输出到控制台
             print(output_text)
 
+            # 发送到 Telegram
+            if telegram_enabled:
+                send_article_to_telegram(
+                    telegram_bot_token,
+                    telegram_chat_id,
+                    article,
+                    entry["published"],
+                    entry["link"],
+                )
+
             success_count += 1
         except Exception as e:
             logging.error(f"Failed to process article '{entry['title']}': {e}")
+            failed_articles.append({"title": entry["title"], "error": str(e)})
             # 写入错误信息到输出文件
             error_msg = f"\n{'=' * 80}\n标题: {entry['title']}\n处理失败: {str(e)}\n{'=' * 80}\n\n"
             write_to_file(error_msg, output_file)
@@ -390,6 +604,27 @@ def process_rss_articles(
     summary += f"{'=' * 80}\n"
     write_to_file(summary, output_file)
     print(summary)
+
+    # 只在有失败时发送 Telegram 通知
+    if telegram_enabled and failed_articles:
+        failure_msg = "⚠️ *处理完成 - 有失败项*\n\n"
+        failure_msg += f"📊 成功: {success_count}/{len(recent_entries)} 篇\n"
+        failure_msg += f"❌ 失败: {len(failed_articles)} 篇\n\n"
+        failure_msg += "*失败详情：*\n"
+        for idx, failed in enumerate(failed_articles, 1):
+            # 截断过长的标题和错误信息
+            title = (
+                failed["title"][:50] + "..."
+                if len(failed["title"]) > 50
+                else failed["title"]
+            )
+            error = (
+                failed["error"][:100] + "..."
+                if len(failed["error"]) > 100
+                else failed["error"]
+            )
+            failure_msg += f"{idx}. {title}\n   错误: {error}\n\n"
+        send_telegram_message(telegram_bot_token, telegram_chat_id, failure_msg)
 
 
 def main() -> None:
@@ -443,9 +678,25 @@ def main() -> None:
     # 创建处理链
     chain = create_chain(args.model)
 
+    # 读取 Telegram 配置（从环境变量）
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if telegram_bot_token and telegram_chat_id:
+        logging.info("Telegram configuration found in environment variables")
+    else:
+        logging.info("Telegram configuration not found, notifications will be disabled")
+
     # 处理RSS文章
     try:
-        process_rss_articles(args.rss_url, chain, args.output, args.hours)
+        process_rss_articles(
+            args.rss_url,
+            chain,
+            args.output,
+            args.hours,
+            telegram_bot_token,
+            telegram_chat_id,
+        )
     except Exception as e:
         logging.error(f"Failed to process RSS articles: {e}")
         sys.exit(1)

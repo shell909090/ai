@@ -84,6 +84,45 @@ export MODEL=anthropic/claude-3-5-sonnet-20241022
 export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 ```
 
+### Telegram Bot 配置（read_nyt_rss）
+
+`read_nyt_rss.py` 支持通过 Telegram Bot 推送新闻摘要到手机。
+
+#### 创建 Telegram Bot
+
+1. 在 Telegram 搜索 `@BotFather`
+2. 发送 `/newbot` 并按提示操作
+3. 获取 **Bot Token**（格式：`123456:ABC-DEF...`）
+4. 在 Telegram 搜索 `@userinfobot` 获取你的 **Chat ID**（纯数字）
+
+#### 配置环境变量
+
+```bash
+export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
+export TELEGRAM_CHAT_ID="123456789"
+```
+
+#### 使用 .env 文件（本地测试推荐）
+
+1. 复制 `.env.example` 为 `.env`：
+   ```bash
+   cp .env.example .env
+   ```
+
+2. 编辑 `.env` 文件，填入你的配置：
+   ```bash
+   GROQ_API_KEY=your_actual_key
+   TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+   TELEGRAM_CHAT_ID=123456789
+   ```
+
+3. 加载环境变量（每次运行前）：
+   ```bash
+   source .env
+   ```
+
+**注意**：`.env` 文件已被 `.gitignore` 忽略，不会提交到 git。
+
 ## 使用方法
 
 ### read_nyt
@@ -114,7 +153,10 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 ### read_nyt_rss
 
 ```bash
-# 基本用法（读取24小时内的新闻）
+# 本地测试 - 先加载环境变量
+source .env
+
+# 基本用法（读取24小时内的新闻，如果配置了 Telegram 会自动推送）
 ./read_nyt_rss.py
 
 # 指定模型
@@ -129,12 +171,19 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 # 指定自定义RSS源
 ./read_nyt_rss.py --rss-url https://example.com/rss/
 
-# 完整示例
+# 完整示例（保存到文件 + Telegram推送）
+source .env
 ./read_nyt_rss.py \
   --model groq/llama-3.3-70b-versatile \
   --output nyt_daily.txt \
   --hours 24
 ```
+
+**Telegram 推送说明**：
+- 如果设置了 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID` 环境变量，脚本会自动推送摘要到 Telegram
+- 每篇新闻单独发送一条或多条消息（超过 4096 字符时自动分段）
+- Telegram 发送失败不影响文件保存
+- 推送格式支持 Markdown，链接可直接点击
 
 #### read_nyt_rss 参数说明
 
