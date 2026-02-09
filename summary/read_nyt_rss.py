@@ -322,6 +322,8 @@ def escape_markdown(text: str) -> str:
     """
     转义 Telegram Markdown 特殊字符。
 
+    重要：必须先转义反斜杠，否则会二次转义其他字符前面插入的反斜杠。
+
     Args:
         text: 要转义的文本
 
@@ -331,8 +333,8 @@ def escape_markdown(text: str) -> str:
     Raises:
         无
     """
-    # Telegram Markdown 需要转义的字符
-    escape_chars = ["_", "*", "[", "`", "\\"]
+    # 重要：反斜杠必须第一个转义，避免二次转义
+    escape_chars = ["\\", "_", "*", "[", "`"]
     for char in escape_chars:
         text = text.replace(char, "\\" + char)
     return text
