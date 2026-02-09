@@ -11,4 +11,6 @@ dependencies = [
     "langchain-core",
     "langchain-community",
     "litellm",
+    "langchain-litellm>=0.3.5",
+    "feedparser>=6.0.12",
 ]

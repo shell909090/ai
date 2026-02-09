@@ -15,10 +15,10 @@ from typing import Dict, Optional, Any
 import httpx
 from bs4 import BeautifulSoup
 import litellm
-from langchain_community.chat_models import ChatLiteLLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
+from langchain_litellm import ChatLiteLLM
 
 
 def setup_logging() -> None:
