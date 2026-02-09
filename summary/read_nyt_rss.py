@@ -23,6 +23,21 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_litellm import ChatLiteLLM
 
+# HTTP 请求默认配置
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+DEFAULT_HEADERS = {
+    "User-Agent": DEFAULT_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 
 def setup_logging() -> None:
     """
@@ -71,28 +86,43 @@ def validate_api_key(model: str) -> None:
     logging.info(f"Environment validation passed for model: {model}")
 
 
-def fetch_rss_feed(rss_url: str) -> feedparser.FeedParserDict:
+def fetch_rss_feed(rss_url: str, timeout: float = 30.0) -> feedparser.FeedParserDict:
     """
     获取RSS feed内容。
 
+    使用 httpx 带超时地获取内容，防止挂起。
+
     Args:
         rss_url: RSS feed的URL
+        timeout: 超时时间（秒），默认30秒
 
     Returns:
         feedparser.FeedParserDict: 解析后的RSS feed对象
 
     Raises:
-        Exception: RSS获取或解析失败时抛出
+        httpx.HTTPError: HTTP请求失败时抛出
+        Exception: RSS解析失败时抛出
     """
     try:
-        logging.info(f"Fetching RSS feed from: {rss_url}")
-        feed = feedparser.parse(rss_url)
+        logging.info(f"Fetching RSS feed from: {rss_url} (timeout: {timeout}s)")
+        # 使用 httpx 带超时获取内容
+        response = httpx.get(rss_url, timeout=timeout, follow_redirects=True)
+        response.raise_for_status()
+
+        # 使用 feedparser 解析内容
+        feed = feedparser.parse(response.text)
         if feed.bozo:
             logging.warning(f"RSS feed parsing warning: {feed.bozo_exception}")
         logging.info(f"Successfully fetched {len(feed.entries)} entries from RSS feed")
         return feed
+    except httpx.TimeoutException as e:
+        logging.error(f"Timeout fetching RSS feed from {rss_url}: {e}")
+        raise
+    except httpx.HTTPError as e:
+        logging.error(f"HTTP error fetching RSS feed from {rss_url}: {e}")
+        raise
     except Exception as e:
-        logging.error(f"Failed to fetch RSS feed from {rss_url}: {e}")
+        logging.error(f"Failed to parse RSS feed from {rss_url}: {e}")
         raise
 
 
@@ -167,7 +197,12 @@ def get_article(url: str) -> Dict[str, str]:
     """
     try:
         logging.info(f"Fetching article from: {url}")
-        resp = httpx.get(url, timeout=30.0)
+        resp = httpx.get(
+            url,
+            headers=DEFAULT_HEADERS,
+            timeout=30.0,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
     except httpx.HTTPError as e:
         logging.error(f"Failed to fetch article from {url}: {e}")
@@ -283,6 +318,26 @@ def write_to_file(content: str, filepath: str, mode: str = "a") -> None:
         raise
 
 
+def escape_markdown(text: str) -> str:
+    """
+    转义 Telegram Markdown 特殊字符。
+
+    Args:
+        text: 要转义的文本
+
+    Returns:
+        str: 转义后的文本
+
+    Raises:
+        无
+    """
+    # Telegram Markdown 需要转义的字符
+    escape_chars = ["_", "*", "[", "`", "\\"]
+    for char in escape_chars:
+        text = text.replace(char, "\\" + char)
+    return text
+
+
 def send_telegram_message(
     bot_token: str, chat_id: str, text: str, parse_mode: str = "Markdown"
 ) -> bool:
@@ -323,6 +378,8 @@ def format_article_for_telegram(
     """
     格式化文章为 Telegram Markdown 格式。
 
+    正确转义 Markdown 特殊字符以防止解析错误和潜在的注入问题。
+
     Args:
         article: 包含 'title' 和 'summary' 键的字典
         published: 发布时间字符串
@@ -337,12 +394,16 @@ def format_article_for_telegram(
     title = article.get("title", "无标题")
     summary = article.get("summary", "无摘要")
 
-    # 转义 Markdown 特殊字符（标题中可能有的）
-    # Telegram Markdown 对某些字符敏感，但我们使用 * 包裹标题
-    message = f"📌 *{title}*\n"
-    message += f"🕐 {published}\n"
+    # 转义标题和摘要中的 Markdown 特殊字符
+    title_escaped = escape_markdown(title)
+    summary_escaped = escape_markdown(summary)
+    published_escaped = escape_markdown(published)
+
+    # URL 不需要转义（在链接语法的括号内）
+    message = f"📌 *{title_escaped}*\n"
+    message += f"🕐 {published_escaped}\n"
     message += f"🔗 [阅读原文]({url})\n\n"
-    message += summary
+    message += summary_escaped
 
     return message
 
@@ -415,8 +476,13 @@ def send_article_to_telegram(
     Raises:
         无（内部捕获异常）
     """
+    # 预留空间给分页标记（最长约 30-40 字符），使用 3996 而不是 4096
+    TELEGRAM_MAX_LENGTH = 4096
+    PAGINATION_MARKER_RESERVE = 100  # 预留空间给分页标记
+    max_chunk_size = TELEGRAM_MAX_LENGTH - PAGINATION_MARKER_RESERVE
+
     message = format_article_for_telegram(article, published, url)
-    chunks = split_long_message(message)
+    chunks = split_long_message(message, max_length=max_chunk_size)
 
     if len(chunks) > 1:
         logging.info(f"Article too long, splitting into {len(chunks)} parts")
@@ -435,6 +501,15 @@ def send_article_to_telegram(
                 )
         else:
             chunk_with_marker = chunk
+
+        # 最后的安全检查：确保添加标记后不超过限制
+        if len(chunk_with_marker) > TELEGRAM_MAX_LENGTH:
+            logging.warning(
+                f"Chunk with marker exceeds limit: {len(chunk_with_marker)} > {TELEGRAM_MAX_LENGTH}, truncating"
+            )
+            chunk_with_marker = (
+                chunk_with_marker[: TELEGRAM_MAX_LENGTH - 20] + "\n\n_（截断）_"
+            )
 
         if not send_telegram_message(bot_token, chat_id, chunk_with_marker):
             success = False

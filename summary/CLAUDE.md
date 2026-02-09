@@ -96,6 +96,93 @@ TELEGRAM_CHAT_ID=123456789
 3. **实时性**：移动端即时推送，随时随地阅读
 4. **可撤销性**：bot 可随时通过 @BotFather 撤销重建
 
+## 安全设计和最佳实践
+
+### 1. Telegram Markdown 安全
+
+**问题**：未转义的特殊字符可能导致解析错误或注入问题
+
+**解决方案**：
+```python
+def escape_markdown(text: str) -> str:
+    """转义 Telegram Markdown 特殊字符"""
+    escape_chars = ["_", "*", "[", "`", "\\"]
+    for char in escape_chars:
+        text = text.replace(char, "\\" + char)
+    return text
+```
+
+- ✅ 标题、摘要、时间全部转义
+- ✅ URL 不转义（在链接语法括号内安全）
+- ✅ 防止解析错误和潜在注入
+
+### 2. 消息长度控制
+
+**问题**：分页标记可能导致消息超过 4096 字符限制
+
+**解决方案**：双重保护机制
+- **预留空间**：使用 3996 字符限制（预留 100 字符给标记）
+- **最后验证**：添加标记后检查，超出则截断
+
+```python
+TELEGRAM_MAX_LENGTH = 4096
+PAGINATION_MARKER_RESERVE = 100
+max_chunk_size = TELEGRAM_MAX_LENGTH - PAGINATION_MARKER_RESERVE
+```
+
+### 3. 超时控制
+
+**问题**：RSS 或文章获取可能挂起，导致 GitHub Actions 卡死
+
+**解决方案**：所有 HTTP 请求都设置超时
+- RSS 获取：30 秒超时
+- 文章获取：30 秒超时
+- Telegram 发送：10 秒超时
+
+```python
+# RSS 获取（使用 httpx 先下载，再解析）
+response = httpx.get(rss_url, timeout=30.0, follow_redirects=True)
+feed = feedparser.parse(response.text)
+```
+
+### 4. HTTP 请求优化
+
+**问题**：缺少 User-Agent 可能被网站拒绝（403），缺少重定向处理
+
+**解决方案**：完整的 HTTP headers
+```python
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+    "Accept": "text/html,application/xhtml+xml...",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "DNT": "1",
+}
+
+httpx.get(url, headers=DEFAULT_HEADERS, follow_redirects=True)
+```
+
+- ✅ 模拟真实浏览器
+- ✅ 避免 403 Forbidden
+- ✅ 自动处理重定向
+
+### 5. 多目标推送
+
+**设计**：支持多个 Chat ID（逗号分隔）
+- 可同时推送给多个用户或群组
+- 灵活的通知策略
+
+```bash
+TELEGRAM_CHAT_ID=123456789,987654321,111222333
+```
+
+### 6. 优雅的错误处理
+
+**策略**：
+- Telegram 发送失败不中断后续处理
+- 只在有失败时发送失败通知（避免噪音）
+- 详细的失败信息（标题、错误原因）
+- 所有操作都有日志记录
+
 ## 依赖和工具链
 
 - `feedparser`：RSS feed 解析
