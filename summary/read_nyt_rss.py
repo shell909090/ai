@@ -509,7 +509,7 @@ def process_rss_articles(
         output_file: 输出文件路径
         hours: 时间范围（小时），默认24小时
         telegram_bot_token: 可选的 Telegram Bot Token
-        telegram_chat_id: 可选的 Telegram Chat ID
+        telegram_chat_id: 可选的 Telegram Chat ID，支持多个ID用逗号分隔
 
     Returns:
         None
@@ -517,10 +517,20 @@ def process_rss_articles(
     Raises:
         Exception: RSS获取或文章处理失败时抛出
     """
-    # 检查是否启用 Telegram
-    telegram_enabled = bool(telegram_bot_token and telegram_chat_id)
+    # 解析 Telegram Chat IDs（支持多个，逗号分隔）
+    telegram_chat_ids = []
+    if telegram_bot_token and telegram_chat_id:
+        telegram_chat_ids = [
+            chat_id.strip()
+            for chat_id in telegram_chat_id.split(",")
+            if chat_id.strip()
+        ]
+
+    telegram_enabled = bool(telegram_bot_token and telegram_chat_ids)
     if telegram_enabled:
-        logging.info("Telegram notification enabled")
+        logging.info(
+            f"Telegram notification enabled for {len(telegram_chat_ids)} chat(s)"
+        )
     else:
         logging.info("Telegram notification disabled (missing token or chat_id)")
 
@@ -533,11 +543,9 @@ def process_rss_articles(
     if not recent_entries:
         logging.info("No recent articles found in the RSS feed")
         if telegram_enabled:
-            send_telegram_message(
-                telegram_bot_token,
-                telegram_chat_id,
-                f"📰 纽约时报中文网 - 最近{hours}小时无新闻",
-            )
+            no_news_msg = f"📰 纽约时报中文网 - 最近{hours}小时无新闻"
+            for chat_id in telegram_chat_ids:
+                send_telegram_message(telegram_bot_token, chat_id, no_news_msg)
         return
 
     # 发送开始消息到 Telegram
@@ -546,7 +554,8 @@ def process_rss_articles(
         start_msg += f"🕒 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         start_msg += f"📊 文章总数: {len(recent_entries)}\n"
         start_msg += "\n开始处理..."
-        send_telegram_message(telegram_bot_token, telegram_chat_id, start_msg)
+        for chat_id in telegram_chat_ids:
+            send_telegram_message(telegram_bot_token, chat_id, start_msg)
 
     # 创建或清空输出文件，写入标题
     header = f"纽约时报中文网 - 最近{hours}小时新闻摘要\n"
@@ -581,13 +590,14 @@ def process_rss_articles(
 
             # 发送到 Telegram
             if telegram_enabled:
-                send_article_to_telegram(
-                    telegram_bot_token,
-                    telegram_chat_id,
-                    article,
-                    entry["published"],
-                    entry["link"],
-                )
+                for chat_id in telegram_chat_ids:
+                    send_article_to_telegram(
+                        telegram_bot_token,
+                        chat_id,
+                        article,
+                        entry["published"],
+                        entry["link"],
+                    )
 
             success_count += 1
         except Exception as e:
@@ -624,7 +634,8 @@ def process_rss_articles(
                 else failed["error"]
             )
             failure_msg += f"{idx}. {title}\n   错误: {error}\n\n"
-        send_telegram_message(telegram_bot_token, telegram_chat_id, failure_msg)
+        for chat_id in telegram_chat_ids:
+            send_telegram_message(telegram_bot_token, chat_id, failure_msg)
 
 
 def main() -> None:

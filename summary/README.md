@@ -99,7 +99,10 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 
 ```bash
 export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
+# 单个 Chat ID
 export TELEGRAM_CHAT_ID="123456789"
+# 或多个 Chat ID（用逗号分隔，可发送给多个用户或群组）
+export TELEGRAM_CHAT_ID="123456789,987654321"
 ```
 
 #### 使用 .env 文件（本地测试推荐）
@@ -113,7 +116,8 @@ export TELEGRAM_CHAT_ID="123456789"
    ```bash
    GROQ_API_KEY=your_actual_key
    TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-   TELEGRAM_CHAT_ID=123456789
+   # 单个或多个 Chat ID（多个用逗号分隔）
+   TELEGRAM_CHAT_ID=123456789,987654321
    ```
 
 3. 加载环境变量（每次运行前）：
