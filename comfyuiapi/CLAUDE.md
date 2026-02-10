@@ -9,7 +9,8 @@
 * 禁止自动git提交
 * 编码规范遵循PEP-8。
 * 强制执行 Type Annotations。
-* 公有函数必须包含详尽的 Docstrings (Args, Returns, Raises)。
+* 公有函数应包含简洁的 Docstrings。不超过一行，注明函数中最重要的事。
+* 关键逻辑可以少量增加注释，注释必须简洁。
 * 环境使用uv管理
 * 函数的McCabe复杂度尽量不要超过10。
 * 使用 ruff 进行静态检查，配置 McCabe 复杂度阈值为 10。
