@@ -710,7 +710,10 @@ def process_rss_articles(
                 if len(failed["error"]) > 100
                 else failed["error"]
             )
-            failure_msg += f"{idx}. {title}\n   错误: {error}\n\n"
+            # 转义 Markdown 特殊字符，避免发送失败
+            title_escaped = escape_markdown(title)
+            error_escaped = escape_markdown(error)
+            failure_msg += f"{idx}. {title_escaped}\n   错误: {error_escaped}\n\n"
         for chat_id in telegram_chat_ids:
             send_telegram_message(telegram_bot_token, chat_id, failure_msg)
 
