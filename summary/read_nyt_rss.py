@@ -130,14 +130,15 @@ def filter_recent_entries(
     entries: List[feedparser.FeedParserDict], hours: int = 24
 ) -> List[Dict[str, str]]:
     """
-    过滤指定时间范围内的RSS条目。
+    过滤指定时间范围内的RSS条目，并按时间升序排序。
 
     Args:
         entries: RSS feed条目列表
         hours: 时间范围（小时），默认24小时
 
     Returns:
-        List[Dict[str, str]]: 过滤后的条目列表，每个条目包含title和link
+        List[Dict[str, str]]: 过滤后的条目列表（按时间升序排序，最老的在前），
+                             每个条目包含title、link和published
 
     Raises:
         无
@@ -165,6 +166,7 @@ def filter_recent_entries(
                         "title": entry.get("title", "No title"),
                         "link": entry.get("link", ""),
                         "published": published_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "published_timestamp": published_time,  # 保存时间戳用于排序
                     }
                 )
                 logging.info(f"Found recent article: {entry.get('title', 'No title')}")
@@ -172,7 +174,14 @@ def filter_recent_entries(
             logging.warning(f"Failed to parse entry timestamp: {e}")
             continue
 
-    logging.info(f"Filtered {len(recent_entries)} articles within last {hours} hours")
+    # 按时间升序排序（最老的在前）
+    recent_entries.sort(key=lambda x: x["published_timestamp"])
+
+    # 移除临时的 timestamp 字段
+    for entry in recent_entries:
+        del entry["published_timestamp"]
+
+    logging.info(f"Filtered {len(recent_entries)} articles within last {hours} hours (sorted oldest first)")
     return recent_entries
 
 
