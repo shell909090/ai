@@ -20,6 +20,21 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_litellm import ChatLiteLLM
 
+# HTTP 请求默认配置
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+DEFAULT_HEADERS = {
+    "User-Agent": DEFAULT_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 
 def setup_logging() -> None:
     """
@@ -89,7 +104,12 @@ def get_article(url: str) -> Dict[str, str]:
     """
     try:
         logging.info(f"Fetching article from: {url}")
-        resp = httpx.get(url, timeout=30.0)
+        resp = httpx.get(
+            url,
+            headers=DEFAULT_HEADERS,
+            timeout=30.0,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
     except httpx.HTTPError as e:
         logging.error(f"Failed to fetch article from {url}: {e}")

@@ -160,16 +160,21 @@ def filter_recent_entries(
                     *entry.updated_parsed[:6], tzinfo=timezone.utc
                 )
 
-            if published_time and published_time >= cutoff_time:
+            link = entry.get("link", "").strip()
+            if published_time and published_time >= cutoff_time and link:
                 recent_entries.append(
                     {
                         "title": entry.get("title", "No title"),
-                        "link": entry.get("link", ""),
+                        "link": link,
                         "published": published_time.strftime("%Y-%m-%d %H:%M:%S"),
                         "published_timestamp": published_time,  # 保存时间戳用于排序
                     }
                 )
                 logging.info(f"Found recent article: {entry.get('title', 'No title')}")
+            elif published_time and published_time >= cutoff_time and not link:
+                logging.warning(
+                    f"Skipping entry without link: {entry.get('title', 'No title')}"
+                )
         except Exception as e:
             logging.warning(f"Failed to parse entry timestamp: {e}")
             continue
@@ -343,7 +348,7 @@ def escape_markdown(text: str) -> str:
         无
     """
     # 重要：反斜杠必须第一个转义，避免二次转义
-    escape_chars = ["\\", "_", "*", "[", "`"]
+    escape_chars = ["\\", "_", "*", "[", "]", "(", ")", "`"]
     for char in escape_chars:
         text = text.replace(char, "\\" + char)
     return text
