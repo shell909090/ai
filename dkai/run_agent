@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+# 加载用户环境变量
+[ -f ~/.env ] && source ~/.env
+
+# 读取运行参数后立即从环境中移除，减少泄露面
+password="${PASSWORD:-}"
+tmux_args="${TMUX_ARGS:-}"
+ttyd_args="${TTYD_ARGS:-}"
+unset PASSWORD TMUX_ARGS TTYD_ARGS
+
+# 检查必需变量
+[ -z "$password" ] && { echo "[ERROR] PASSWORD is required"; exit 1; }
+
+# 启动信息
+echo "[INFO] Starting DKAI..."
+echo "[INFO] User: $(whoami) | Home: $HOME"
+
+# 创建tmux会话
+if ! tmux has-session -t ai 2>/dev/null; then
+    tmux new-session -d -s ai ${tmux_args:-}
+    echo "[INFO] Created tmux session 'ai'"
+else
+    echo "[INFO] Reusing tmux session 'ai'"
+fi
+
+# 启动ttyd
+echo "[INFO] ttyd on port 8484 | user: shell"
+exec ttyd --writable --port 8484 --credential "shell:$password" ${ttyd_args:-} tmux attach -t ai

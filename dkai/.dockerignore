@@ -1,0 +1,17 @@
+# Emacs临时文件
+*~
+\#*\#
+.\#*
+
+# Git相关
+.git
+.gitignore
+
+# IDE配置
+.vscode
+.idea
+
+# 其他临时文件
+*.swp
+*.bak
+.DS_Store

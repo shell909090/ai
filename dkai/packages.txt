@@ -1,0 +1,9 @@
+aptitude
+dnsutils
+git
+htop
+make
+procps
+ripgrep
+vim
+zip

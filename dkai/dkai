@@ -1,0 +1,128 @@
+#!/bin/bash
+set -euo pipefail
+
+DKAI_CONFIG_HOME="${DKAI_CONFIG_HOME:-$HOME/.config/dkai}"
+DKAI_IMAGE="${DKAI_IMAGE:-dkai}"
+DKAI_NAME_PREFIX="${DKAI_NAME_PREFIX:-dkai}"
+DKAI_HOST_PORT="${DKAI_HOST_PORT:-8484}"
+DKAI_CTR_PORT="8484"
+DKAI_CTR_HOME="/home/shell"
+
+_help() {
+  cat <<USAGE
+Usage:
+  dkai start <profile>   Start container with profile config
+  dkai stop <profile>    Stop container for profile
+
+Config layout:
+  \$DKAI_CONFIG_HOME/<profile>.env    Container env-file
+  \$DKAI_CONFIG_HOME/<profile>.root   Symlink to host mount directory
+USAGE
+}
+
+_env_file() {
+  local profile="$1"
+  echo "$DKAI_CONFIG_HOME/${profile}.env"
+}
+
+_root_link() {
+  local profile="$1"
+  echo "$DKAI_CONFIG_HOME/${profile}.root"
+}
+
+_validate_profile_name() {
+  local profile="$1"
+  if [[ ! "$profile" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "[ERROR] Invalid profile name: $profile"
+    echo "        Allowed chars: a-z A-Z 0-9 . _ -"
+    exit 1
+  fi
+}
+
+_print_profiles_hint() {
+  local profiles
+  if [ -d "$DKAI_CONFIG_HOME" ]; then
+    profiles="$(find "$DKAI_CONFIG_HOME" -maxdepth 1 -type f -name '*.env' -printf '%f\n' | sed 's/\.env$//' | sort -u)"
+  else
+    profiles=""
+  fi
+
+  if [ -n "$profiles" ]; then
+    echo "[INFO] Available profiles:"
+    echo "$profiles" | sed 's/^/  - /'
+  else
+    echo "[INFO] No profiles found under: $DKAI_CONFIG_HOME"
+  fi
+}
+
+_validate_profile() {
+  local profile="$1"
+  local env_file root_link mount_dir
+
+  _validate_profile_name "$profile"
+
+  env_file="$(_env_file "$profile")"
+  root_link="$(_root_link "$profile")"
+
+  if [ ! -f "$env_file" ]; then
+    echo "[ERROR] Missing env file: $env_file"
+    _print_profiles_hint
+    exit 1
+  fi
+
+  if [ ! -L "$root_link" ]; then
+    echo "[ERROR] Missing .root symlink: $root_link"
+    _print_profiles_hint
+    exit 1
+  fi
+
+  mount_dir="$(readlink -f "$root_link")"
+  [ -d "$mount_dir" ] || { echo "[ERROR] .root target is not a directory: $mount_dir"; exit 1; }
+}
+
+_start() {
+  local profile="$1"
+  local env_file root_link mount_dir ctr_name
+
+  _validate_profile "$profile"
+
+  env_file="$(_env_file "$profile")"
+  root_link="$(_root_link "$profile")"
+  mount_dir="$(readlink -f "$root_link")"
+  ctr_name="${DKAI_NAME_PREFIX}-${profile}"
+
+  docker run -d --rm \
+    --name "$ctr_name" \
+    -p "${DKAI_HOST_PORT}:${DKAI_CTR_PORT}" \
+    --env-file "$env_file" \
+    -v "${mount_dir}:${DKAI_CTR_HOME}" \
+    "$DKAI_IMAGE"
+}
+
+_stop() {
+  local profile="$1"
+  docker stop "${DKAI_NAME_PREFIX}-${profile}"
+}
+
+cmd="${1:-}"
+profile="${2:-}"
+
+if [ -z "$cmd" ]; then
+  _help
+  exit 0
+fi
+
+case "$cmd" in
+  start)
+    [ -n "$profile" ] || { _help; exit 1; }
+    _start "$profile"
+    ;;
+  stop)
+    [ -n "$profile" ] || { _help; exit 1; }
+    _stop "$profile"
+    ;;
+  *)
+    _help
+    exit 1
+    ;;
+esac
