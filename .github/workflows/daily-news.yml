@@ -11,7 +11,7 @@ on:
       hours:
         description: '时间范围（小时）'
         required: false
-        default: '25'
+        default: '49'
         type: string
 
 jobs:
