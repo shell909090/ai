@@ -10,7 +10,7 @@ import os
 import sys
 import logging
 import argparse
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -37,21 +37,7 @@ DEFAULT_HEADERS = {
 
 
 def setup_logging() -> None:
-    """
-    设置日志记录器，配置输出格式和日志级别。
-
-    从环境变量 LOG_LEVEL 读取日志级别，默认为 INFO。
-    日志输出到 stderr，格式包含时间戳、级别和消息内容。
-
-    Args:
-        无
-
-    Returns:
-        None
-
-    Raises:
-        无
-    """
+    """设置日志记录器为INFO级别输出到stderr"""
     logger = logging.getLogger()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
@@ -60,21 +46,7 @@ def setup_logging() -> None:
 
 
 def validate_api_key(model: str) -> None:
-    """
-    验证所需的API密钥是否已设置。
-
-    使用 LiteLLM 的 validate_environment 函数检查模型所需的环境变量是否正确配置。
-    如果缺少必需的API密钥，则抛出异常。
-
-    Args:
-        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'）
-
-    Returns:
-        None
-
-    Raises:
-        Exception: 当环境变量验证失败时抛出（如缺少API密钥）
-    """
+    """验证LiteLLM模型所需API密钥是否存在，缺失时抛出异常"""
     logging.info(f"Validating environment for model: {model}")
     validation_result = litellm.validate_environment(model)
     if validation_result["keys_in_environment"] is False:
@@ -84,24 +56,7 @@ def validate_api_key(model: str) -> None:
 
 
 def get_article(url: str) -> Dict[str, str]:
-    """
-    从New York Times网站获取文章内容。
-
-    通过HTTP请求获取页面，解析HTML提取标题和正文内容。
-
-    Args:
-        url: 文章的完整URL
-
-    Returns:
-        Dict[str, str]: 包含两个键的字典
-            - title: 文章标题
-            - content: 文章正文内容（所有段落拼接）
-
-    Raises:
-        httpx.HTTPError: HTTP请求失败时抛出
-        IndexError: 无法找到文章标题元素时抛出
-        Exception: 其他解析错误
-    """
+    """从NYT网站获取文章标题和正文内容"""
     try:
         logging.info(f"Fetching article from: {url}")
         resp = httpx.get(
@@ -135,21 +90,7 @@ def get_article(url: str) -> Dict[str, str]:
 
 
 def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
-    """
-    使用LangChain处理文章内容，生成摘要。
-
-    通过LLM处理文章正文，生成中文摘要，提取关键信息和主要观点。
-
-    Args:
-        chain: 配置好的LangChain处理链（prompt | llm | parser）
-        article: 包含文章信息的字典，必须包含 'content' 键
-
-    Returns:
-        Optional[str]: 生成的摘要文本，如果内容为空则返回 None
-
-    Raises:
-        Exception: LLM调用失败时可能抛出异常
-    """
+    """使用LLM生成文章摘要"""
     content = article.get('content', '')
     if not content:
         logging.warning('Article content is empty')
@@ -165,20 +106,7 @@ def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
 
 
 def format_output(article: Dict[str, str]) -> str:
-    """
-    格式化文章输出。
-
-    将文章标题和摘要格式化为可读的文本格式。
-
-    Args:
-        article: 包含 'title' 和 'summary' 键的字典
-
-    Returns:
-        str: 格式化后的输出文本
-
-    Raises:
-        无
-    """
+    """格式化文章为可读文本（标题和摘要）"""
     output = []
     output.append(f"\n{'='*80}")
     output.append(f"标题: {article.get('title', 'N/A')}")
@@ -192,19 +120,7 @@ def format_output(article: Dict[str, str]) -> str:
 
 
 def write_to_file(content: str, filepath: str) -> None:
-    """
-    将内容追加到指定文件。
-
-    Args:
-        content: 要写入的内容
-        filepath: 目标文件路径
-
-    Returns:
-        None
-
-    Raises:
-        IOError: 文件写入失败时抛出
-    """
+    """追加内容到文件"""
     try:
         with open(filepath, 'a', encoding='utf-8') as f:
             f.write(content)
@@ -215,21 +131,7 @@ def write_to_file(content: str, filepath: str) -> None:
 
 
 def create_chain(model: str) -> Runnable:
-    """
-    创建LangChain处理链。
-
-    使用LiteLLM创建LLM实例，配置prompt模板和输出解析器，构建完整的处理链。
-    在创建LLM之前会使用 litellm.validate_environment 验证环境变量是否正确配置。
-
-    Args:
-        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'、'openai/gpt-4o-mini'）
-
-    Returns:
-        Runnable: 配置好的处理链（prompt | llm | parser）
-
-    Raises:
-        Exception: 环境变量验证失败时抛出（如缺少API密钥）
-    """
+    """创建LangChain处理链（验证API密钥 + 配置LLM和prompt）"""
     logging.info(f"Creating chain with model: {model}")
 
     # 验证环境变量
@@ -237,30 +139,34 @@ def create_chain(model: str) -> Runnable:
 
     llm = ChatLiteLLM(model=model, temperature=0)
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "你是一个专业的文章摘要助手。请用中文对以下文章进行总结，提取关键信息和主要观点。"),
-        ("user", "请总结以下文章：\n\n{content}")
-    ])
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
+
+摘要要求：
+1. 开篇：用1-2句话清晰说明"发生了什么事"
+2. 展开：详细阐述关键事实、背景、相关人物和具体细节
+3. 深化：解释事件的意义、影响或争议点
+4. 补充：如有重要数据、引言或相关信息，务必包含
+
+风格要求：
+- 信息完整，确保读者看完摘要后无需查看原文
+- 保留重要细节和具体事例，避免空泛概括
+- 语言客观但生动，准确传达原文核心内容和语气
+- 长度约400-500字（可根据原文复杂度适当调整）
+
+记住：读者依赖这份摘要来替代原文，不要过度精简。""",
+            ),
+            ("user", "请总结以下文章：\n\n{content}"),
+        ]
+    )
     return prompt | llm | StrOutputParser()
 
 
 def process_article(url: str, chain: Runnable, output_file: Optional[str]) -> None:
-    """
-    处理单篇文章的完整流程。
-
-    获取文章、生成摘要、格式化输出并保存。
-
-    Args:
-        url: 文章URL
-        chain: LangChain处理链
-        output_file: 可选的输出文件路径
-
-    Returns:
-        None
-
-    Raises:
-        Exception: 文章获取或处理失败时抛出
-    """
+    """处理单篇文章的完整流程（获取、摘要、输出、保存）"""
     article = get_article(url)
     article['summary'] = read_article(chain, article)
 
@@ -272,24 +178,7 @@ def process_article(url: str, chain: Runnable, output_file: Optional[str]) -> No
 
 
 def main() -> None:
-    """
-    主函数，处理命令行参数并执行文章摘要任务。
-
-    从命令行读取参数，配置LLM和处理链，循环处理所有文章URL。
-
-    注意：使用前必须设置相应的API密钥环境变量（如GROQ_API_KEY、OPENAI_API_KEY等），
-    程序会在启动时使用 litellm.validate_environment 验证环境变量，如果缺失会直接抛出异常。
-
-    Args:
-        无（从命令行读取）
-
-    Returns:
-        None
-
-    Raises:
-        Exception: 环境变量验证失败时抛出（如缺少API密钥）
-        Exception: 文章处理过程中的各种异常
-    """
+    """主函数，处理命令行参数并循环处理所有文章URL"""
     parser = argparse.ArgumentParser(
         description='使用LLM自动阅读New York Times新闻并生成中文摘要'
     )

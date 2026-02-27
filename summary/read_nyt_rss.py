@@ -40,21 +40,7 @@ DEFAULT_HEADERS = {
 
 
 def setup_logging() -> None:
-    """
-    设置日志记录器，配置输出格式和日志级别。
-
-    从环境变量 LOG_LEVEL 读取日志级别，默认为 INFO。
-    日志输出到 stderr，格式包含时间戳、级别和消息内容。
-
-    Args:
-        无
-
-    Returns:
-        None
-
-    Raises:
-        无
-    """
+    """设置日志记录器为INFO级别输出到stderr"""
     logger = logging.getLogger()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
@@ -63,21 +49,7 @@ def setup_logging() -> None:
 
 
 def validate_api_key(model: str) -> None:
-    """
-    验证所需的API密钥是否已设置。
-
-    使用 LiteLLM 的 validate_environment 函数检查模型所需的环境变量是否正确配置。
-    如果缺少必需的API密钥，则抛出异常。
-
-    Args:
-        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'）
-
-    Returns:
-        None
-
-    Raises:
-        Exception: 当环境变量验证失败时抛出（如缺少API密钥）
-    """
+    """验证LiteLLM模型所需API密钥是否存在，缺失时抛出异常"""
     logging.info(f"Validating environment for model: {model}")
     validation_result = litellm.validate_environment(model)
     if validation_result["keys_in_environment"] is False:
@@ -87,22 +59,7 @@ def validate_api_key(model: str) -> None:
 
 
 def fetch_rss_feed(rss_url: str, timeout: float = 30.0) -> feedparser.FeedParserDict:
-    """
-    获取RSS feed内容。
-
-    使用 httpx 带超时地获取内容，防止挂起。
-
-    Args:
-        rss_url: RSS feed的URL
-        timeout: 超时时间（秒），默认30秒
-
-    Returns:
-        feedparser.FeedParserDict: 解析后的RSS feed对象
-
-    Raises:
-        httpx.HTTPError: HTTP请求失败时抛出
-        Exception: RSS解析失败时抛出
-    """
+    """使用httpx带超时获取并解析RSS feed内容"""
     try:
         logging.info(f"Fetching RSS feed from: {rss_url} (timeout: {timeout}s)")
         # 使用 httpx 带超时获取内容
@@ -129,20 +86,7 @@ def fetch_rss_feed(rss_url: str, timeout: float = 30.0) -> feedparser.FeedParser
 def filter_recent_entries(
     entries: List[feedparser.FeedParserDict], hours: int = 24
 ) -> List[Dict[str, str]]:
-    """
-    过滤指定时间范围内的RSS条目，并按时间升序排序。
-
-    Args:
-        entries: RSS feed条目列表
-        hours: 时间范围（小时），默认24小时
-
-    Returns:
-        List[Dict[str, str]]: 过滤后的条目列表（按时间升序排序，最老的在前），
-                             每个条目包含title、link和published
-
-    Raises:
-        无
-    """
+    """过滤指定时间范围内的RSS条目并按时间升序排序（最老的在前）"""
     now = datetime.now(timezone.utc)
     cutoff_time = now - timedelta(hours=hours)
     recent_entries = []
@@ -191,24 +135,7 @@ def filter_recent_entries(
 
 
 def get_article(url: str) -> Dict[str, str]:
-    """
-    从New York Times网站获取文章内容。
-
-    通过HTTP请求获取页面，解析HTML提取标题和正文内容。
-
-    Args:
-        url: 文章的完整URL
-
-    Returns:
-        Dict[str, str]: 包含两个键的字典
-            - title: 文章标题
-            - content: 文章正文内容（所有段落拼接）
-
-    Raises:
-        httpx.HTTPError: HTTP请求失败时抛出
-        IndexError: 无法找到文章标题元素时抛出
-        Exception: 其他解析错误
-    """
+    """从NYT网站获取文章标题和正文内容"""
     try:
         logging.info(f"Fetching article from: {url}")
         resp = httpx.get(
@@ -244,21 +171,7 @@ def get_article(url: str) -> Dict[str, str]:
 
 
 def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
-    """
-    使用LangChain处理文章内容，生成摘要。
-
-    通过LLM处理文章正文，生成中文摘要，提取关键信息和主要观点。
-
-    Args:
-        chain: 配置好的LangChain处理链（prompt | llm | parser）
-        article: 包含文章信息的字典，必须包含 'content' 键
-
-    Returns:
-        Optional[str]: 生成的摘要文本，如果内容为空则返回 None
-
-    Raises:
-        Exception: LLM调用失败时可能抛出异常
-    """
+    """使用LLM生成文章摘要"""
     content = article.get("content", "")
     if not content:
         logging.warning("Article content is empty")
@@ -276,22 +189,7 @@ def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
 def format_output(
     article: Dict[str, str], published: Optional[str] = None, url: Optional[str] = None
 ) -> str:
-    """
-    格式化文章输出。
-
-    将文章标题、发布时间、原始链接和摘要格式化为可读的文本格式。
-
-    Args:
-        article: 包含 'title' 和 'summary' 键的字典
-        published: 可选的发布时间字符串
-        url: 可选的原始文章链接
-
-    Returns:
-        str: 格式化后的输出文本
-
-    Raises:
-        无
-    """
+    """格式化文章为可读文本（标题、时间、链接、摘要）"""
     output = []
     output.append(f"\n{'=' * 80}")
     output.append(f"标题: {article.get('title', 'N/A')}")
@@ -309,20 +207,7 @@ def format_output(
 
 
 def write_to_file(content: str, filepath: str, mode: str = "a") -> None:
-    """
-    将内容写入到指定文件。
-
-    Args:
-        content: 要写入的内容
-        filepath: 目标文件路径
-        mode: 写入模式，默认为追加模式 'a'
-
-    Returns:
-        None
-
-    Raises:
-        IOError: 文件写入失败时抛出
-    """
+    """将内容写入文件（默认追加模式）"""
     try:
         with open(filepath, mode, encoding="utf-8") as f:
             f.write(content)
@@ -333,20 +218,7 @@ def write_to_file(content: str, filepath: str, mode: str = "a") -> None:
 
 
 def escape_markdown(text: str) -> str:
-    """
-    转义 Telegram Markdown 特殊字符。
-
-    重要：必须先转义反斜杠，否则会二次转义其他字符前面插入的反斜杠。
-
-    Args:
-        text: 要转义的文本
-
-    Returns:
-        str: 转义后的文本
-
-    Raises:
-        无
-    """
+    """转义Telegram Markdown特殊字符防止解析错误"""
     # 重要：反斜杠必须第一个转义，避免二次转义
     escape_chars = ["\\", "_", "*", "[", "]", "(", ")", "`"]
     for char in escape_chars:
@@ -357,21 +229,7 @@ def escape_markdown(text: str) -> str:
 def send_telegram_message(
     bot_token: str, chat_id: str, text: str, parse_mode: str = "Markdown"
 ) -> bool:
-    """
-    发送消息到 Telegram。
-
-    Args:
-        bot_token: Telegram Bot Token
-        chat_id: 目标 Chat ID
-        text: 消息内容
-        parse_mode: 解析模式，默认为 Markdown
-
-    Returns:
-        bool: 发送成功返回 True，失败返回 False
-
-    Raises:
-        无（内部捕获异常）
-    """
+    """发送消息到Telegram，失败时返回False"""
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": int(chat_id), "text": text, "parse_mode": parse_mode}
 
@@ -391,22 +249,7 @@ def send_telegram_message(
 def format_article_for_telegram(
     article: Dict[str, str], published: str, url: str
 ) -> str:
-    """
-    格式化文章为 Telegram Markdown 格式。
-
-    正确转义 Markdown 特殊字符以防止解析错误和潜在的注入问题。
-
-    Args:
-        article: 包含 'title' 和 'summary' 键的字典
-        published: 发布时间字符串
-        url: 原始文章链接
-
-    Returns:
-        str: 格式化后的 Markdown 文本
-
-    Raises:
-        无
-    """
+    """格式化文章为Telegram Markdown格式并转义特殊字符"""
     title = article.get("title", "无标题")
     summary = article.get("summary", "无摘要")
 
@@ -425,21 +268,7 @@ def format_article_for_telegram(
 
 
 def split_long_message(text: str, max_length: int = 4096) -> List[str]:
-    """
-    将长消息分割为多个片段，确保每个片段不超过最大长度。
-
-    智能分割，优先在段落边界分割。
-
-    Args:
-        text: 要分割的文本
-        max_length: 单条消息最大长度，默认 4096
-
-    Returns:
-        List[str]: 分割后的消息列表
-
-    Raises:
-        无
-    """
+    """智能分割长消息为多个片段（优先在段落边界分割）"""
     if len(text) <= max_length:
         return [text]
 
@@ -476,22 +305,7 @@ def send_article_to_telegram(
     published: str,
     url: str,
 ) -> bool:
-    """
-    发送单篇文章到 Telegram，如果消息过长则自动分段。
-
-    Args:
-        bot_token: Telegram Bot Token
-        chat_id: 目标 Chat ID
-        article: 包含 'title' 和 'summary' 键的字典
-        published: 发布时间字符串
-        url: 原始文章链接
-
-    Returns:
-        bool: 所有消息发送成功返回 True，否则返回 False
-
-    Raises:
-        无（内部捕获异常）
-    """
+    """发送单篇文章到Telegram并自动分段（超长时分多条）"""
     # 预留空间给分页标记（最长约 30-40 字符），使用 3996 而不是 4096
     TELEGRAM_MAX_LENGTH = 4096
     PAGINATION_MARKER_RESERVE = 100  # 预留空间给分页标记
@@ -535,21 +349,7 @@ def send_article_to_telegram(
 
 
 def create_chain(model: str) -> Runnable:
-    """
-    创建LangChain处理链。
-
-    使用LiteLLM创建LLM实例，配置prompt模板和输出解析器，构建完整的处理链。
-    在创建LLM之前会使用 litellm.validate_environment 验证环境变量是否正确配置。
-
-    Args:
-        model: 模型名称，遵循LiteLLM格式（如 'groq/llama-3.3-70b-versatile'、'openai/gpt-4o-mini'）
-
-    Returns:
-        Runnable: 配置好的处理链（prompt | llm | parser）
-
-    Raises:
-        Exception: 环境变量验证失败时抛出（如缺少API密钥）
-    """
+    """创建LangChain处理链（验证API密钥 + 配置LLM和prompt）"""
     logging.info(f"Creating chain with model: {model}")
 
     # 验证环境变量
@@ -591,23 +391,7 @@ def process_rss_articles(
     telegram_bot_token: Optional[str] = None,
     telegram_chat_id: Optional[str] = None,
 ) -> None:
-    """
-    处理RSS feed中所有符合时间范围的文章。
-
-    Args:
-        rss_url: RSS feed的URL
-        chain: LangChain处理链
-        output_file: 输出文件路径
-        hours: 时间范围（小时），默认24小时
-        telegram_bot_token: 可选的 Telegram Bot Token
-        telegram_chat_id: 可选的 Telegram Chat ID，支持多个ID用逗号分隔
-
-    Returns:
-        None
-
-    Raises:
-        Exception: RSS获取或文章处理失败时抛出
-    """
+    """处理RSS feed中所有符合时间范围的文章（获取、摘要、保存、推送Telegram）"""
     # 解析 Telegram Chat IDs（支持多个，逗号分隔）
     telegram_chat_ids = []
     if telegram_bot_token and telegram_chat_id:
@@ -733,24 +517,7 @@ def process_rss_articles(
 
 
 def main() -> None:
-    """
-    主函数，处理命令行参数并执行RSS新闻摘要任务。
-
-    从命令行读取参数，配置LLM和处理链，获取RSS feed并处理所有符合时间范围的文章。
-
-    注意：使用前必须设置相应的API密钥环境变量（如GROQ_API_KEY、OPENAI_API_KEY等），
-    程序会在启动时使用 litellm.validate_environment 验证环境变量，如果缺失会直接抛出异常。
-
-    Args:
-        无（从命令行读取）
-
-    Returns:
-        None
-
-    Raises:
-        Exception: 环境变量验证失败时抛出（如缺少API密钥）
-        Exception: RSS获取或文章处理过程中的各种异常
-    """
+    """主函数，处理命令行参数并执行RSS新闻摘要任务"""
     parser = argparse.ArgumentParser(
         description="自动读取纽约时报中文网RSS，提取24小时内新闻并生成中文摘要"
     )

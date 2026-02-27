@@ -50,7 +50,7 @@ jobs:
           # Logging
           LOG_LEVEL: INFO
         run: |
-          HOURS=${{ github.event.inputs.hours || '25' }}
+          HOURS=${{ github.event.inputs.hours || '49' }}
           uv run ./read_nyt_rss.py --hours $HOURS
 
       - name: Upload summary artifact (optional)
