@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Dedup state
+seen_links.json
+
 # Output files
 nyt_summary.txt
 *.txt

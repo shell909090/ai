@@ -14,3 +14,17 @@ dependencies = [
     "langchain-litellm>=0.3.5",
     "feedparser>=6.0.12",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10

@@ -17,9 +17,11 @@
 
 ### read_nyt_rss
 
-自动读取纽约时报中文网 RSS feed，过滤出指定时间范围内（默认24小时）的新闻，并为每篇新闻生成中文摘要，最后汇总到一个文件。
+自动读取纽约时报中文网 RSS feed，过滤出指定时间范围内（默认49小时）的新闻，并为每篇新闻生成中文摘要，最后汇总到一个文件。
 
 **处理顺序**：新闻按时间升序处理（先处理最老的，再处理新的），确保阅读顺序符合时间线。
+
+**去重机制**：通过本地 `seen_links.json` 记录已发送的文章链接，每次运行自动跳过已处理的文章，避免重复推送。记录默认保留7天，过期自动清理。
 
 ## 安装
 
@@ -195,8 +197,9 @@ source .env
 
 - `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/llama-3.3-70b-versatile`）
 - `--output, -o`: 输出文件路径（默认：`nyt_summary.txt`）
-- `--hours`: 时间范围（小时），只处理指定时间内的新闻（默认：24）
+- `--hours`: 时间范围（小时），只处理指定时间内的新闻（默认：49）
 - `--rss-url`: RSS feed URL（默认：`https://cn.nytimes.com/rss/`）
+- `--seen-links-file`: 已发送链接记录文件路径（默认：`seen_links.json`）
 
 ## GitHub Actions 自动化
 
@@ -215,7 +218,8 @@ source .env
 
 Workflow 配置为：
 - ⏰ **每天北京时间早上 9:00 自动运行**（UTC 1:00）
-- 📰 **抓取 25 小时内的新闻**（保证覆盖，避免遗漏）
+- 📰 **抓取 49 小时内的新闻**（保证覆盖边界，避免遗漏）
+- 🔄 **自动去重**：通过 GitHub Actions Cache 持久化 `seen_links.json`，跳过已推送文章
 - 📱 **自动推送到 Telegram**
 
 ### 手动触发
@@ -223,7 +227,7 @@ Workflow 配置为：
 1. 进入 GitHub 仓库的 **Actions** 标签
 2. 选择左侧的 **Daily NYT News Summary** workflow
 3. 点击右侧的 **Run workflow** 按钮
-4. 可选择自定义时间范围（默认 25 小时）
+4. 可选择自定义时间范围（默认 49 小时）
 5. 点击绿色的 **Run workflow** 按钮
 
 ### 查看运行结果
@@ -243,7 +247,11 @@ Workflow 配置为：
     ↓
 安装依赖 (uv sync)
     ↓
-运行脚本 (read_nyt_rss.py --hours 25)
+恢复 seen_links.json 缓存
+    ↓
+运行脚本 (read_nyt_rss.py --hours 49)
+    ↓
+保存 seen_links.json 缓存
     ↓
 推送到 Telegram ✅
 ```
@@ -256,7 +264,7 @@ Workflow 配置为：
 
 - **编码规范**: PEP-8
 - **类型注解**: 强制执行 Type Annotations
-- **文档**: 公有函数必须包含详尽的 Docstrings（Args, Returns, Raises）
+- **文档**: 公有函数包含简洁的单行 Docstrings
 - **复杂度**: 函数 McCabe 复杂度控制在 10 以内
 - **静态检查**: 使用 ruff 进行代码质量检查
 - **日志**: 使用 logging 模块处理日志输出

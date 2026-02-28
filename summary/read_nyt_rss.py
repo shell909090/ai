@@ -9,9 +9,10 @@
 
 import os
 import sys
+import json
 import logging
 import argparse
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -56,6 +57,56 @@ def validate_api_key(model: str) -> None:
         missing = validation_result["missing_keys"]
         raise EnvironmentError(f"Don't have necessary environment {model}: {missing}")
     logging.info(f"Environment validation passed for model: {model}")
+
+
+def load_seen_links(filepath: str, max_age_days: int = 7) -> Set[str]:
+    """从文件加载已发送链接集合，自动丢弃超过 max_age_days 天的记录"""
+    if not os.path.exists(filepath):
+        return set()
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            data = json.load(f)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        return {
+            item["link"]
+            for item in data.get("links", [])
+            if datetime.fromisoformat(item["sent_at"]) >= cutoff
+        }
+    except Exception as e:
+        logging.warning(f"Failed to load seen links from {filepath}: {e}")
+        return set()
+
+
+def save_seen_links(
+    filepath: str, seen: Set[str], existing_data: List[Dict], max_age_days: int = 7
+) -> None:
+    """将已发送链接集合保存到文件（保留原有时间戳记录，同时清理过期条目）"""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=max_age_days)
+    recent_existing = [
+        item for item in existing_data
+        if datetime.fromisoformat(item["sent_at"]) >= cutoff
+    ]
+    existing_links = {item["link"] for item in recent_existing}
+    new_items = [{"link": link, "sent_at": now.isoformat()} for link in seen - existing_links]
+    data = {"links": recent_existing + new_items}
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logging.info(f"Saved {len(data['links'])} seen links to {filepath}")
+    except Exception as e:
+        logging.error(f"Failed to save seen links to {filepath}: {e}")
+
+
+def load_seen_links_raw(filepath: str) -> List[Dict]:
+    """加载原始链接记录列表（含时间戳），用于保存时合并"""
+    if not os.path.exists(filepath):
+        return []
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            return json.load(f).get("links", [])
+    except Exception:
+        return []
 
 
 def fetch_rss_feed(rss_url: str, timeout: float = 30.0) -> feedparser.FeedParserDict:
@@ -383,13 +434,69 @@ def create_chain(model: str) -> Runnable:
     return prompt | llm | StrOutputParser()
 
 
+def _broadcast_telegram(bot_token: str, chat_ids: List[str], msg: str) -> None:
+    """向所有目标Chat ID广播同一条Telegram消息"""
+    for chat_id in chat_ids:
+        send_telegram_message(bot_token, chat_id, msg)
+
+
+def _process_single_article(
+    entry: Dict,
+    idx: int,
+    total: int,
+    chain: Runnable,
+    output_file: str,
+    bot_token: Optional[str],
+    chat_ids: List[str],
+) -> bool:
+    """处理单篇文章（获取、摘要、保存、推送），成功返回True"""
+    try:
+        logging.info(f"Processing article {idx}/{total}: {entry['title']}")
+        article = get_article(entry["link"])
+        article["summary"] = read_article(chain, article)
+        output_text = format_output(article, entry["published"], entry["link"])
+        write_to_file(output_text, output_file)
+        print(output_text)
+        if bot_token and chat_ids:
+            for chat_id in chat_ids:
+                send_article_to_telegram(
+                    bot_token, chat_id, article, entry["published"], entry["link"]
+                )
+        return True
+    except Exception as e:
+        logging.error(f"Failed to process article '{entry['title']}': {e}")
+        error_msg = f"\n{'=' * 80}\n标题: {entry['title']}\n处理失败: {str(e)}\n{'=' * 80}\n\n"
+        write_to_file(error_msg, output_file)
+        return False
+
+
+def _send_failure_report(
+    bot_token: str,
+    chat_ids: List[str],
+    failed_articles: List[Dict],
+    total: int,
+    success_count: int,
+) -> None:
+    """向Telegram发送失败文章汇总报告"""
+    failure_msg = "⚠️ *处理完成 - 有失败项*\n\n"
+    failure_msg += f"📊 成功: {success_count}/{total} 篇\n"
+    failure_msg += f"❌ 失败: {len(failed_articles)} 篇\n\n"
+    failure_msg += "*失败详情：*\n"
+    for idx, failed in enumerate(failed_articles, 1):
+        title = failed["title"][:50] + "..." if len(failed["title"]) > 50 else failed["title"]
+        error = failed["error"][:100] + "..." if len(failed["error"]) > 100 else failed["error"]
+        failure_msg += f"{idx}. {escape_markdown(title)}\n   错误: {escape_markdown(error)}\n\n"
+    _broadcast_telegram(bot_token, chat_ids, failure_msg)
+
+
 def process_rss_articles(
     rss_url: str,
     chain: Runnable,
     output_file: str,
-    hours: int = 24,
+    hours: int = 49,
     telegram_bot_token: Optional[str] = None,
     telegram_chat_id: Optional[str] = None,
+    seen_links_file: str = "seen_links.json",
 ) -> None:
     """处理RSS feed中所有符合时间范围的文章（获取、摘要、保存、推送Telegram）"""
     # 解析 Telegram Chat IDs（支持多个，逗号分隔）
@@ -409,28 +516,41 @@ def process_rss_articles(
     else:
         logging.info("Telegram notification disabled (missing token or chat_id)")
 
+    # 加载已发送链接
+    seen_links_raw = load_seen_links_raw(seen_links_file)
+    seen_links = load_seen_links(seen_links_file)
+    logging.info(f"Loaded {len(seen_links)} seen links from {seen_links_file}")
+
     # 获取RSS feed
     feed = fetch_rss_feed(rss_url)
 
-    # 过滤24小时内的文章
+    # 过滤时间范围内的文章
     recent_entries = filter_recent_entries(feed.entries, hours)
+
+    # 跳过已发送的文章
+    new_entries = [e for e in recent_entries if e["link"] not in seen_links]
+    skipped = len(recent_entries) - len(new_entries)
+    if skipped:
+        logging.info(f"Skipped {skipped} already-sent articles")
+    recent_entries = new_entries
 
     if not recent_entries:
         logging.info("No recent articles found in the RSS feed")
         if telegram_enabled:
-            no_news_msg = f"📰 纽约时报中文网 - 最近{hours}小时无新闻"
-            for chat_id in telegram_chat_ids:
-                send_telegram_message(telegram_bot_token, chat_id, no_news_msg)
+            _broadcast_telegram(
+                telegram_bot_token, telegram_chat_ids,
+                f"📰 纽约时报中文网 - 最近{hours}小时无新闻",
+            )
         return
 
     # 发送开始消息到 Telegram
     if telegram_enabled:
-        start_msg = f"📰 *纽约时报中文网 - 最近{hours}小时新闻摘要*\n\n"
-        start_msg += f"🕒 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        start_msg += f"📊 文章总数: {len(recent_entries)}\n"
-        start_msg += "\n开始处理..."
-        for chat_id in telegram_chat_ids:
-            send_telegram_message(telegram_bot_token, chat_id, start_msg)
+        start_msg = (
+            f"📰 *纽约时报中文网 - 最近{hours}小时新闻摘要*\n\n"
+            f"🕒 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"📊 文章总数: {len(recent_entries)}\n\n开始处理..."
+        )
+        _broadcast_telegram(telegram_bot_token, telegram_chat_ids, start_msg)
 
     # 创建或清空输出文件，写入标题
     header = f"纽约时报中文网 - 最近{hours}小时新闻摘要\n"
@@ -441,79 +561,33 @@ def process_rss_articles(
 
     # 处理每篇文章
     success_count = 0
-    failed_articles = []  # 记录失败的文章
+    failed_articles = []
     for idx, entry in enumerate(recent_entries, 1):
-        try:
-            logging.info(
-                f"Processing article {idx}/{len(recent_entries)}: {entry['title']}"
-            )
-
-            # 获取文章内容
-            article = get_article(entry["link"])
-
-            # 生成摘要
-            article["summary"] = read_article(chain, article)
-
-            # 格式化输出
-            output_text = format_output(article, entry["published"], entry["link"])
-
-            # 写入文件
-            write_to_file(output_text, output_file)
-
-            # 同时输出到控制台
-            print(output_text)
-
-            # 发送到 Telegram
-            if telegram_enabled:
-                for chat_id in telegram_chat_ids:
-                    send_article_to_telegram(
-                        telegram_bot_token,
-                        chat_id,
-                        article,
-                        entry["published"],
-                        entry["link"],
-                    )
-
+        ok = _process_single_article(
+            entry, idx, len(recent_entries), chain, output_file,
+            telegram_bot_token if telegram_enabled else None,
+            telegram_chat_ids,
+        )
+        if ok:
+            seen_links.add(entry["link"])
             success_count += 1
-        except Exception as e:
-            logging.error(f"Failed to process article '{entry['title']}': {e}")
-            failed_articles.append({"title": entry["title"], "error": str(e)})
-            # 写入错误信息到输出文件
-            error_msg = f"\n{'=' * 80}\n标题: {entry['title']}\n处理失败: {str(e)}\n{'=' * 80}\n\n"
-            write_to_file(error_msg, output_file)
-            continue
+        else:
+            failed_articles.append({"title": entry["title"], "error": "see log"})
 
     # 写入统计信息
-    summary = f"\n\n{'=' * 80}\n"
-    summary += f"处理完成！成功: {success_count}/{len(recent_entries)}\n"
-    summary += f"{'=' * 80}\n"
+    summary = f"\n\n{'=' * 80}\n处理完成！成功: {success_count}/{len(recent_entries)}\n{'=' * 80}\n"
     write_to_file(summary, output_file)
     print(summary)
 
+    # 保存已发送链接
+    save_seen_links(seen_links_file, seen_links, seen_links_raw)
+
     # 只在有失败时发送 Telegram 通知
     if telegram_enabled and failed_articles:
-        failure_msg = "⚠️ *处理完成 - 有失败项*\n\n"
-        failure_msg += f"📊 成功: {success_count}/{len(recent_entries)} 篇\n"
-        failure_msg += f"❌ 失败: {len(failed_articles)} 篇\n\n"
-        failure_msg += "*失败详情：*\n"
-        for idx, failed in enumerate(failed_articles, 1):
-            # 截断过长的标题和错误信息
-            title = (
-                failed["title"][:50] + "..."
-                if len(failed["title"]) > 50
-                else failed["title"]
-            )
-            error = (
-                failed["error"][:100] + "..."
-                if len(failed["error"]) > 100
-                else failed["error"]
-            )
-            # 转义 Markdown 特殊字符，避免发送失败
-            title_escaped = escape_markdown(title)
-            error_escaped = escape_markdown(error)
-            failure_msg += f"{idx}. {title_escaped}\n   错误: {error_escaped}\n\n"
-        for chat_id in telegram_chat_ids:
-            send_telegram_message(telegram_bot_token, chat_id, failure_msg)
+        _send_failure_report(
+            telegram_bot_token, telegram_chat_ids, failed_articles,
+            len(recent_entries), success_count,
+        )
 
 
 def main() -> None:
@@ -543,6 +617,12 @@ def main() -> None:
         default="https://cn.nytimes.com/rss/",
         help="RSS feed URL，默认为纽约时报中文网RSS",
     )
+    parser.add_argument(
+        "--seen-links-file",
+        type=str,
+        default="seen_links.json",
+        help="已发送链接记录文件路径，默认为 seen_links.json",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -568,6 +648,7 @@ def main() -> None:
             args.hours,
             telegram_bot_token,
             telegram_chat_id,
+            args.seen_links_file,
         )
     except Exception as e:
         logging.error(f"Failed to process RSS articles: {e}")

@@ -36,6 +36,13 @@ jobs:
         working-directory: summary
         run: uv sync
 
+      - name: Restore seen links cache
+        uses: actions/cache@v4
+        with:
+          path: summary/seen_links.json
+          key: seen-links-${{ runner.os }}
+          restore-keys: seen-links-
+
       - name: Run news summarization
         working-directory: summary
         env:
@@ -52,6 +59,13 @@ jobs:
         run: |
           HOURS=${{ github.event.inputs.hours || '49' }}
           uv run ./read_nyt_rss.py --hours $HOURS
+
+      - name: Save seen links cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: summary/seen_links.json
+          key: seen-links-${{ runner.os }}
 
       - name: Upload summary artifact (optional)
         if: always()
