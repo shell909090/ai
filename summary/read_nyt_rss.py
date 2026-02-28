@@ -10,6 +10,7 @@
 import os
 import sys
 import json
+import time
 import logging
 import argparse
 from typing import List, Dict, Optional, Set
@@ -221,20 +222,29 @@ def get_article(url: str) -> Dict[str, str]:
         raise
 
 
-def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
-    """使用LLM生成文章摘要"""
+def read_article(
+    chain: Runnable, article: Dict[str, str], max_retries: int = 3
+) -> Optional[str]:
+    """使用LLM生成文章摘要，遇到速率限制时自动重试"""
     content = article.get("content", "")
     if not content:
         logging.warning("Article content is empty")
         return None
 
-    try:
-        logging.info("Generating summary with LLM")
-        result = chain.invoke({"content": content})
-        return result
-    except Exception as e:
-        logging.error(f"Failed to generate summary: {e}")
-        raise
+    for attempt in range(1, max_retries + 1):
+        try:
+            logging.info("Generating summary with LLM")
+            return chain.invoke({"content": content})
+        except litellm.RateLimitError as e:
+            if attempt >= max_retries:
+                logging.error(f"Rate limit exceeded after {max_retries} retries: {e}")
+                raise
+            logging.warning(f"Rate limit hit (attempt {attempt}/{max_retries}), sleeping 30s: {e}")
+            time.sleep(30)
+        except Exception as e:
+            logging.error(f"Failed to generate summary: {e}")
+            raise
+    return None  # unreachable, satisfies type checker
 
 
 def format_output(
