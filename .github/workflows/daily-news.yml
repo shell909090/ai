@@ -37,11 +37,11 @@ jobs:
         run: uv sync
 
       - name: Restore seen links cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: summary/seen_links.json
-          key: seen-links-${{ runner.os }}
-          restore-keys: seen-links-
+          key: seen-links-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: seen-links-${{ runner.os }}-
 
       - name: Run news summarization
         working-directory: summary
@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: summary/seen_links.json
-          key: seen-links-${{ runner.os }}
+          key: seen-links-${{ runner.os }}-${{ github.run_id }}
 
       - name: Upload summary artifact (optional)
         if: always()
