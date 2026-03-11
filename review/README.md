@@ -1,6 +1,6 @@
 # review tools
 
-`gen_callgraph.py` 是一个 Python 项目静态调用图与符号摘要生成工具。
+`gen-sign.py` 是一个 Python 项目符号摘要与内部调用图生成工具。
 
 ## 依赖
 
@@ -22,38 +22,28 @@ dot -V
 在当前目录执行：
 
 ```bash
-python3 gen_callgraph.py /path/to/python/project --out docs/python_analysis --output all
+python3 gen-sign.py /path/to/python/project --out docs/python_analysis
+```
+
+如果还想额外生成“每个文件一张图”的内部调用图：
+
+```bash
+python3 gen-sign.py /path/to/python/project --out docs/python_analysis --per-file-internal
 ```
 
 也可以先赋予可执行权限后直接运行：
 
 ```bash
-chmod +x gen_callgraph.py
-./gen_callgraph.py /path/to/python/project --out docs/python_analysis --output all
+chmod +x gen-sign.py
+./gen-sign.py /path/to/python/project --out docs/python_analysis
 ```
 
 ## 输出文件
 
-- `callgraph.dot`
-- `callgraph.svg`
 - `signatures.md`
+- `internal_callgraphs/*.dot`
+- `internal_callgraphs/*.svg`
 
-`signatures.md` 当前仅按文件分组（`By File`）输出。
+默认只生成 `signatures.md`。
 
-## 把 SVG 转成 JPG
-
-如果系统还没有 ImageMagick，可以先安装：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y imagemagick
-convert --version
-```
-
-安装后，直接使用 ImageMagick 的 `convert`：
-
-```bash
-convert -density 120 docs/python_analysis/callgraph.svg -background white -alpha remove -alpha off -quality 90 docs/python_analysis/callgraph.jpg
-```
-
-如果输出目录不同，把命令里的路径替换成对应文件即可。`-density 120` 通常足够预览，也能避免直接生成过大的位图导致转换变慢。
+`internal_callgraphs/` 在启用 `--per-file-internal` 时生成：当前文件内部调用会展开，跨文件调用只显示为外部叶子节点，不继续展开目标模块。

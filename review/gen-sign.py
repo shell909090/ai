@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""通用 Python 项目调用图 + 符号签名分析工具。"""
+"""通用 Python 项目符号摘要与内部调用图分析工具。"""
 
 import argparse
 import ast
@@ -7,7 +7,6 @@ import fnmatch
 import logging
 import shutil
 import subprocess
-import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +14,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 NODE_COLOR = "#e8e8f0"
+EXTERNAL_NODE_COLOR = "#f5ecd9"
 
 
 @dataclass
@@ -390,23 +390,39 @@ def extract_edges(
     return edges
 
 
-def _dot_cluster_id(rel: Path) -> str:
-    """Return a safe DOT subgraph cluster id from a relative path."""
-    return "cluster_" + str(rel).replace("/", "_").replace("\\", "_").replace(".", "_")
+def write_svg(
+    out: Path,
+    dot_path: Path,
+) -> None:
+    """Render a DOT file to SVG via Graphviz `dot`."""
+    dot_bin = shutil.which("dot")
+    if not dot_bin:
+        raise RuntimeError("Graphviz `dot` not found in PATH.")
+
+    cmd = [dot_bin, "-Tsvg", str(dot_path), "-o", str(out)]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or "").strip()
+        raise RuntimeError(f"`dot` render failed: {err}") from exc
+
+    log.info("[ok] %s written", out)
 
 
-def write_dot(
-    symbols: list[Symbol],
-    edges: list[tuple[str, str]],
+def write_file_callgraph_dot(
+    file: Path,
+    local_symbols: list[Symbol],
+    local_edges: list[tuple[str, str]],
+    external_symbols: list[Symbol],
+    external_edges: list[tuple[str, str]],
     out: Path,
     root: Path,
 ) -> None:
-    """Write a Graphviz DOT file with file clusters; entry nodes get thick border."""
-    callees = {dst for _, dst in edges}
-    by_file: dict[Path, list[Symbol]] = defaultdict(list)
-    for sym in symbols:
-        by_file[sym.file].append(sym)
-
+    """Write one file-scoped DOT graph with local expansion and external leaf nodes."""
+    local_callees = {dst for _, dst in local_edges}
+    external_callees = {dst for _, dst in external_edges}
+    rel = file.relative_to(root)
+    label = str(rel).replace("\\", "/")
     lines = [
         "digraph callgraph {",
         '    graph [rankdir=TB fontname="Helvetica" splines=spline nodesep=0.2 ranksep=0.35 '
@@ -415,32 +431,38 @@ def write_dot(
         ' fontsize=11 margin="0.12,0.06"]',
         '    edge  [color="#222222" penwidth=1.4 arrowsize=0.8]',
         "",
+        f'    label="{label}"',
+        '    labelloc="t"',
+        '    fontsize=12',
+        "",
     ]
-    for file in sorted(by_file):
-        rel = file.relative_to(root)
-        cid = _dot_cluster_id(rel)
-        label = str(rel).replace("\\", "/")
-        lines += [
-            f"    subgraph {cid} {{",
-            f'        label="{label}"',
-            '        style="rounded"',
-            '        color="#aaaacc"',
-            '        fontname="Helvetica"',
-            '        fontsize=10',
-            '        margin=8',
-        ]
-        for sym in sorted(by_file[file], key=lambda s: s.lineno):
+    for sym in sorted(local_symbols, key=lambda item: item.lineno):
+        uid_q = sym.uid.replace('"', '\\"')
+        label_q = sym.short_name.replace('"', '\\"')
+        penwidth = "1.0" if sym.uid in local_callees or sym.uid in external_callees else "2.5"
+        lines.append(
+            f'    "{uid_q}" [label="{label_q}" fillcolor="{NODE_COLOR}" penwidth={penwidth}]'
+        )
+    if external_symbols:
+        lines.append("")
+        lines.append("    subgraph cluster_external {")
+        lines.append('        label="external"')
+        lines.append('        style="rounded,dashed"')
+        lines.append('        color="#d8b36a"')
+        lines.append('        fontname="Helvetica"')
+        lines.append('        fontsize=10')
+        lines.append('        margin=8')
+        for sym in sorted(external_symbols, key=lambda item: (str(item.file), item.lineno)):
             uid_q = sym.uid.replace('"', '\\"')
-            label_q = sym.short_name.replace('"', '\\"')
-            penwidth = "1.0" if sym.uid in callees else "2.5"
+            rel_file = sym.file.relative_to(root)
+            ext_label = f"{rel_file.stem}.{sym.short_name}".replace('"', '\\"')
             lines.append(
-                f'        "{uid_q}" [label="{label_q}"'
-                f' fillcolor="{NODE_COLOR}" penwidth={penwidth}]'
+                f'        "{uid_q}" [label="{ext_label}" fillcolor="{EXTERNAL_NODE_COLOR}"'
+                ' style="rounded,filled,dashed" penwidth=1.0]'
             )
         lines.append("    }")
-        lines.append("")
-
-    for src, dst in edges:
+    lines.append("")
+    for src, dst in [*local_edges, *external_edges]:
         src_q = src.replace('"', '\\"')
         dst_q = dst.replace('"', '\\"')
         lines.append(f'    "{src_q}" -> "{dst_q}"')
@@ -449,39 +471,56 @@ def write_dot(
     log.info("[ok] %s written", out)
 
 
-def write_svg(
+def write_per_file_internal_graphs(
     symbols: list[Symbol],
     edges: list[tuple[str, str]],
-    out: Path,
+    out_dir: Path,
     root: Path,
-    dot_path: Path | None = None,
 ) -> None:
-    """Render call graph to SVG via Graphviz `dot` for stable layout and routing."""
-    dot_bin = shutil.which("dot")
-    if not dot_bin:
-        raise RuntimeError("Graphviz `dot` not found in PATH.")
+    """Write one DOT and SVG call graph per file with local expansion and external leaf calls."""
+    symbol_by_uid = {sym.uid: sym for sym in symbols}
+    by_file: dict[Path, list[Symbol]] = defaultdict(list)
+    for sym in symbols:
+        by_file[sym.file].append(sym)
 
-    cleanup_tmp = False
-    if dot_path is None:
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".dot", delete=False, encoding="utf-8"
+    for file in sorted(by_file):
+        rel = file.relative_to(root)
+        file_symbols = sorted(by_file[file], key=lambda sym: sym.lineno)
+        file_uids = {sym.uid for sym in file_symbols}
+        local_edges = [
+            (src, dst)
+            for src, dst in edges
+            if src in file_uids and dst in file_uids
+            and symbol_by_uid[src].file == file
+            and symbol_by_uid[dst].file == file
+        ]
+        external_target_uids = {
+            dst
+            for src, dst in edges
+            if src in file_uids and dst in symbol_by_uid and symbol_by_uid[dst].file != file
+        }
+        external_symbols = sorted(
+            [symbol_by_uid[uid] for uid in external_target_uids],
+            key=lambda sym: (str(sym.file), sym.lineno),
         )
-        tmp.close()
-        dot_path = Path(tmp.name)
-        write_dot(symbols, edges, dot_path, root)
-        cleanup_tmp = True
-
-    cmd = [dot_bin, "-Tsvg", str(dot_path), "-o", str(out)]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        err = (exc.stderr or "").strip()
-        raise RuntimeError(f"`dot` render failed: {err}") from exc
-    finally:
-        if cleanup_tmp and dot_path.exists():
-            dot_path.unlink()
-
-    log.info("[ok] %s written", out)
+        external_edges = [
+            (src, dst)
+            for src, dst in edges
+            if src in file_uids and dst in external_target_uids
+        ]
+        dot_out = out_dir / rel.with_suffix(".dot")
+        svg_out = out_dir / rel.with_suffix(".svg")
+        dot_out.parent.mkdir(parents=True, exist_ok=True)
+        write_file_callgraph_dot(
+            file,
+            file_symbols,
+            local_edges,
+            external_symbols,
+            external_edges,
+            dot_out,
+            root,
+        )
+        write_svg(svg_out, dot_out)
 
 
 def write_signatures_md(
@@ -552,10 +591,10 @@ def _render_symbol_block(
 
 
 def main() -> None:
-    """CLI entry: analyze Python files and emit callgraph.dot, .svg, signatures.md."""
+    """CLI entry: analyze Python files and emit signatures plus optional internal graphs."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
-        description="Analyze a Python project: generate call graph and symbol table."
+        description="Analyze a Python project: generate signatures and optional internal call graphs."
     )
     parser.add_argument("path", type=Path, help=".py file or directory (recursive)")
     parser.add_argument(
@@ -567,12 +606,13 @@ def main() -> None:
         help="Exclude files matching glob pattern (repeatable, e.g. '*/tests/*')",
     )
     parser.add_argument(
-        "--output", choices=["dot", "svg", "md", "all"], default="all",
-        help="Outputs to generate (default: all)",
-    )
-    parser.add_argument(
         "--no-private", action="store_true",
         help="Skip symbols whose name starts with '_'",
+    )
+    parser.add_argument(
+        "--per-file-internal",
+        action="store_true",
+        help="Also generate one internal call graph per file under internal_callgraphs/",
     )
     args = parser.parse_args()
 
@@ -596,24 +636,17 @@ def main() -> None:
         symbols.extend(_extract_from_file(f, root, tree, skip_private))
     log.info("Found %d symbols in %d files", len(symbols), len(trees))
 
-    edges = extract_edges(symbols, trees)
-    log.info("Found %d call edges", len(edges))
-
-    want = args.output
     args.out.mkdir(parents=True, exist_ok=True)
-    dot_out = args.out / "callgraph.dot"
-    if want in ("dot", "all"):
-        write_dot(symbols, edges, dot_out, root)
-    if want in ("svg", "all"):
-        write_svg(
+    write_signatures_md(symbols, root, args.out / "signatures.md")
+    if args.per_file_internal:
+        edges = extract_edges(symbols, trees)
+        log.info("Found %d call edges", len(edges))
+        write_per_file_internal_graphs(
             symbols,
             edges,
-            args.out / "callgraph.svg",
+            args.out / "internal_callgraphs",
             root,
-            dot_out if dot_out.exists() else None,
         )
-    if want in ("md", "all"):
-        write_signatures_md(symbols, root, args.out / "signatures.md")
 
 
 if __name__ == "__main__":

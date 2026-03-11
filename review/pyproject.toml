@@ -1,7 +1,7 @@
 [project]
 name = "review-tools"
 version = "0.1.0"
-description = "Local static callgraph tooling"
+description = "Local static signature tooling"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
@@ -18,4 +18,3 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]
-
