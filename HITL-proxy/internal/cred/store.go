@@ -40,19 +40,30 @@ func NewStore(path string, key []byte) (*Store, error) {
 	return s, nil
 }
 
-// Get returns credentials for a spec.
+// Get returns a copy of credentials for a spec.
 func (s *Store) Get(specName string) (map[string]string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	creds, ok := s.data[specName]
-	return creds, ok
+	if !ok {
+		return nil, false
+	}
+	cp := make(map[string]string, len(creds))
+	for k, v := range creds {
+		cp[k] = v
+	}
+	return cp, true
 }
 
-// Set stores credentials for a spec and persists to disk.
+// Set stores a copy of credentials for a spec and persists to disk.
 func (s *Store) Set(specName string, creds map[string]string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data[specName] = creds
+	cp := make(map[string]string, len(creds))
+	for k, v := range creds {
+		cp[k] = v
+	}
+	s.data[specName] = cp
 	return s.save()
 }
 
