@@ -1,11 +1,27 @@
 package auth
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
 )
+
+type contextKey int
+
+const agentNameKey contextKey = iota
+
+// ContextWithAgent returns a new context carrying the agent name.
+func ContextWithAgent(ctx context.Context, agentName string) context.Context {
+	return context.WithValue(ctx, agentNameKey, agentName)
+}
+
+// AgentFromContext extracts the agent name from ctx.
+func AgentFromContext(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(agentNameKey).(string)
+	return name, ok
+}
 
 // Authenticator validates API keys and resolves agent names.
 type Authenticator struct {

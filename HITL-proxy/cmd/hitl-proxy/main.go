@@ -9,6 +9,7 @@ import (
 
 	"github.com/shell909090/ai/HITL-proxy/internal/approval"
 	"github.com/shell909090/ai/HITL-proxy/internal/audit"
+	"github.com/shell909090/ai/HITL-proxy/internal/auth"
 	"github.com/shell909090/ai/HITL-proxy/internal/authz"
 	"github.com/shell909090/ai/HITL-proxy/internal/config"
 	"github.com/shell909090/ai/HITL-proxy/internal/cred"
@@ -56,9 +57,12 @@ func main() {
 	authzChecker := authz.NewChecker(db, true)
 	proxyClient := proxy.NewClient(db, credStore)
 
+	// Authentication
+	authenticator := auth.NewAuthenticator(db)
+
 	// MCP server
 	baseURL := "http://localhost" + cfg.Listen
-	mcpSrv := mcpserver.NewServer(searcher, proxyClient, auditLog, approvalEngine, authzChecker, baseURL)
+	mcpSrv := mcpserver.NewServer(authenticator, searcher, proxyClient, auditLog, approvalEngine, authzChecker, baseURL)
 
 	// Web UI
 	webHandler, err := web.NewHandler(approvalEngine, db, searcher)
@@ -75,9 +79,9 @@ func main() {
 	// Web UI routes
 	webHandler.RegisterRoutes(mux)
 
-	// MCP SSE routes
+	// MCP SSE routes (wrapped with auth middleware)
 	sseSrv := mcpSrv.SSEServer()
-	mux.Handle("/mcp/", sseSrv)
+	mux.Handle("/mcp/", mcpSrv.AuthMiddleware()(sseSrv))
 
 	log.Printf("HITL-proxy listening on %s", cfg.Listen)
 	if err := http.ListenAndServe(cfg.Listen, mux); err != nil {

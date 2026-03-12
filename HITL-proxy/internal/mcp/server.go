@@ -1,10 +1,14 @@
 package mcp
 
 import (
+	"context"
+	"net/http"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/audit"
+	"github.com/shell909090/ai/HITL-proxy/internal/auth"
 	"github.com/shell909090/ai/HITL-proxy/internal/proxy"
 	"github.com/shell909090/ai/HITL-proxy/internal/search"
 )
@@ -21,8 +25,9 @@ type Authorizer interface {
 
 // Server wraps the MCP server and its dependencies.
 type Server struct {
-	mcp *server.MCPServer
-	sse *server.SSEServer
+	mcp  *server.MCPServer
+	sse  *server.SSEServer
+	auth *auth.Authenticator
 
 	searcher    search.Searcher
 	proxyClient *proxy.Client
@@ -32,8 +37,9 @@ type Server struct {
 }
 
 // NewServer creates a new MCP server with all tools registered.
-func NewServer(searcher search.Searcher, proxyClient *proxy.Client, auditLog *audit.Logger, approver Approver, authorizer Authorizer, baseURL string) *Server {
+func NewServer(authenticator *auth.Authenticator, searcher search.Searcher, proxyClient *proxy.Client, auditLog *audit.Logger, approver Approver, authorizer Authorizer, baseURL string) *Server {
 	s := &Server{
+		auth:        authenticator,
 		searcher:    searcher,
 		proxyClient: proxyClient,
 		auditLog:    auditLog,
@@ -49,13 +55,28 @@ func NewServer(searcher search.Searcher, proxyClient *proxy.Client, auditLog *au
 
 	s.registerTools()
 
+	// SSEContextFunc propagates agent identity from the HTTP middleware
+	// into the MCP tool handler context.
+	contextFunc := func(ctx context.Context, r *http.Request) context.Context {
+		if agentName, ok := auth.AgentFromContext(r.Context()); ok {
+			return auth.ContextWithAgent(ctx, agentName)
+		}
+		return ctx
+	}
+
 	s.sse = server.NewSSEServer(
 		s.mcp,
 		server.WithBaseURL(baseURL),
 		server.WithStaticBasePath("/mcp"),
+		server.WithSSEContextFunc(contextFunc),
 	)
 
 	return s
+}
+
+// AuthMiddleware returns the HTTP authentication middleware for MCP routes.
+func (s *Server) AuthMiddleware() func(http.Handler) http.Handler {
+	return s.auth.Middleware
 }
 
 func (s *Server) registerTools() {

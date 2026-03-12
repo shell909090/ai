@@ -76,9 +76,11 @@ func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.tmpl.ExecuteTemplate(w, "pending.html", map[string]any{
+	if err := h.tmpl.ExecuteTemplate(w, "pending.html", map[string]any{
 		"Requests": pending,
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
@@ -94,9 +96,11 @@ func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.tmpl.ExecuteTemplate(w, "detail.html", map[string]any{
+	if err := h.tmpl.ExecuteTemplate(w, "detail.html", map[string]any{
 		"Request": req,
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) handleApprove(w http.ResponseWriter, r *http.Request) {
@@ -164,9 +168,11 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"spec_id":    specID,
 		"operations": len(ops),
 		"deps":       len(deps),
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

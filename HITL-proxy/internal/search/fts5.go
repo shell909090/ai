@@ -23,7 +23,7 @@ func (s *FTS5Searcher) Index(ops []openapi.Operation, deps []openapi.Dependency,
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO operations
 		(spec_id, operation_id, method, path, summary, description, parameters_json, request_body_json, tags)
