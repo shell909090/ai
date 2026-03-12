@@ -13,6 +13,7 @@ type Request struct {
 	DecidedAt   *time.Time `json:"decided_at,omitempty"`
 	DecidedBy   string     `json:"decided_by,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+	TimeoutAt   *time.Time `json:"timeout_at,omitempty"`
 
 	// Enriched fields from OpenAPI spec (for display)
 	Summary     string `json:"summary,omitempty"`

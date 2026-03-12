@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"flag"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/approval"
 	"github.com/shell909090/ai/HITL-proxy/internal/audit"
@@ -53,7 +56,36 @@ func main() {
 	// Components
 	searcher := search.NewFTS5Searcher(db)
 	auditLog := audit.NewLogger(db)
-	approvalEngine := approval.NewEngine(db)
+	hub := approval.NewSSEHub()
+	approvalEngine := approval.NewEngine(
+		db,
+		cfg.Approval.TimeoutDuration(),
+		cfg.Approval.PollIntervalDuration(),
+		hub,
+	)
+
+	// Cleanup orphaned pending requests from previous run
+	if err := approvalEngine.CleanupOrphans(); err != nil {
+		log.Fatalf("cleanup orphans: %v", err)
+	}
+
+	// Background context for timer goroutine
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start background expiry scanner
+	approvalEngine.StartBackgroundTimer(ctx, cfg.Approval.ScanIntervalDuration())
+
+	// Handle shutdown signals
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("shutting down...")
+		cancel()
+		os.Exit(0)
+	}()
+
 	authzChecker := authz.NewChecker(db, true)
 	proxyClient := proxy.NewClient(db, credStore)
 
@@ -65,7 +97,7 @@ func main() {
 	mcpSrv := mcpserver.NewServer(authenticator, searcher, proxyClient, auditLog, approvalEngine, authzChecker, baseURL)
 
 	// Web UI
-	webHandler, err := web.NewHandler(approvalEngine, db, searcher)
+	webHandler, err := web.NewHandler(approvalEngine, db, searcher, hub)
 	if err != nil {
 		log.Fatalf("create web handler: %v", err)
 	}

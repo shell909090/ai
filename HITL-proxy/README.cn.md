@@ -10,7 +10,8 @@ OpenAPI 代理服务，作为 AI Agent 操作第三方 API 的中间层，提供
 - **HITL 审批** — 按 operationId 粒度配置审批规则，Agent 请求阻塞直至人工通过/拒绝
 - **凭证隔离** — AES-GCM 加密凭证存储，Agent 无法接触目标 API 密钥
 - **审计日志** — 全量审计记录存储于 SQLite
-- **CLI 桥接** — stdio 到 SSE 的桥接工具，供仅支持 MCP stdio 传输的 Agent 使用
+- **API Key 认证** — MCP 端点的 Bearer token 认证
+- **CLI 桥接** — Python 实现的 stdio 到 SSE 桥接工具，供仅支持 MCP stdio 传输的 Agent 使用
 
 ## 快速开始
 
@@ -28,6 +29,23 @@ export HITL_CRED_KEY=$(openssl rand -hex 32)
 ./bin/hitl-proxy -config config.yaml
 ```
 
+## 认证
+
+API key 以 SHA-256 哈希形式存储在 SQLite 的 `api_keys` 表中。目前没有管理 API，需要直接操作数据库创建 key：
+
+```sql
+-- 生成一个 key（例如 sk-mykey123），然后插入其 SHA-256 哈希
+-- Linux/macOS：
+echo -n "sk-mykey123" | sha256sum          -- 复制 hex 摘要
+
+sqlite3 hitl.db "INSERT INTO api_keys (key_hash, label) VALUES ('<hex-摘要>', 'my key');"
+```
+
+连接时传递**明文** key：
+
+- **直连 SSE**：请求头 `Authorization: Bearer sk-mykey123`
+- **CLI 桥接**：`--api-key sk-mykey123` 参数
+
 ## 导入 OpenAPI Spec
 
 ```bash
@@ -38,14 +56,40 @@ curl -X POST "http://localhost:8080/specs/import?name=github" \
 
 ## MCP 连接
 
-直连 SSE：
+直连 SSE（需要 API key）：
 ```
 SSE 端点：http://localhost:8080/mcp/sse
+请求头：Authorization: Bearer <api-key>
 ```
 
-通过 CLI 桥接（适用于仅支持 stdio 的 Agent）：
+### CLI 桥接（适用于仅支持 stdio 的 Agent）
+
+桥接工具位于 `cmd/hitl-bridge/`，使用 Python 实现，需要 Python 3.10+ 和 [uv](https://docs.astral.sh/uv/)。
+
+通过 uv 安装运行：
 ```bash
-./bin/hitl-bridge --url http://localhost:8080/mcp/sse
+cd cmd/hitl-bridge
+uv sync
+uv run hitl-bridge --url http://localhost:8080/mcp/sse --api-key <key>
+```
+
+或通过 pip 安装：
+```bash
+cd cmd/hitl-bridge
+pip install .
+hitl-bridge --url http://localhost:8080/mcp/sse --api-key <key>
+```
+
+Agent MCP 配置示例（以 Claude Desktop 为例）：
+```json
+{
+  "mcpServers": {
+    "hitl": {
+      "command": "hitl-bridge",
+      "args": ["--url", "https://proxy.example.com/mcp/sse", "--api-key", "sk-xxx"]
+    }
+  }
+}
 ```
 
 ## MCP Tools
@@ -88,7 +132,7 @@ cred:
 
 ```bash
 make fmt      # gofmt + goimports
-make lint     # golangci-lint
-make test     # go test
-make build    # 构建两个二进制文件
+make lint     # golangci-lint + ruff check
+make test     # go test + pytest
+make build    # 构建 proxy (Go) + 同步 bridge (Python/uv)
 ```

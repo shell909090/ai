@@ -9,6 +9,7 @@ import sys
 from typing import Any
 
 from anyio.streams.memory import MemoryObjectSendStream
+from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification, JSONRPCRequest
@@ -28,6 +29,11 @@ def parse_args() -> argparse.Namespace:
         "--api-key",
         default="",
         help="Bearer token for authentication",
+    )
+    parser.add_argument(
+        "--ping",
+        action="store_true",
+        help="Test connectivity: connect, initialize, ping, then exit",
     )
     return parser.parse_args()
 
@@ -92,13 +98,28 @@ async def read_sse(
             logger.exception("write to stdout")
 
 
+def _build_headers(api_key: str) -> dict[str, str] | None:
+    """Build HTTP headers dict from API key."""
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return None
+
+
+async def ping(url: str, api_key: str) -> None:
+    """Connect, initialize MCP session, send ping, then exit."""
+    async with sse_client(url, headers=_build_headers(api_key)) as (
+        read_stream,
+        write_stream,
+    ):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            await session.send_ping()
+            print("ok")
+
+
 async def run(url: str, api_key: str) -> None:
     """Run the stdio ↔ SSE bridge."""
-    headers: dict[str, str] = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    async with sse_client(url, headers=headers or None) as (
+    async with sse_client(url, headers=_build_headers(api_key)) as (
         read_stream,
         write_stream,
     ):
@@ -116,9 +137,15 @@ def main() -> None:
     )
     args = parse_args()
     try:
-        asyncio.run(run(args.url, args.api_key))
+        if args.ping:
+            asyncio.run(ping(args.url, args.api_key))
+        else:
+            asyncio.run(run(args.url, args.api_key))
     except KeyboardInterrupt:
         pass
+    except Exception as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

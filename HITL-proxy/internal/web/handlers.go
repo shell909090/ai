@@ -24,10 +24,11 @@ type Handler struct {
 	engine   *approval.Engine
 	db       *sql.DB
 	searcher search.Searcher
+	hub      *approval.SSEHub
 	tmpl     *template.Template
 }
 
-func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher) (*Handler, error) {
+func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"prettyJSON": func(s string) string {
 			var v any
@@ -51,6 +52,7 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher) (
 		engine:   engine,
 		db:       db,
 		searcher: searcher,
+		hub:      hub,
 		tmpl:     tmpl,
 	}, nil
 }
@@ -62,6 +64,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /approval/{id}/approve", h.handleApprove)
 	mux.HandleFunc("POST /approval/{id}/reject", h.handleReject)
 	mux.HandleFunc("POST /specs/import", h.handleImportSpec)
+	mux.HandleFunc("GET /events", h.handleSSE)
 }
 
 func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
@@ -174,5 +177,31 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 		"deps":       len(deps),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleSSE streams server-sent events to browser clients for real-time updates.
+func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch := h.hub.Subscribe()
+	defer h.hub.Unsubscribe(ch)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-ch:
+			fmt.Fprintf(w, "event: %s\ndata: {\"id\":%d}\n\n", event.Type, event.ID)
+			flusher.Flush()
+		}
 	}
 }

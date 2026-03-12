@@ -1,28 +1,36 @@
 package approval
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"sync"
+	"log"
 	"time"
 )
 
 // Engine manages the HITL approval flow.
-// When approval is required, it creates a DB record, blocks on a channel,
-// and returns once the request is approved or rejected via the web UI.
+// All state resides in SQLite. The handler goroutine polls the DB
+// until the request reaches a terminal state.
 type Engine struct {
-	db      *sql.DB
-	pending sync.Map // map[int64]chan bool
+	db             *sql.DB
+	defaultTimeout time.Duration
+	pollInterval   time.Duration
+	hub            *SSEHub
 }
 
-func NewEngine(db *sql.DB) *Engine {
-	return &Engine{db: db}
+func NewEngine(db *sql.DB, timeout, pollInterval time.Duration, hub *SSEHub) *Engine {
+	return &Engine{
+		db:             db,
+		defaultTimeout: timeout,
+		pollInterval:   pollInterval,
+		hub:            hub,
+	}
 }
 
 // CheckAndWait checks if the operation requires approval.
 // If not, returns (true, nil) immediately.
-// If yes, creates a request and blocks until resolved.
-func (e *Engine) CheckAndWait(operationID, agentName, paramsJSON, reason string) (bool, error) {
+// If yes, creates a request and polls the DB until resolved, cancelled, or expired.
+func (e *Engine) CheckAndWait(ctx context.Context, operationID, agentName, paramsJSON, reason string) (bool, error) {
 	required, err := e.isRequired(operationID)
 	if err != nil {
 		return false, fmt.Errorf("check approval rule: %w", err)
@@ -31,11 +39,12 @@ func (e *Engine) CheckAndWait(operationID, agentName, paramsJSON, reason string)
 		return true, nil
 	}
 
-	// Create pending request
+	// Create pending request with timeout
+	timeoutAt := time.Now().Add(e.defaultTimeout)
 	result, err := e.db.Exec(
-		`INSERT INTO approval_requests (operation_id, agent_name, params_json, reason, status)
-		VALUES (?, ?, ?, ?, 'pending')`,
-		operationID, agentName, paramsJSON, reason,
+		`INSERT INTO approval_requests (operation_id, agent_name, params_json, reason, status, timeout_at)
+		VALUES (?, ?, ?, ?, 'pending', ?)`,
+		operationID, agentName, paramsJSON, reason, timeoutAt,
 	)
 	if err != nil {
 		return false, fmt.Errorf("create approval request: %w", err)
@@ -46,14 +55,49 @@ func (e *Engine) CheckAndWait(operationID, agentName, paramsJSON, reason string)
 		return false, fmt.Errorf("get request id: %w", err)
 	}
 
-	// Create channel and register in pending map
-	ch := make(chan bool, 1)
-	e.pending.Store(reqID, ch)
-	defer e.pending.Delete(reqID)
+	// Broadcast new request event
+	e.hub.Broadcast(SSEEvent{Type: "new_request", ID: reqID})
 
-	// Block until decision
-	approved := <-ch
-	return approved, nil
+	// Poll loop
+	ticker := time.NewTicker(e.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Agent disconnected or context cancelled
+			if e.markCancelled(reqID) {
+				e.hub.Broadcast(SSEEvent{Type: "decided", ID: reqID})
+				return false, fmt.Errorf("approval cancelled: %w", ctx.Err())
+			}
+			// Lost the race — someone already decided. Read the result.
+			status, err := e.getStatus(reqID)
+			if err != nil {
+				return false, fmt.Errorf("read status after cancel race: %w", err)
+			}
+			return status == "approved", nil
+
+		case <-ticker.C:
+			status, err := e.getStatus(reqID)
+			if err != nil {
+				return false, fmt.Errorf("poll status: %w", err)
+			}
+			switch status {
+			case "pending":
+				continue
+			case "approved":
+				return true, nil
+			case "rejected":
+				return false, nil
+			case "expired":
+				return false, fmt.Errorf("approval request expired")
+			case "cancelled":
+				return false, fmt.Errorf("approval request cancelled")
+			default:
+				return false, fmt.Errorf("unexpected approval status: %s", status)
+			}
+		}
+	}
 }
 
 // Decide resolves a pending approval request.
@@ -76,19 +120,86 @@ func (e *Engine) Decide(reqID int64, approved bool, decidedBy string) error {
 		return fmt.Errorf("request %d not found or already decided", reqID)
 	}
 
-	// Unblock the waiting goroutine
-	if ch, ok := e.pending.Load(reqID); ok {
-		ch.(chan bool) <- approved
-	}
-
+	e.hub.Broadcast(SSEEvent{Type: "decided", ID: reqID})
 	return nil
+}
+
+// CleanupOrphans marks all pending requests as expired.
+// Called once at startup to handle records orphaned by a previous crash.
+func (e *Engine) CleanupOrphans() error {
+	res, err := e.db.Exec(`UPDATE approval_requests SET status = 'expired' WHERE status = 'pending'`)
+	if err != nil {
+		return fmt.Errorf("cleanup orphans: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		log.Printf("cleaned up %d orphaned approval requests", n)
+	}
+	return nil
+}
+
+// StartBackgroundTimer runs a goroutine that periodically expires timed-out requests.
+func (e *Engine) StartBackgroundTimer(ctx context.Context, scanInterval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(scanInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				e.expireTimedOut()
+			}
+		}
+	}()
+}
+
+func (e *Engine) expireTimedOut() {
+	res, err := e.db.Exec(
+		`UPDATE approval_requests SET status = 'expired' WHERE status = 'pending' AND timeout_at <= ?`,
+		time.Now(),
+	)
+	if err != nil {
+		log.Printf("expire timed out requests: %v", err)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		log.Printf("expired %d timed-out approval requests", n)
+		e.hub.Broadcast(SSEEvent{Type: "expired"})
+	}
+}
+
+// getStatus reads the current status of a request.
+func (e *Engine) getStatus(reqID int64) (string, error) {
+	var status string
+	err := e.db.QueryRow(`SELECT status FROM approval_requests WHERE id = ?`, reqID).Scan(&status)
+	if err != nil {
+		return "", fmt.Errorf("get status: %w", err)
+	}
+	return status, nil
+}
+
+// markCancelled attempts to set a request to cancelled.
+// Returns true if the row was updated, false if someone else already decided.
+func (e *Engine) markCancelled(reqID int64) bool {
+	res, err := e.db.Exec(
+		`UPDATE approval_requests SET status = 'cancelled' WHERE id = ? AND status = 'pending'`,
+		reqID,
+	)
+	if err != nil {
+		log.Printf("mark cancelled: %v", err)
+		return false
+	}
+	n, _ := res.RowsAffected()
+	return n > 0
 }
 
 // GetPending returns all pending approval requests with enriched operation info.
 func (e *Engine) GetPending() ([]Request, error) {
 	rows, err := e.db.Query(`
 		SELECT ar.id, ar.operation_id, ar.agent_name, ar.params_json, ar.reason,
-			ar.status, ar.created_at,
+			ar.status, ar.created_at, ar.timeout_at,
 			COALESCE(o.summary, ''), COALESCE(o.description, ''),
 			COALESCE(o.method, ''), COALESCE(o.path, '')
 		FROM approval_requests ar
@@ -108,7 +219,7 @@ func (e *Engine) GetPending() ([]Request, error) {
 func (e *Engine) GetRequest(id int64) (*Request, error) {
 	rows, err := e.db.Query(`
 		SELECT ar.id, ar.operation_id, ar.agent_name, ar.params_json, ar.reason,
-			ar.status, ar.created_at,
+			ar.status, ar.created_at, ar.timeout_at,
 			COALESCE(o.summary, ''), COALESCE(o.description, ''),
 			COALESCE(o.method, ''), COALESCE(o.path, '')
 		FROM approval_requests ar
@@ -157,7 +268,7 @@ func scanRequests(rows *sql.Rows) ([]Request, error) {
 		var r Request
 		if err := rows.Scan(
 			&r.ID, &r.OperationID, &r.AgentName, &r.ParamsJSON, &r.Reason,
-			&r.Status, &r.CreatedAt,
+			&r.Status, &r.CreatedAt, &r.TimeoutAt,
 			&r.Summary, &r.Description, &r.Method, &r.Path,
 		); err != nil {
 			return nil, fmt.Errorf("scan request: %w", err)

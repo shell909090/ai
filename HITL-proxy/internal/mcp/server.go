@@ -15,7 +15,7 @@ import (
 
 // Approver checks whether an operation needs approval and blocks until resolved.
 type Approver interface {
-	CheckAndWait(operationID, agentName, paramsJSON, reason string) (approved bool, err error)
+	CheckAndWait(ctx context.Context, operationID, agentName, paramsJSON, reason string) (approved bool, err error)
 }
 
 // Authorizer checks whether an agent is allowed to call an operation.

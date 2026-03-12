@@ -102,7 +102,7 @@ func (s *Server) handleCallAPI(ctx context.Context, request mcp.CallToolRequest)
 
 	// Approval check
 	if s.approver != nil {
-		approved, err := s.approver.CheckAndWait(operationID, agentName, string(paramsJSON), reason)
+		approved, err := s.approver.CheckAndWait(ctx, operationID, agentName, string(paramsJSON), reason)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{mcp.TextContent{Type: "text", Text: fmt.Sprintf("approval error: %v", err)}},
