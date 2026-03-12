@@ -59,7 +59,7 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 
 // RegisterRoutes registers HTTP routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /", h.handlePending)
+	mux.HandleFunc("GET /{$}", h.handlePending)
 	mux.HandleFunc("GET /approval/{id}", h.handleDetail)
 	mux.HandleFunc("POST /approval/{id}/approve", h.handleApprove)
 	mux.HandleFunc("POST /approval/{id}/reject", h.handleReject)
@@ -147,8 +147,24 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 		name = "imported"
 	}
 
+	// Parse spec before starting transaction
+	// (use specID=0 temporarily; we update it after INSERT)
+	ops, deps, err := openapi.ParseSpec(context.Background(), 0, body)
+	if err != nil {
+		http.Error(w, "parse spec: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Begin atomic transaction for the entire import
+	tx, err := h.db.Begin()
+	if err != nil {
+		http.Error(w, "begin tx: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// Insert spec into DB
-	result, err := h.db.Exec(
+	result, err := tx.Exec(
 		`INSERT INTO specs (name, raw_json) VALUES (?, ?)`, name, string(body),
 	)
 	if err != nil {
@@ -157,25 +173,34 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	}
 	specID, _ := result.LastInsertId()
 
-	// Parse spec
-	ops, deps, err := openapi.ParseSpec(context.Background(), specID, body)
-	if err != nil {
-		http.Error(w, "parse spec: "+err.Error(), http.StatusBadRequest)
-		return
+	// Update specID in parsed operations
+	for i := range ops {
+		ops[i].SpecID = specID
 	}
 
-	// Index operations
-	if err := h.searcher.Index(ops, deps, specID); err != nil {
+	// Index operations within the same transaction
+	prefixed, err := h.searcher.IndexTx(tx, ops, deps, specID, name)
+	if err != nil {
 		http.Error(w, "index operations: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]any{
 		"spec_id":    specID,
 		"operations": len(ops),
 		"deps":       len(deps),
-	}); err != nil {
+	}
+	if prefixed {
+		resp["prefix"] = name + "."
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

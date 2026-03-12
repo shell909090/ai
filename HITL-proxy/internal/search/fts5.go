@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/openapi"
@@ -18,18 +19,101 @@ func NewFTS5Searcher(db *sql.DB) *FTS5Searcher {
 	return &FTS5Searcher{db: db}
 }
 
-func (s *FTS5Searcher) Index(ops []openapi.Operation, deps []openapi.Dependency, specID int64) error {
+// Index opens a transaction and delegates to IndexTx. Backward-compatible wrapper.
+func (s *FTS5Searcher) Index(ops []openapi.Operation, deps []openapi.Dependency, specID int64, specName string) (bool, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return false, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	prefixed, err := s.IndexTx(tx, ops, deps, specID, specName)
+	if err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit tx: %w", err)
+	}
+	return prefixed, nil
+}
+
+// IndexTx indexes operations and dependencies within an externally-managed transaction.
+// It detects operation_id conflicts with other specs and, if any exist, prefixes ALL
+// operation_ids in this spec with "{specName}." to guarantee global uniqueness.
+// Returns true if prefixing was applied.
+func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []openapi.Dependency, specID int64, specName string) (bool, error) {
+	prefixed := false
+
+	// --- conflict detection ---
+	if len(ops) > 0 {
+		ids := make([]string, len(ops))
+		for i, op := range ops {
+			ids[i] = op.OperationID
+		}
+
+		// Build placeholder list for IN clause
+		placeholders := make([]string, len(ids))
+		args := make([]any, 0, len(ids)+1)
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		args = append(args, specID)
+
+		query := fmt.Sprintf(
+			`SELECT operation_id FROM operations WHERE operation_id IN (%s) AND spec_id != ?`,
+			strings.Join(placeholders, ","),
+		)
+
+		rows, err := tx.Query(query, args...)
+		if err != nil {
+			return false, fmt.Errorf("conflict check: %w", err)
+		}
+		defer rows.Close()
+
+		var conflicts []string
+		for rows.Next() {
+			var oid string
+			if err := rows.Scan(&oid); err != nil {
+				return false, fmt.Errorf("scan conflict: %w", err)
+			}
+			conflicts = append(conflicts, oid)
+		}
+		if err := rows.Err(); err != nil {
+			return false, fmt.Errorf("iterate conflicts: %w", err)
+		}
+
+		if len(conflicts) > 0 {
+			prefixed = true
+			prefix := specName + "."
+			log.Printf("WARNING: spec %q has %d conflicting operation_id(s) %v; prefixing all operations with %q",
+				specName, len(conflicts), conflicts, prefix)
+
+			// Build old→new mapping for deps
+			renameMap := make(map[string]string, len(ops))
+			for i := range ops {
+				old := ops[i].OperationID
+				ops[i].OperationID = prefix + old
+				renameMap[old] = ops[i].OperationID
+			}
+			for i := range deps {
+				if newID, ok := renameMap[deps[i].OperationID]; ok {
+					deps[i].OperationID = newID
+				}
+				if newID, ok := renameMap[deps[i].DependsOnID]; ok {
+					deps[i].DependsOnID = newID
+				}
+			}
+		}
+	}
+
+	// --- insert operations ---
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO operations
 		(spec_id, operation_id, method, path, summary, description, parameters_json, request_body_json, tags)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
-		return fmt.Errorf("prepare insert: %w", err)
+		return false, fmt.Errorf("prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
@@ -37,24 +121,25 @@ func (s *FTS5Searcher) Index(ops []openapi.Operation, deps []openapi.Dependency,
 		_, err := stmt.Exec(op.SpecID, op.OperationID, op.Method, op.Path,
 			op.Summary, op.Description, op.ParametersJSON, op.RequestBodyJSON, op.Tags)
 		if err != nil {
-			return fmt.Errorf("insert operation %s: %w", op.OperationID, err)
+			return false, fmt.Errorf("insert operation %s: %w", op.OperationID, err)
 		}
 	}
 
+	// --- insert dependencies ---
 	depStmt, err := tx.Prepare(`INSERT OR REPLACE INTO operation_deps
 		(operation_id, depends_on_id, reason, spec_id) VALUES (?, ?, ?, ?)`)
 	if err != nil {
-		return fmt.Errorf("prepare dep insert: %w", err)
+		return false, fmt.Errorf("prepare dep insert: %w", err)
 	}
 	defer depStmt.Close()
 
 	for _, dep := range deps {
 		if _, err := depStmt.Exec(dep.OperationID, dep.DependsOnID, dep.Reason, specID); err != nil {
-			return fmt.Errorf("insert dep %s→%s: %w", dep.OperationID, dep.DependsOnID, err)
+			return false, fmt.Errorf("insert dep %s→%s: %w", dep.OperationID, dep.DependsOnID, err)
 		}
 	}
 
-	return tx.Commit()
+	return prefixed, nil
 }
 
 func (s *FTS5Searcher) Search(query string, limit int) ([]SearchResult, error) {

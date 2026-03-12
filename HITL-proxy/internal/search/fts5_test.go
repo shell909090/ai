@@ -65,8 +65,12 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 		{OperationID: "getRepo", DependsOnID: "listRepos", Reason: "needs repo from list"},
 	}
 
-	if err := searcher.Index(ops, deps, specID); err != nil {
+	prefixed, err := searcher.Index(ops, deps, specID, "test")
+	if err != nil {
 		t.Fatalf("index: %v", err)
+	}
+	if prefixed {
+		t.Error("expected no prefix for first import")
 	}
 
 	// Search for repositories
@@ -111,5 +115,130 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 				t.Error("expected dependencies for getRepo")
 			}
 		}
+	}
+}
+
+func TestFTS5SearcherConflictPrefix(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	searcher := NewFTS5Searcher(db)
+
+	// Import first spec with "listRepos" operation
+	res1, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('github', '{}')`)
+	if err != nil {
+		t.Fatalf("insert spec1: %v", err)
+	}
+	specID1, _ := res1.LastInsertId()
+
+	ops1 := []openapi.Operation{
+		{
+			SpecID:          specID1,
+			OperationID:     "listRepos",
+			Method:          "GET",
+			Path:            "/repos",
+			Summary:         "List repos",
+			Description:     "List all repos",
+			ParametersJSON:  "[]",
+			RequestBodyJSON: "{}",
+			Tags:            "repos",
+		},
+	}
+
+	prefixed, err := searcher.Index(ops1, nil, specID1, "github")
+	if err != nil {
+		t.Fatalf("index spec1: %v", err)
+	}
+	if prefixed {
+		t.Error("first import should not be prefixed")
+	}
+
+	// Import second spec with the same "listRepos" operation_id
+	res2, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('gitlab', '{}')`)
+	if err != nil {
+		t.Fatalf("insert spec2: %v", err)
+	}
+	specID2, _ := res2.LastInsertId()
+
+	ops2 := []openapi.Operation{
+		{
+			SpecID:          specID2,
+			OperationID:     "listRepos",
+			Method:          "GET",
+			Path:            "/projects",
+			Summary:         "List projects",
+			Description:     "List all projects",
+			ParametersJSON:  "[]",
+			RequestBodyJSON: "{}",
+			Tags:            "projects",
+		},
+		{
+			SpecID:          specID2,
+			OperationID:     "getProject",
+			Method:          "GET",
+			Path:            "/projects/{id}",
+			Summary:         "Get project",
+			Description:     "Get a single project",
+			ParametersJSON:  "[]",
+			RequestBodyJSON: "{}",
+			Tags:            "projects",
+		},
+	}
+
+	deps2 := []openapi.Dependency{
+		{OperationID: "getProject", DependsOnID: "listRepos", Reason: "needs project id"},
+	}
+
+	prefixed, err = searcher.Index(ops2, deps2, specID2, "gitlab")
+	if err != nil {
+		t.Fatalf("index spec2: %v", err)
+	}
+	if !prefixed {
+		t.Fatal("second import with conflicting operation_id should be prefixed")
+	}
+
+	// Verify the operations were prefixed
+	var count int
+	err = db.QueryRow(`SELECT COUNT(*) FROM operations WHERE operation_id = 'gitlab.listRepos'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("query prefixed op: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 row with gitlab.listRepos, got %d", count)
+	}
+
+	// Non-conflicting op should also be prefixed (whole spec gets prefix)
+	err = db.QueryRow(`SELECT COUNT(*) FROM operations WHERE operation_id = 'gitlab.getProject'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("query prefixed non-conflict op: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 row with gitlab.getProject, got %d", count)
+	}
+
+	// Deps should also be prefixed
+	var depOpID, depOnID string
+	err = db.QueryRow(`SELECT operation_id, depends_on_id FROM operation_deps WHERE spec_id = ?`, specID2).Scan(&depOpID, &depOnID)
+	if err != nil {
+		t.Fatalf("query dep: %v", err)
+	}
+	if depOpID != "gitlab.getProject" {
+		t.Errorf("expected dep operation_id=gitlab.getProject, got %s", depOpID)
+	}
+	if depOnID != "gitlab.listRepos" {
+		t.Errorf("expected dep depends_on_id=gitlab.listRepos, got %s", depOnID)
+	}
+
+	// Original spec's operations should be untouched
+	err = db.QueryRow(`SELECT COUNT(*) FROM operations WHERE operation_id = 'listRepos' AND spec_id = ?`, specID1).Scan(&count)
+	if err != nil {
+		t.Fatalf("query original op: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("original listRepos should still exist, got count %d", count)
 	}
 }

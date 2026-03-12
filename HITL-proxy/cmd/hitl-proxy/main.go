@@ -93,7 +93,11 @@ func main() {
 	authenticator := auth.NewAuthenticator(db)
 
 	// MCP server
-	baseURL := "http://localhost" + cfg.Listen
+	listenAddr := cfg.Listen
+	if listenAddr[0] == ':' {
+		listenAddr = "localhost" + listenAddr
+	}
+	baseURL := "http://" + listenAddr
 	mcpSrv := mcpserver.NewServer(authenticator, searcher, proxyClient, auditLog, approvalEngine, authzChecker, baseURL)
 
 	// Web UI
