@@ -1,0 +1,47 @@
+{{template "layout" .}}
+{{define "content"}}
+<h2 style="margin-bottom: 16px;">API Key Management</h2>
+
+{{if .NewKey}}
+<div class="card" style="border-left: 4px solid #28a745;">
+    <h2>Key Created — Copy Now</h2>
+    <p class="meta" style="margin-bottom: 8px;">This key will not be shown again. Store it securely.</p>
+    <pre>{{.NewKey}}</pre>
+    <div class="meta" style="margin-top: 8px;">Agent: <strong>{{.NewAgentName}}</strong></div>
+</div>
+{{end}}
+
+<div class="card">
+    <h2 style="margin-bottom: 12px;">Create New API Key</h2>
+    <form method="POST" action="/admin/apikeys">
+        <div class="field">
+            <div class="field-label">Agent Name</div>
+            <input type="text" name="agent_name" placeholder="e.g. claude-code" required
+                   style="width: 300px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-approve">Generate Key</button>
+        </div>
+    </form>
+</div>
+
+<h2 style="margin: 16px 0 12px;">Existing Keys</h2>
+{{if .Keys}}
+    {{range .Keys}}
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong>{{.AgentName}}</strong>
+                <div class="meta">ID: {{.ID}} | Created: {{.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+            </div>
+            <form method="POST" action="/admin/apikeys/{{.ID}}/delete" style="margin: 0;"
+                  onsubmit="return confirm('Revoke key for {{.AgentName}}?')">
+                <button type="submit" class="btn btn-reject">Revoke</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+{{else}}
+    <div class="empty">No API keys configured.</div>
+{{end}}
+{{end}}

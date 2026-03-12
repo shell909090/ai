@@ -100,8 +100,15 @@ func main() {
 	baseURL := "http://" + listenAddr
 	mcpSrv := mcpserver.NewServer(authenticator, searcher, proxyClient, auditLog, approvalEngine, authzChecker, baseURL)
 
+	// Admin password for Web UI
+	adminPassword := os.Getenv("HITL_ADMIN_PASSWORD")
+	if adminPassword == "" {
+		adminPassword = "admin"
+		log.Println("WARNING: using default admin password, set HITL_ADMIN_PASSWORD in production")
+	}
+
 	// Web UI
-	webHandler, err := web.NewHandler(approvalEngine, db, searcher, hub)
+	webHandler, err := web.NewHandler(approvalEngine, db, searcher, hub, authenticator, adminPassword)
 	if err != nil {
 		log.Fatalf("create web handler: %v", err)
 	}

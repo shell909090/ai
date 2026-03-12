@@ -5,3 +5,7 @@ database:
 
 cred:
   file: "credentials.enc"
+
+# Environment variables (not in this file):
+#   HITL_CRED_KEY          - 64-char hex, AES-256-GCM key for credential encryption (required in production)
+#   HITL_ADMIN_PASSWORD    - password for Web UI HTTP Basic Auth (required in production)

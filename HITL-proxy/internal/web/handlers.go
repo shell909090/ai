@@ -2,8 +2,11 @@ package web
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,6 +15,7 @@ import (
 	"strconv"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/approval"
+	"github.com/shell909090/ai/HITL-proxy/internal/auth"
 	"github.com/shell909090/ai/HITL-proxy/internal/openapi"
 	"github.com/shell909090/ai/HITL-proxy/internal/search"
 )
@@ -21,14 +25,16 @@ var templateFS embed.FS
 
 // Handler serves the web UI for approval management and spec import.
 type Handler struct {
-	engine   *approval.Engine
-	db       *sql.DB
-	searcher search.Searcher
-	hub      *approval.SSEHub
-	tmpl     *template.Template
+	engine        *approval.Engine
+	db            *sql.DB
+	searcher      search.Searcher
+	hub           *approval.SSEHub
+	authenticator *auth.Authenticator
+	adminPassword string
+	tmpl          *template.Template
 }
 
-func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub) (*Handler, error) {
+func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub, authenticator *auth.Authenticator, adminPassword string) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"prettyJSON": func(s string) string {
 			var v any
@@ -49,22 +55,40 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 	}
 
 	return &Handler{
-		engine:   engine,
-		db:       db,
-		searcher: searcher,
-		hub:      hub,
-		tmpl:     tmpl,
+		engine:        engine,
+		db:            db,
+		searcher:      searcher,
+		hub:           hub,
+		authenticator: authenticator,
+		adminPassword: adminPassword,
+		tmpl:          tmpl,
 	}, nil
+}
+
+// basicAuth wraps a handler with HTTP Basic Auth using a fixed "admin" username.
+func (h *Handler) basicAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, password, ok := r.BasicAuth()
+		if !ok || subtle.ConstantTimeCompare([]byte(password), []byte(h.adminPassword)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="HITL-proxy Admin"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // RegisterRoutes registers HTTP routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /{$}", h.handlePending)
-	mux.HandleFunc("GET /approval/{id}", h.handleDetail)
-	mux.HandleFunc("POST /approval/{id}/approve", h.handleApprove)
-	mux.HandleFunc("POST /approval/{id}/reject", h.handleReject)
-	mux.HandleFunc("POST /specs/import", h.handleImportSpec)
-	mux.HandleFunc("GET /events", h.handleSSE)
+	mux.HandleFunc("GET /{$}", h.basicAuth(h.handlePending))
+	mux.HandleFunc("GET /approval/{id}", h.basicAuth(h.handleDetail))
+	mux.HandleFunc("POST /approval/{id}/approve", h.basicAuth(h.handleApprove))
+	mux.HandleFunc("POST /approval/{id}/reject", h.basicAuth(h.handleReject))
+	mux.HandleFunc("POST /specs/import", h.basicAuth(h.handleImportSpec))
+	mux.HandleFunc("GET /events", h.basicAuth(h.handleSSE))
+	mux.HandleFunc("GET /admin/apikeys", h.basicAuth(h.handleListAPIKeys))
+	mux.HandleFunc("POST /admin/apikeys", h.basicAuth(h.handleCreateAPIKey))
+	mux.HandleFunc("POST /admin/apikeys/{id}/delete", h.basicAuth(h.handleDeleteAPIKey))
 }
 
 func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +227,69 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := h.authenticator.ListKeys()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.tmpl.ExecuteTemplate(w, "apikeys.html", map[string]any{
+		"Keys": keys,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	agentName := r.FormValue("agent_name")
+	if agentName == "" {
+		http.Error(w, "agent_name required", http.StatusBadRequest)
+		return
+	}
+
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		http.Error(w, "generate key: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newKey := "sk-" + hex.EncodeToString(raw)
+
+	if err := h.authenticator.CreateKey(newKey, agentName); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	keys, err := h.authenticator.ListKeys()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.tmpl.ExecuteTemplate(w, "apikeys.html", map[string]any{
+		"Keys":         keys,
+		"NewKey":       newKey,
+		"NewAgentName": agentName,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authenticator.DeleteKey(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/apikeys", http.StatusSeeOther)
 }
 
 // handleSSE streams server-sent events to browser clients for real-time updates.

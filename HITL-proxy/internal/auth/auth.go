@@ -6,7 +6,15 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"time"
 )
+
+// APIKey holds non-secret metadata about a stored key.
+type APIKey struct {
+	ID        int64
+	AgentName string
+	CreatedAt time.Time
+}
 
 type contextKey int
 
@@ -57,6 +65,34 @@ func (a *Authenticator) CreateKey(apiKey, agentName string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert api_key: %w", err)
+	}
+	return nil
+}
+
+// ListKeys returns all API keys (without hashes), newest first.
+func (a *Authenticator) ListKeys() ([]APIKey, error) {
+	rows, err := a.db.Query(`SELECT id, agent_name, created_at FROM api_keys ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query api_keys: %w", err)
+	}
+	defer rows.Close()
+
+	var keys []APIKey
+	for rows.Next() {
+		var k APIKey
+		if err := rows.Scan(&k.ID, &k.AgentName, &k.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan api_key: %w", err)
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+// DeleteKey removes an API key by ID.
+func (a *Authenticator) DeleteKey(id int64) error {
+	_, err := a.db.Exec(`DELETE FROM api_keys WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete api_key: %w", err)
 	}
 	return nil
 }
