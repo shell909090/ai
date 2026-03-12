@@ -7,7 +7,8 @@
     <div class="card">
         <h2 style="margin-bottom: 12px;">{{.Name}}</h2>
         {{if .Schemes}}
-        <form method="POST" action="/admin/creds/{{.Name}}">
+        <form method="POST" action="/admin/creds">
+            <input type="hidden" name="spec_name" value="{{.Name}}">
             {{range .Schemes}}
             <div class="field">
                 <div class="field-label">{{.Name}}</div>

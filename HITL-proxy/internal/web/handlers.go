@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"errors"
@@ -43,6 +44,16 @@ type Handler struct {
 
 func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub, authenticator *auth.Authenticator, credStore *cred.Store, adminPassword string) (*Handler, error) {
 	funcMap := template.FuncMap{
+		// safeID converts a string to a CSS-selector-safe id by replacing any
+		// character that is not alphanumeric or '-' with '_'.
+		"safeID": func(s string) string {
+			return strings.Map(func(r rune) rune {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+					return r
+				}
+				return '_'
+			}, s)
+		},
 		"prettyJSON": func(s string) string {
 			var v any
 			if err := json.Unmarshal([]byte(s), &v); err != nil {
@@ -114,7 +125,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/rules", h.basicAuth(h.handleListRules))
 	mux.HandleFunc("POST /admin/rules", h.basicAuth(h.handleSetRule))
 	mux.HandleFunc("GET /admin/creds", h.basicAuth(h.handleListCreds))
-	mux.HandleFunc("POST /admin/creds/{specName}", h.basicAuth(h.handleSetCreds))
+	mux.HandleFunc("POST /admin/creds", h.basicAuth(h.handleSetCreds))
 }
 
 func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
@@ -359,13 +370,6 @@ func (h *Handler) handleDeleteSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete vector embeddings (non-fatal)
-	if vi, ok := h.searcher.(search.VectorIndexer); ok {
-		if err := vi.DeleteSpecEmbeddings(r.Context(), id); err != nil {
-			log.Printf("warn: delete embeddings for spec %d: %v", id, err)
-		}
-	}
-
 	// Delete DB records in dependency order
 	tx, err := h.db.Begin()
 	if err != nil {
@@ -374,12 +378,19 @@ func (h *Handler) handleDeleteSpec(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Delete approval rules for this spec's operations
+	// Delete approval and authz rules for this spec's operations
 	if _, err := tx.Exec(`
 		DELETE FROM approval_rules WHERE operation_id IN (
 			SELECT operation_id FROM operations WHERE spec_id = ?
 		)`, id); err != nil {
-		http.Error(w, "delete rules: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "delete approval rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec(`
+		DELETE FROM authz_rules WHERE operation_id IN (
+			SELECT operation_id FROM operations WHERE spec_id = ?
+		)`, id); err != nil {
+		http.Error(w, "delete authz rules: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -399,6 +410,13 @@ func (h *Handler) handleDeleteSpec(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Delete vector embeddings after successful DB commit (non-fatal)
+	if vi, ok := h.searcher.(search.VectorIndexer); ok {
+		if err := vi.DeleteSpecEmbeddings(r.Context(), id); err != nil {
+			log.Printf("warn: delete embeddings for spec %d: %v", id, err)
+		}
 	}
 
 	// Clean up credentials for this spec (non-fatal)
@@ -455,42 +473,11 @@ func (h *Handler) handleSetRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return a single rule row HTML fragment for htmx swap
-	newRequired := "0"
-	if !row.Required {
-		newRequired = "1"
+	// Return a single rule row HTML fragment for htmx swap, using the template
+	// to ensure all output is properly escaped.
+	if err := h.tmpls["rules"].ExecuteTemplate(w, "rule-row", row); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	btnClass := "btn-approve"
-	btnLabel := "Enable"
-	statusLabel := "disabled"
-	if row.Required {
-		btnClass = "btn-reject"
-		btnLabel = "Disable"
-		statusLabel = "required"
-	}
-	fmt.Fprintf(w, `<tr id="rule-%s">
-		<td><span class="method method-%s">%s</span></td>
-		<td class="path">%s</td>
-		<td>%s</td>
-		<td><span class="badge badge-%s">%s</span></td>
-		<td>
-			<form hx-post="/admin/rules" hx-swap="outerHTML" hx-target="#rule-%s" style="margin:0;">
-				<input type="hidden" name="operation_id" value="%s">
-				<input type="hidden" name="required" value="%s">
-				<button type="submit" class="btn %s">%s</button>
-			</form>
-		</td>
-	</tr>`,
-		row.OperationID,
-		row.Method, row.Method,
-		row.Path,
-		row.Summary,
-		statusLabel, statusLabel,
-		row.OperationID,
-		row.OperationID,
-		newRequired,
-		btnClass, btnLabel,
-	)
 }
 
 // credScheme holds a scheme name and whether a credential is already set.
@@ -552,14 +539,14 @@ func (h *Handler) handleListCreds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleSetCreds(w http.ResponseWriter, r *http.Request) {
-	specName := r.PathValue("specName")
-	if specName == "" {
-		http.Error(w, "specName required", http.StatusBadRequest)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+	specName := r.FormValue("spec_name")
+	if specName == "" {
+		http.Error(w, "spec_name required", http.StatusBadRequest)
 		return
 	}
 
@@ -570,6 +557,9 @@ func (h *Handler) handleSetCreds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, vs := range r.Form {
+		if k == "spec_name" {
+			continue
+		}
 		if len(vs) > 0 && vs[0] != "" {
 			existing[k] = vs[0]
 		}

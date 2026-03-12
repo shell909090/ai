@@ -1,3 +1,26 @@
+{{define "rule-row"}}
+{{$newRequired := "1"}}{{if .Required}}{{$newRequired = "0"}}{{end}}
+{{$btnClass := "btn-approve"}}{{if .Required}}{{$btnClass = "btn-reject"}}{{end}}
+{{$btnLabel := "Enable"}}{{if .Required}}{{$btnLabel = "Disable"}}{{end}}
+{{$statusLabel := "disabled"}}{{if .Required}}{{$statusLabel = "required"}}{{end}}
+<tr id="rule-{{safeID .OperationID}}" style="border-bottom: 1px solid #dee2e6;">
+    <td style="padding: 10px 16px;">
+        <div style="font-size: 0.8em; color: #888; margin-bottom: 2px;">{{.SpecName}}</div>
+        <span class="method method-{{.Method}}">{{.Method}}</span>
+    </td>
+    <td style="padding: 10px 16px;" class="path">{{.Path}}</td>
+    <td style="padding: 10px 16px; color: #555; font-size: 0.95em;">{{.Summary}}</td>
+    <td style="padding: 10px 16px;"><span class="badge badge-{{$statusLabel}}">{{$statusLabel}}</span></td>
+    <td style="padding: 10px 16px;">
+        <form hx-post="/admin/rules" hx-swap="outerHTML" hx-target="#rule-{{safeID .OperationID}}" style="margin:0;">
+            <input type="hidden" name="operation_id" value="{{.OperationID}}">
+            <input type="hidden" name="required" value="{{$newRequired}}">
+            <button type="submit" class="btn {{$btnClass}}" style="padding: 4px 12px; font-size: 0.9em;">{{$btnLabel}}</button>
+        </form>
+    </td>
+</tr>
+{{end}}
+
 {{template "layout" .}}
 {{define "content"}}
 <h2 style="margin-bottom: 16px;">Approval Rules</h2>
@@ -15,28 +38,7 @@
             </tr>
         </thead>
         <tbody>
-        {{range .Rules}}
-        {{$newRequired := "1"}}{{if .Required}}{{$newRequired = "0"}}{{end}}
-        {{$btnClass := "btn-approve"}}{{if .Required}}{{$btnClass = "btn-reject"}}{{end}}
-        {{$btnLabel := "Enable"}}{{if .Required}}{{$btnLabel = "Disable"}}{{end}}
-        {{$statusLabel := "disabled"}}{{if .Required}}{{$statusLabel = "required"}}{{end}}
-        <tr id="rule-{{.OperationID}}" style="border-bottom: 1px solid #dee2e6;">
-            <td style="padding: 10px 16px;">
-                <div style="font-size: 0.8em; color: #888; margin-bottom: 2px;">{{.SpecName}}</div>
-                <span class="method method-{{.Method}}">{{.Method}}</span>
-            </td>
-            <td style="padding: 10px 16px;" class="path">{{.Path}}</td>
-            <td style="padding: 10px 16px; color: #555; font-size: 0.95em;">{{.Summary}}</td>
-            <td style="padding: 10px 16px;"><span class="badge badge-{{$statusLabel}}">{{$statusLabel}}</span></td>
-            <td style="padding: 10px 16px;">
-                <form hx-post="/admin/rules" hx-swap="outerHTML" hx-target="#rule-{{.OperationID}}" style="margin:0;">
-                    <input type="hidden" name="operation_id" value="{{.OperationID}}">
-                    <input type="hidden" name="required" value="{{$newRequired}}">
-                    <button type="submit" class="btn {{$btnClass}}" style="padding: 4px 12px; font-size: 0.9em;">{{$btnLabel}}</button>
-                </form>
-            </td>
-        </tr>
-        {{end}}
+        {{range .Rules}}{{template "rule-row" .}}{{end}}
         </tbody>
     </table>
 </div>
