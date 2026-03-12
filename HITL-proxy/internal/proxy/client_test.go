@@ -954,6 +954,117 @@ func TestCall_FormBodyWithObjectExplodeTrue(t *testing.T) {
 	}
 }
 
+// --- parseBodySchemaProps tests ---
+
+func TestParseBodySchemaProps_Direct(t *testing.T) {
+	input := `{"content":{"application/json":{"schema":{"type":"object","properties":{"title":{},"body":{}}}}}}`
+	got := parseBodySchemaProps(input)
+	if !got["title"] {
+		t.Error("expected 'title' in body props")
+	}
+	if !got["body"] {
+		t.Error("expected 'body' in body props")
+	}
+	if got["unknown"] {
+		t.Error("unexpected 'unknown' in body props")
+	}
+}
+
+func TestParseBodySchemaProps_Wrapped(t *testing.T) {
+	input := `{"value":{"content":{"application/json":{"schema":{"properties":{"name":{},"age":{}}}}}}}`
+	got := parseBodySchemaProps(input)
+	if !got["name"] || !got["age"] {
+		t.Errorf("got %v, want name and age", got)
+	}
+}
+
+func TestParseBodySchemaProps_Empty(t *testing.T) {
+	for _, input := range []string{"", "{}", "null"} {
+		got := parseBodySchemaProps(input)
+		if len(got) != 0 {
+			t.Errorf("input %q: expected empty, got %v", input, got)
+		}
+	}
+}
+
+// TestCall_BodySchemaPropsRouting verifies that params defined in the requestBody schema
+// are routed to the body even when there is no paramDefs entry for them.
+func TestCall_BodySchemaPropsRouting(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(201)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "POST",
+		Path:            "/repos/{owner}/issues",
+		ParametersJSON:  `[{"name":"owner","in":"path","required":true}]`,
+		RequestBodyJSON: `{"content":{"application/json":{"schema":{"type":"object","properties":{"title":{},"body":{}}}}}}`,
+	})
+
+	_, err := client.Call("test-op", map[string]any{
+		"owner": "octocat",
+		"title": "Bug report",
+		"body":  "Something is broken",
+	})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(gotBody), &got); err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if got["title"] != "Bug report" {
+		t.Errorf("title: got %v, want 'Bug report'", got["title"])
+	}
+	if got["body"] != "Something is broken" {
+		t.Errorf("body: got %v, want 'Something is broken'", got["body"])
+	}
+	if got["owner"] != nil {
+		t.Errorf("owner should not be in body, got %v", got["owner"])
+	}
+}
+
+// TestCall_CredentialsInjected_GlobalSecurity verifies that when an operation has
+// security_json="null" (inherit global), the spec-level global security is used.
+func TestCall_CredentialsInjected_GlobalSecurity(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	// SecurityJSON="" → stored as "[]" by setupTestClient, but we override it to "null".
+	client := setupTestClientFull(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+		SecurityJSON:    "null", // inherit global
+	}, `{"BearerAuth":{"type":"http","scheme":"bearer"}}`)
+
+	// Set global_security_json on the spec row.
+	if _, err := client.db.Exec(`UPDATE specs SET global_security_json = ?`, `[{"BearerAuth":[]}]`); err != nil {
+		t.Fatalf("set global security: %v", err)
+	}
+
+	if err := client.credStore.Set("test-spec", map[string]string{"BearerAuth": "globaltoken"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotAuth != "Bearer globaltoken" {
+		t.Errorf("Authorization: got %q, want %q", gotAuth, "Bearer globaltoken")
+	}
+}
+
 func TestCall_MultipartFormDataBodyWithObject(t *testing.T) {
 	gotFields := make(map[string]string)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

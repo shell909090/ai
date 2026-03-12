@@ -54,6 +54,7 @@ type specInfo struct {
 	Name                string
 	RawJSON             string
 	SecuritySchemesJSON string // serialized map[string]SecurityScheme
+	GlobalSecurityJSON  string // serialized []map[string][]string (spec-level global security)
 }
 
 // securitySchemeDef holds a parsed OpenAPI security scheme for credential injection.
@@ -102,10 +103,18 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 	var cookieParts []string
 	bodyParams := make(map[string]any)
 
+	// Pre-parse body schema properties for explicit body routing.
+	bodySchemaProps := parseBodySchemaProps(opInfo.RequestBodyJSON)
+
 	for k, v := range params {
 		def, defined := paramDefs[k]
 		loc := def.In
 		if !defined {
+			// Explicit body schema prop → body, regardless of method.
+			if bodySchemaProps[k] {
+				bodyParams[k] = v
+				continue
+			}
 			// Fallback: path placeholder > GET/HEAD query > body
 			placeholder := "{" + k + "}"
 			if strings.Contains(path, placeholder) {
@@ -133,7 +142,7 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 
 	// Inject query-param credentials before building URL.
 	creds, _ := c.credStore.Get(spec.Name)
-	injectQueryCredentials(queryValues, spec.SecuritySchemesJSON, opInfo.SecurityJSON, creds)
+	injectQueryCredentials(queryValues, spec.SecuritySchemesJSON, opInfo.SecurityJSON, spec.GlobalSecurityJSON, creds)
 
 	reqURL := strings.TrimRight(baseURL, "/") + path
 	if len(queryValues) > 0 {
@@ -191,7 +200,7 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 	}
 
 	// Inject header/cookie/bearer credentials.
-	injectRequestCredentials(req, spec.SecuritySchemesJSON, opInfo.SecurityJSON, creds)
+	injectRequestCredentials(req, spec.SecuritySchemesJSON, opInfo.SecurityJSON, spec.GlobalSecurityJSON, creds)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -225,9 +234,9 @@ func (c *Client) getOperation(operationID string) (*operationInfo, error) {
 func (c *Client) getSpec(specID int64) (*specInfo, error) {
 	var info specInfo
 	err := c.db.QueryRow(
-		`SELECT name, raw_json, security_schemes_json FROM specs WHERE id = ?`,
+		`SELECT name, raw_json, security_schemes_json, global_security_json FROM specs WHERE id = ?`,
 		specID,
-	).Scan(&info.Name, &info.RawJSON, &info.SecuritySchemesJSON)
+	).Scan(&info.Name, &info.RawJSON, &info.SecuritySchemesJSON, &info.GlobalSecurityJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +253,11 @@ func parseSchemeDefs(schemesJSON string) map[string]securitySchemeDef {
 	return defs
 }
 
-// parseSecurityReqs parses the operation security requirements.
-// Returns nil when the operation has no explicit requirements (inherit global or public).
+// parseSecurityReqs parses a security requirements JSON array.
+// "null" or "" means the caller should fall back to global security.
+// "[]" means explicitly no security (public endpoint).
 func parseSecurityReqs(secJSON string) []map[string][]string {
-	if secJSON == "" || secJSON == "null" || secJSON == "[]" {
+	if secJSON == "" || secJSON == "null" {
 		return nil
 	}
 	var reqs []map[string][]string
@@ -255,14 +265,25 @@ func parseSecurityReqs(secJSON string) []map[string][]string {
 	return reqs
 }
 
+// resolveSecurityReqs returns the effective security requirements for an operation.
+// When the operation-level security is null (inherit), falls back to global spec security.
+func resolveSecurityReqs(opSecJSON, globalSecJSON string) []map[string][]string {
+	if opSecJSON != "" && opSecJSON != "null" {
+		// Explicit operation-level security (including "[]" for public endpoint).
+		return parseSecurityReqs(opSecJSON)
+	}
+	// Inherit global spec-level security.
+	return parseSecurityReqs(globalSecJSON)
+}
+
 // injectQueryCredentials adds apiKey-in-query credentials to the URL query values.
 // Must be called before building the request URL.
-func injectQueryCredentials(q url.Values, schemesJSON, securityJSON string, creds map[string]string) {
+func injectQueryCredentials(q url.Values, schemesJSON, securityJSON, globalSecJSON string, creds map[string]string) {
 	if len(creds) == 0 {
 		return
 	}
 	defs := parseSchemeDefs(schemesJSON)
-	reqs := parseSecurityReqs(securityJSON)
+	reqs := resolveSecurityReqs(securityJSON, globalSecJSON)
 	if len(defs) == 0 || len(reqs) == 0 {
 		return
 	}
@@ -286,12 +307,12 @@ func injectQueryCredentials(q url.Values, schemesJSON, securityJSON string, cred
 // injectRequestCredentials sets authentication headers and cookies on the request.
 // Falls back to injecting all credential entries as headers when no scheme
 // definitions are available (backward compatibility with manually-configured headers).
-func injectRequestCredentials(req *http.Request, schemesJSON, securityJSON string, creds map[string]string) {
+func injectRequestCredentials(req *http.Request, schemesJSON, securityJSON, globalSecJSON string, creds map[string]string) {
 	if len(creds) == 0 {
 		return
 	}
 	defs := parseSchemeDefs(schemesJSON)
-	reqs := parseSecurityReqs(securityJSON)
+	reqs := resolveSecurityReqs(securityJSON, globalSecJSON)
 
 	// Fallback: no scheme definitions → inject all entries as headers.
 	if len(defs) == 0 || len(reqs) == 0 {
@@ -659,6 +680,50 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// parseBodySchemaProps extracts the property names defined in the requestBody schema.
+// Returns a set of known body property names for explicit body-parameter routing.
+// Handles both direct {"content":{"media-type":{"schema":{"properties":{...}}}}}
+// and ref-wrapped {"value":{...}} formats. Returns empty set on any parse failure.
+func parseBodySchemaProps(requestBodyJSON string) map[string]bool {
+	if requestBodyJSON == "" || requestBodyJSON == "{}" || requestBodyJSON == "null" {
+		return nil
+	}
+
+	type schemaNode struct {
+		Properties map[string]any `json:"properties"`
+	}
+	type mediaType struct {
+		Schema schemaNode `json:"schema"`
+	}
+	type bodyContent struct {
+		Content map[string]mediaType `json:"content"`
+	}
+
+	extractProps := func(content map[string]mediaType) map[string]bool {
+		props := make(map[string]bool)
+		for _, mt := range content {
+			for name := range mt.Schema.Properties {
+				props[name] = true
+			}
+		}
+		return props
+	}
+
+	var direct bodyContent
+	if err := json.Unmarshal([]byte(requestBodyJSON), &direct); err == nil && len(direct.Content) > 0 {
+		return extractProps(direct.Content)
+	}
+
+	var wrapped struct {
+		Value bodyContent `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(requestBodyJSON), &wrapped); err == nil && len(wrapped.Value.Content) > 0 {
+		return extractProps(wrapped.Value.Content)
+	}
+
+	return nil
 }
 
 // detectBodyContentType extracts the preferred content type from the

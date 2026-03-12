@@ -12,17 +12,18 @@ import (
 
 var pathParamRe = regexp.MustCompile(`\{(\w+)\}`)
 
-// ParseSpec parses an OpenAPI spec and returns operations, dependencies, and
-// the spec-level security schemes JSON (map[schemeName]SecurityScheme).
-func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []Dependency, string, error) {
+// ParseSpec parses an OpenAPI spec and returns operations, dependencies,
+// the spec-level security schemes JSON (map[schemeName]SecurityScheme),
+// and the spec-level global security requirements JSON.
+func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []Dependency, string, string, error) {
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(raw)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("load spec: %w", err)
+		return nil, nil, "", "", fmt.Errorf("load spec: %w", err)
 	}
 
 	if err := doc.Validate(ctx); err != nil {
-		return nil, nil, "", fmt.Errorf("validate spec: %w", err)
+		return nil, nil, "", "", fmt.Errorf("validate spec: %w", err)
 	}
 
 	// Extract security scheme definitions from components.
@@ -42,6 +43,12 @@ func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []De
 		}
 	}
 	schemesJSON, _ := json.Marshal(schemes)
+
+	// Extract global (spec-level) security requirements.
+	globalSecJSON := []byte("null")
+	if doc.Security != nil {
+		globalSecJSON, _ = json.Marshal(doc.Security)
+	}
 
 	var ops []Operation
 	for path, pathItem := range doc.Paths.Map() {
@@ -81,7 +88,7 @@ func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []De
 	}
 
 	deps := analyzeDependencies(ops)
-	return ops, deps, string(schemesJSON), nil
+	return ops, deps, string(schemesJSON), string(globalSecJSON), nil
 }
 
 // analyzeDependencies detects dependencies between operations.

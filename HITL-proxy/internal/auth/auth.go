@@ -5,9 +5,13 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrNotFound is returned when a requested resource does not exist.
+var ErrNotFound = errors.New("not found")
 
 // APIKey holds non-secret metadata about a stored key.
 type APIKey struct {
@@ -88,11 +92,15 @@ func (a *Authenticator) ListKeys() ([]APIKey, error) {
 	return keys, rows.Err()
 }
 
-// DeleteKey removes an API key by ID.
+// DeleteKey removes an API key by ID. Returns ErrNotFound if no key with that ID exists.
 func (a *Authenticator) DeleteKey(id int64) error {
-	_, err := a.db.Exec(`DELETE FROM api_keys WHERE id = ?`, id)
+	result, err := a.db.Exec(`DELETE FROM api_keys WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete api_key: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("api key %d: %w", id, ErrNotFound)
 	}
 	return nil
 }

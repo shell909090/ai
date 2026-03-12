@@ -42,6 +42,8 @@ var migrations = []string{
 	// Migration 2: add security scheme columns for credential injection
 	`ALTER TABLE specs ADD COLUMN security_schemes_json TEXT NOT NULL DEFAULT '{}';
 	 ALTER TABLE operations ADD COLUMN security_json TEXT NOT NULL DEFAULT '[]';`,
+	// Migration 3: add global security requirements column
+	`ALTER TABLE specs ADD COLUMN global_security_json TEXT NOT NULL DEFAULT 'null';`,
 }
 
 func migrate(db *sql.DB) error {

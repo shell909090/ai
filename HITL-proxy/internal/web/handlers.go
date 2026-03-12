@@ -14,6 +14,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"errors"
+	"log"
+
 	"github.com/shell909090/ai/HITL-proxy/internal/approval"
 	"github.com/shell909090/ai/HITL-proxy/internal/auth"
 	"github.com/shell909090/ai/HITL-proxy/internal/openapi"
@@ -185,7 +188,7 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 
 	// Parse spec before starting transaction
 	// (use specID=0 temporarily; we update it after INSERT)
-	ops, deps, schemesJSON, err := openapi.ParseSpec(context.Background(), 0, body)
+	ops, deps, schemesJSON, globalSecJSON, err := openapi.ParseSpec(context.Background(), 0, body)
 	if err != nil {
 		http.Error(w, "parse spec: "+err.Error(), http.StatusBadRequest)
 		return
@@ -201,8 +204,8 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 
 	// Insert spec into DB
 	result, err := tx.Exec(
-		`INSERT INTO specs (name, raw_json, security_schemes_json) VALUES (?, ?, ?)`,
-		name, string(body), schemesJSON,
+		`INSERT INTO specs (name, raw_json, security_schemes_json, global_security_json) VALUES (?, ?, ?, ?)`,
+		name, string(body), schemesJSON, globalSecJSON,
 	)
 	if err != nil {
 		http.Error(w, "insert spec: "+err.Error(), http.StatusInternalServerError)
@@ -228,11 +231,12 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// After commit: generate and store embeddings if the searcher supports it.
+	// Embedding failure is non-fatal: FTS5 search still works; report as a warning field.
+	var embeddingWarning string
 	if vi, ok := h.searcher.(search.VectorIndexer); ok {
 		if err := vi.IndexEmbeddings(r.Context(), ops, specID); err != nil {
-			// Non-fatal: log and continue; FTS5 search still works.
-			http.Error(w, "index embeddings: "+err.Error(), http.StatusInternalServerError)
-			return
+			log.Printf("warn: index embeddings for spec %d (%s): %v", specID, name, err)
+			embeddingWarning = err.Error()
 		}
 	}
 
@@ -243,6 +247,9 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	}
 	if prefixed {
 		resp["prefix"] = name + "."
+	}
+	if embeddingWarning != "" {
+		resp["embedding_warning"] = embeddingWarning
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -308,7 +315,11 @@ func (h *Handler) handleDeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.authenticator.DeleteKey(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if errors.Is(err, auth.ErrNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
