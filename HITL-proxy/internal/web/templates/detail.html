@@ -1,0 +1,64 @@
+{{template "layout" .}}
+{{define "content"}}
+{{with .Request}}
+<div class="card">
+    <h2>
+        <span class="method method-{{.Method}}">{{.Method}}</span>
+        <span class="path">{{.Path}}</span>
+        <span class="badge badge-{{.Status}}">{{.Status}}</span>
+    </h2>
+
+    <div class="field">
+        <div class="field-label">Operation</div>
+        <code>{{.OperationID}}</code>
+    </div>
+
+    <div class="field">
+        <div class="field-label">Summary</div>
+        <p>{{.Summary}}</p>
+    </div>
+
+    {{if .Description}}
+    <div class="field">
+        <div class="field-label">Description</div>
+        <p>{{.Description}}</p>
+    </div>
+    {{end}}
+
+    <div class="field">
+        <div class="field-label">Agent</div>
+        <p>{{.AgentName}}</p>
+    </div>
+
+    {{if .Reason}}
+    <div class="field">
+        <div class="field-label">AI Reason</div>
+        <p>{{.Reason}}</p>
+    </div>
+    {{end}}
+
+    <div class="field">
+        <div class="field-label">Parameters</div>
+        <pre>{{prettyJSON .ParamsJSON}}</pre>
+    </div>
+
+    <div class="field">
+        <div class="field-label">Requested At</div>
+        <p>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</p>
+    </div>
+
+    {{if eq .Status "pending"}}
+    <div class="actions">
+        <button class="btn btn-approve"
+            hx-post="/approval/{{.ID}}/approve"
+            hx-swap="outerHTML">Approve</button>
+        <button class="btn btn-reject"
+            hx-post="/approval/{{.ID}}/reject"
+            hx-swap="outerHTML">Reject</button>
+    </div>
+    {{end}}
+</div>
+
+<p><a href="/">Back to pending list</a></p>
+{{end}}
+{{end}}

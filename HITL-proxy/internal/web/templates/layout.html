@@ -1,0 +1,50 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HITL-proxy</title>
+    <script src="/static/htmx.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        header { background: #1a1a2e; color: #fff; padding: 16px 20px; margin-bottom: 20px; }
+        header h1 { font-size: 1.4em; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 1.1em; margin-bottom: 8px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+        .badge-pending { background: #fff3cd; color: #856404; }
+        .badge-approved { background: #d4edda; color: #155724; }
+        .badge-rejected { background: #f8d7da; color: #721c24; }
+        .method { font-weight: 700; font-family: monospace; }
+        .method-GET { color: #28a745; }
+        .method-POST { color: #007bff; }
+        .method-PUT { color: #fd7e14; }
+        .method-PATCH { color: #6f42c1; }
+        .method-DELETE { color: #dc3545; }
+        .path { font-family: monospace; color: #555; }
+        pre { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 12px; overflow-x: auto; font-size: 0.9em; }
+        .meta { color: #666; font-size: 0.9em; margin-bottom: 8px; }
+        .actions { margin-top: 16px; display: flex; gap: 8px; }
+        .btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: 600; }
+        .btn-approve { background: #28a745; color: #fff; }
+        .btn-approve:hover { background: #218838; }
+        .btn-reject { background: #dc3545; color: #fff; }
+        .btn-reject:hover { background: #c82333; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .empty { text-align: center; color: #999; padding: 40px; }
+        .field { margin-bottom: 12px; }
+        .field-label { font-weight: 600; font-size: 0.9em; color: #555; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <header><h1>HITL-proxy Approval Dashboard</h1></header>
+    <div class="container">
+        {{template "content" .}}
+    </div>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,19 @@
+# Binaries
+/hitl-proxy
+/hitl-bridge
+/bin/
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Credentials
+credentials.enc
+config.yaml
+
+# Go
+*.exe
+*.test
+*.out

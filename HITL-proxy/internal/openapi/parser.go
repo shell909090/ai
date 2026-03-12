@@ -1,0 +1,101 @@
+package openapi
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
+
+var pathParamRe = regexp.MustCompile(`\{(\w+)\}`)
+
+// ParseSpec parses an OpenAPI spec and returns operations and their dependencies.
+func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []Dependency, error) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load spec: %w", err)
+	}
+
+	if err := doc.Validate(ctx); err != nil {
+		return nil, nil, fmt.Errorf("validate spec: %w", err)
+	}
+
+	var ops []Operation
+	for path, pathItem := range doc.Paths.Map() {
+		for method, op := range pathItem.Operations() {
+			if op.OperationID == "" {
+				continue
+			}
+
+			paramsJSON, _ := json.Marshal(op.Parameters)
+			bodyJSON := []byte("{}")
+			if op.RequestBody != nil {
+				bodyJSON, _ = json.Marshal(op.RequestBody)
+			}
+
+			tags := strings.Join(op.Tags, ",")
+
+			ops = append(ops, Operation{
+				SpecID:          specID,
+				OperationID:     op.OperationID,
+				Method:          strings.ToUpper(method),
+				Path:            path,
+				Summary:         op.Summary,
+				Description:     op.Description,
+				ParametersJSON:  string(paramsJSON),
+				RequestBodyJSON: string(bodyJSON),
+				Tags:            tags,
+			})
+		}
+	}
+
+	deps := analyzeDependencies(ops)
+	return ops, deps, nil
+}
+
+// analyzeDependencies detects dependencies between operations.
+// If an operation has path parameters like {id}, it likely depends on
+// a list/GET operation on the parent path to obtain that parameter.
+func analyzeDependencies(ops []Operation) []Dependency {
+	// Build index: path → operations
+	pathOps := make(map[string][]Operation)
+	for _, op := range ops {
+		pathOps[op.Path] = append(pathOps[op.Path], op)
+	}
+
+	var deps []Dependency
+	for _, op := range ops {
+		params := pathParamRe.FindAllStringSubmatch(op.Path, -1)
+		if len(params) == 0 {
+			continue
+		}
+
+		// Find parent path by removing the last segment
+		lastSlash := strings.LastIndex(op.Path, "/")
+		if lastSlash <= 0 {
+			continue
+		}
+		parentPath := op.Path[:lastSlash]
+
+		// Look for GET operations on the parent path
+		for _, parentOp := range pathOps[parentPath] {
+			if parentOp.Method == "GET" && parentOp.OperationID != op.OperationID {
+				paramNames := make([]string, 0, len(params))
+				for _, p := range params {
+					paramNames = append(paramNames, p[1])
+				}
+				deps = append(deps, Dependency{
+					OperationID: op.OperationID,
+					DependsOnID: parentOp.OperationID,
+					Reason:      fmt.Sprintf("needs %s from list endpoint", strings.Join(paramNames, ", ")),
+				})
+			}
+		}
+	}
+
+	return deps
+}

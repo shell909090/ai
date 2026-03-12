@@ -1,0 +1,7 @@
+listen: ":8080"
+
+database:
+  path: "hitl.db"
+
+cred:
+  file: "credentials.enc"
