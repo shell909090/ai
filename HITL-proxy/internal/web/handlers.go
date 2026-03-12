@@ -65,11 +65,13 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 	}, nil
 }
 
-// basicAuth wraps a handler with HTTP Basic Auth using a fixed "admin" username.
+// basicAuth wraps a handler with HTTP Basic Auth. Username must be "admin".
 func (h *Handler) basicAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, password, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(password), []byte(h.adminPassword)) != 1 {
+		username, password, ok := r.BasicAuth()
+		userOK := subtle.ConstantTimeCompare([]byte(username), []byte("admin"))
+		passOK := subtle.ConstantTimeCompare([]byte(password), []byte(h.adminPassword))
+		if !ok || userOK != 1 || passOK != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="HITL-proxy Admin"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -268,6 +270,7 @@ func (h *Handler) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	if err := h.tmpl.ExecuteTemplate(w, "apikeys.html", map[string]any{
 		"Keys":         keys,
 		"NewKey":       newKey,
