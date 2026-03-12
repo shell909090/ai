@@ -148,6 +148,14 @@ func TestDetectBodyContentType_Wrapped(t *testing.T) {
 	}
 }
 
+func TestDetectBodyContentType_WrappedMultipart(t *testing.T) {
+	input := `{"value":{"content":{"multipart/form-data":{}}}}`
+	got := detectBodyContentType(input)
+	if got != "multipart/form-data" {
+		t.Errorf("got %q, want %q", got, "multipart/form-data")
+	}
+}
+
 func TestDetectBodyContentType_Empty(t *testing.T) {
 	for _, input := range []string{"", "{}", "null"} {
 		got := detectBodyContentType(input)
@@ -173,6 +181,15 @@ func TestToStringSlice(t *testing.T) {
 	_, ok = toStringSlice("scalar")
 	if ok {
 		t.Error("scalar should return false")
+	}
+}
+
+func TestAddFormValues_ArrayExplodeFalse(t *testing.T) {
+	form := make(url.Values)
+	explodeFalse := false
+	addFormValues(form, "tags", []any{"go", "rust"}, paramDef{Style: "form", Explode: &explodeFalse})
+	if form.Get("tags") != "go,rust" {
+		t.Errorf("tags: got %q, want %q", form.Get("tags"), "go,rust")
 	}
 }
 
@@ -241,6 +258,56 @@ func TestCall_PathEscaping(t *testing.T) {
 	_, _ = client.Call("test-op", map[string]any{"name": "hello world/foo"})
 	if gotPath != "/users/hello%20world%2Ffoo" {
 		t.Errorf("escaped path: got %q, want %q", gotPath, "/users/hello%20world%2Ffoo")
+	}
+}
+
+func TestCall_PathArrayLabelExplodeFalse(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/users/{ids}",
+		ParametersJSON:  `[{"name":"ids","in":"path","style":"label","explode":false,"required":true}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, err := client.Call("test-op", map[string]any{"ids": []any{"3", "4", "5"}})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotPath != "/users/.3,4,5" {
+		t.Errorf("path: got %q, want %q", gotPath, "/users/.3,4,5")
+	}
+}
+
+func TestCall_PathObjectMatrixExplodeTrue(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/users/{filter}",
+		ParametersJSON:  `[{"name":"filter","in":"path","style":"matrix","explode":true,"required":true}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, err := client.Call("test-op", map[string]any{
+		"filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotPath != "/users/;firstName=Alex;role=admin" {
+		t.Errorf("path: got %q, want %q", gotPath, "/users/;firstName=Alex;role=admin")
 	}
 }
 
@@ -491,6 +558,111 @@ func TestCall_QueryArrayExplodeFalse(t *testing.T) {
 	}
 }
 
+func TestCall_QueryObjectExplodeTrue(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/items",
+		ParametersJSON:  `[{"name":"filter","in":"query","style":"form"}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	q, _ := url.ParseQuery(gotQuery)
+	if q.Get("role") != "admin" {
+		t.Errorf("role: got %q, want %q", q.Get("role"), "admin")
+	}
+	if q.Get("firstName") != "Alex" {
+		t.Errorf("firstName: got %q, want %q", q.Get("firstName"), "Alex")
+	}
+}
+
+func TestCall_QueryObjectExplodeFalse(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	explodeFalse := false
+	_ = explodeFalse
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/items",
+		ParametersJSON:  `[{"name":"filter","in":"query","style":"form","explode":false}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	q, _ := url.ParseQuery(gotQuery)
+	got := q.Get("filter")
+	if got != "firstName,Alex,role,admin" {
+		t.Errorf("filter: got %q, want %q", got, "firstName,Alex,role,admin")
+	}
+}
+
+func TestCall_QueryObjectDeepObject(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/items",
+		ParametersJSON:  `[{"name":"filter","in":"query","style":"deepObject"}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	q, _ := url.ParseQuery(gotQuery)
+	if q.Get("filter[firstName]") != "Alex" {
+		t.Errorf("filter[firstName]: got %q, want %q", q.Get("filter[firstName]"), "Alex")
+	}
+	if q.Get("filter[role]") != "admin" {
+		t.Errorf("filter[role]: got %q, want %q", q.Get("filter[role]"), "admin")
+	}
+}
+
+func TestCall_QueryArrayStringSlice(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/items",
+		ParametersJSON:  `[{"name":"color","in":"query","style":"form"}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{"color": []string{"blue", "green"}})
+	q, _ := url.ParseQuery(gotQuery)
+	colors := q["color"]
+	sort.Strings(colors)
+	if len(colors) != 2 || colors[0] != "blue" || colors[1] != "green" {
+		t.Errorf("colors: got %v, want [blue green]", colors)
+	}
+}
+
 func TestCall_HeaderArrayCommaSeparated(t *testing.T) {
 	var gotHeader string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -509,6 +681,80 @@ func TestCall_HeaderArrayCommaSeparated(t *testing.T) {
 	_, _ = client.Call("test-op", map[string]any{"X-Tags": []any{"a", "b", "c"}})
 	if gotHeader != "a,b,c" {
 		t.Errorf("X-Tags: got %q, want %q", gotHeader, "a,b,c")
+	}
+}
+
+func TestCall_HeaderObjectSimple(t *testing.T) {
+	var gotHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Filter")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  `[{"name":"X-Filter","in":"header","style":"simple","explode":false}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"X-Filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	if gotHeader != "firstName,Alex,role,admin" {
+		t.Errorf("X-Filter: got %q, want %q", gotHeader, "firstName,Alex,role,admin")
+	}
+}
+
+func TestCall_CookieObjectExplodeTrue(t *testing.T) {
+	var gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCookie = r.Header.Get("Cookie")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  `[{"name":"session","in":"cookie","style":"form"}]`,
+		RequestBodyJSON: "{}",
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"session": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	if gotCookie != "firstName=Alex; role=admin" {
+		t.Errorf("Cookie: got %q, want %q", gotCookie, "firstName=Alex; role=admin")
+	}
+}
+
+func TestCall_CredentialsInjected(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+	})
+
+	if err := client.credStore.Set("test-spec", map[string]string{"Authorization": "Bearer secret"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotAuth != "Bearer secret" {
+		t.Errorf("Authorization: got %q, want %q", gotAuth, "Bearer secret")
 	}
 }
 
@@ -537,5 +783,79 @@ func TestCall_FormBodyWithArray(t *testing.T) {
 	sort.Strings(tags)
 	if len(tags) != 2 || tags[0] != "go" || tags[1] != "rust" {
 		t.Errorf("tags: got %v, want [go rust]", tags)
+	}
+}
+
+func TestCall_FormBodyWithObjectExplodeTrue(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "POST",
+		Path:            "/submit",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: `{"content":{"application/x-www-form-urlencoded":{"schema":{}}}}`,
+	})
+
+	_, _ = client.Call("test-op", map[string]any{
+		"filter": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	vals, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatalf("parse form: %v", err)
+	}
+	if vals.Get("role") != "admin" {
+		t.Errorf("role: got %q, want %q", vals.Get("role"), "admin")
+	}
+	if vals.Get("firstName") != "Alex" {
+		t.Errorf("firstName: got %q, want %q", vals.Get("firstName"), "Alex")
+	}
+}
+
+func TestCall_MultipartFormDataBodyWithObject(t *testing.T) {
+	gotFields := make(map[string]string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mediaType != "multipart/form-data" {
+			w.WriteHeader(400)
+			return
+		}
+		reader := multipart.NewReader(r.Body, params["boundary"])
+		for {
+			part, err := reader.NextPart()
+			if err != nil {
+				break
+			}
+			b, _ := io.ReadAll(part)
+			gotFields[part.FormName()] = string(b)
+			part.Close()
+		}
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClient(t, srv.URL, operationInfo{
+		Method:          "POST",
+		Path:            "/upload",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: `{"content":{"multipart/form-data":{"schema":{}}}}`,
+	})
+
+	_, err := client.Call("test-op", map[string]any{
+		"meta": map[string]any{"role": "admin", "firstName": "Alex"},
+	})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotFields["role"] != "admin" {
+		t.Errorf("role: got %q, want %q", gotFields["role"], "admin")
+	}
+	if gotFields["firstName"] != "Alex" {
+		t.Errorf("firstName: got %q, want %q", gotFields["firstName"], "Alex")
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -107,13 +108,13 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 		}
 		switch loc {
 		case "path":
-			path = strings.ReplaceAll(path, "{"+k+"}", url.PathEscape(fmt.Sprintf("%v", v)))
+			path = strings.ReplaceAll(path, "{"+k+"}", formatPathValue(k, v, def))
 		case "query":
 			addQueryValues(queryValues, k, v, def)
 		case "header":
-			headerParams[k] = formatHeaderValue(v)
+			headerParams[k] = formatHeaderValue(k, v, def)
 		case "cookie":
-			cookieParts = append(cookieParts, k+"="+fmt.Sprintf("%v", v))
+			cookieParts = append(cookieParts, formatCookieParts(k, v, def)...)
 		default:
 			bodyParams[k] = v
 		}
@@ -132,16 +133,20 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 		case "application/x-www-form-urlencoded":
 			form := make(url.Values)
 			for k, v := range bodyParams {
-				addFormValues(form, k, v)
+				addFormValues(form, k, v, paramDef{Style: "form"})
 			}
 			bodyReader = strings.NewReader(form.Encode())
 		case "multipart/form-data":
 			var buf bytes.Buffer
 			writer := multipart.NewWriter(&buf)
 			for k, v := range bodyParams {
-				_ = writer.WriteField(k, fmt.Sprintf("%v", v))
+				if err := addMultipartFields(writer, k, v); err != nil {
+					return nil, fmt.Errorf("write multipart field %s: %w", k, err)
+				}
 			}
-			_ = writer.Close()
+			if err := writer.Close(); err != nil {
+				return nil, fmt.Errorf("close multipart writer: %w", err)
+			}
 			bodyReader = &buf
 			contentType = writer.FormDataContentType()
 		default: // application/json or unspecified
@@ -218,12 +223,77 @@ func (c *Client) getSpec(specID int64) (*specInfo, error) {
 	return &info, nil
 }
 
+func formatPathValue(key string, value any, def paramDef) string {
+	style := def.Style
+	if style == "" {
+		style = "simple"
+	}
+
+	if obj, ok := toStringMap(value); ok {
+		switch style {
+		case "label":
+			if def.shouldExplode() {
+				return "." + joinMapWithEquals(obj, ".")
+			}
+			return "." + joinEscapedMap(obj, ",")
+		case "matrix":
+			if def.shouldExplode() {
+				parts := make([]string, 0, len(obj))
+				for _, objKey := range sortedKeys(obj) {
+					parts = append(parts, ";"+url.PathEscape(objKey)+"="+url.PathEscape(obj[objKey]))
+				}
+				return strings.Join(parts, "")
+			}
+			return ";" + url.PathEscape(key) + "=" + joinEscapedMap(obj, ",")
+		default: // simple
+			if def.shouldExplode() {
+				return joinEscapedMapWithEquals(obj, ",")
+			}
+			return joinEscapedMap(obj, ",")
+		}
+	}
+
+	if arr, ok := toStringSlice(value); ok {
+		escaped := make([]string, len(arr))
+		for i, item := range arr {
+			escaped[i] = url.PathEscape(item)
+		}
+		switch style {
+		case "label":
+			if def.shouldExplode() {
+				return "." + strings.Join(escaped, ".")
+			}
+			return "." + strings.Join(escaped, ",")
+		case "matrix":
+			if def.shouldExplode() {
+				parts := make([]string, 0, len(escaped))
+				for _, item := range escaped {
+					parts = append(parts, ";"+url.PathEscape(key)+"="+item)
+				}
+				return strings.Join(parts, "")
+			}
+			return ";" + url.PathEscape(key) + "=" + strings.Join(escaped, ",")
+		default: // simple
+			return strings.Join(escaped, ",")
+		}
+	}
+
+	switch style {
+	case "label":
+		return "." + url.PathEscape(fmt.Sprintf("%v", value))
+	case "matrix":
+		return ";" + url.PathEscape(key) + "=" + url.PathEscape(fmt.Sprintf("%v", value))
+	default:
+		return url.PathEscape(fmt.Sprintf("%v", value))
+	}
+}
+
 // paramDef holds the parsed OpenAPI parameter definition.
 type paramDef struct {
 	In       string
 	Required bool
-	Style    string  // "form", "simple", "label", "matrix"; empty = default
-	Explode  *bool   // nil = use default (true for form, false for simple)
+	Style    string // "form", "simple", "label", "matrix"; empty = default
+	Explode  *bool  // nil = use default (true for form, false for simple)
 }
 
 // shouldExplode returns whether the parameter should be exploded.
@@ -286,6 +356,22 @@ func parseParamDefs(parametersJSON string) map[string]paramDef {
 // Default (style=form, explode=true): repeated keys ?color=blue&color=green
 // style=form, explode=false: comma-separated ?color=blue,green
 func addQueryValues(q url.Values, key string, value any, def paramDef) {
+	if obj, ok := toStringMap(value); ok {
+		if def.Style == "deepObject" {
+			for _, objKey := range sortedKeys(obj) {
+				q.Set(key+"["+objKey+"]", obj[objKey])
+			}
+			return
+		}
+		if def.shouldExplode() {
+			for _, objKey := range sortedKeys(obj) {
+				q.Set(objKey, obj[objKey])
+			}
+		} else {
+			q.Set(key, joinMap(obj, ","))
+		}
+		return
+	}
 	if arr, ok := toStringSlice(value); ok {
 		if def.shouldExplode() {
 			for _, item := range arr {
@@ -300,10 +386,24 @@ func addQueryValues(q url.Values, key string, value any, def paramDef) {
 }
 
 // addFormValues adds a parameter value to form url.Values, expanding arrays.
-func addFormValues(form url.Values, key string, value any) {
+func addFormValues(form url.Values, key string, value any, def paramDef) {
+	if obj, ok := toStringMap(value); ok {
+		if def.shouldExplode() {
+			for _, objKey := range sortedKeys(obj) {
+				form.Set(objKey, obj[objKey])
+			}
+		} else {
+			form.Set(key, joinMap(obj, ","))
+		}
+		return
+	}
 	if arr, ok := toStringSlice(value); ok {
-		for _, item := range arr {
-			form.Add(key, item)
+		if def.shouldExplode() {
+			for _, item := range arr {
+				form.Add(key, item)
+			}
+		} else {
+			form.Set(key, strings.Join(arr, ","))
 		}
 		return
 	}
@@ -312,11 +412,61 @@ func addFormValues(form url.Values, key string, value any) {
 
 // formatHeaderValue formats a value for use in an HTTP header.
 // Arrays are comma-separated per OpenAPI style=simple default.
-func formatHeaderValue(value any) string {
+func formatHeaderValue(_ string, value any, def paramDef) string {
+	if obj, ok := toStringMap(value); ok {
+		if def.shouldExplode() {
+			return joinMapWithEquals(obj, ",")
+		}
+		return joinMap(obj, ",")
+	}
 	if arr, ok := toStringSlice(value); ok {
 		return strings.Join(arr, ",")
 	}
 	return fmt.Sprintf("%v", value)
+}
+
+func formatCookieParts(key string, value any, def paramDef) []string {
+	if obj, ok := toStringMap(value); ok {
+		if def.shouldExplode() {
+			parts := make([]string, 0, len(obj))
+			for _, objKey := range sortedKeys(obj) {
+				parts = append(parts, objKey+"="+obj[objKey])
+			}
+			return parts
+		}
+		return []string{key + "=" + joinMap(obj, ",")}
+	}
+	if arr, ok := toStringSlice(value); ok {
+		if def.shouldExplode() {
+			parts := make([]string, 0, len(arr))
+			for _, item := range arr {
+				parts = append(parts, key+"="+item)
+			}
+			return parts
+		}
+		return []string{key + "=" + strings.Join(arr, ",")}
+	}
+	return []string{key + "=" + fmt.Sprintf("%v", value)}
+}
+
+func addMultipartFields(writer *multipart.Writer, key string, value any) error {
+	if obj, ok := toStringMap(value); ok {
+		for _, objKey := range sortedKeys(obj) {
+			if err := writer.WriteField(objKey, obj[objKey]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if arr, ok := toStringSlice(value); ok {
+		for _, item := range arr {
+			if err := writer.WriteField(key, item); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return writer.WriteField(key, fmt.Sprintf("%v", value))
 }
 
 // toStringSlice converts a []any value to []string. Returns false if
@@ -333,6 +483,65 @@ func toStringSlice(v any) ([]string, bool) {
 		return arr, true
 	}
 	return nil, false
+}
+
+func toStringMap(v any) (map[string]string, bool) {
+	switch m := v.(type) {
+	case map[string]any:
+		result := make(map[string]string, len(m))
+		for k, item := range m {
+			result[k] = fmt.Sprintf("%v", item)
+		}
+		return result, true
+	case map[string]string:
+		result := make(map[string]string, len(m))
+		for k, item := range m {
+			result[k] = item
+		}
+		return result, true
+	}
+	return nil, false
+}
+
+func joinMap(m map[string]string, sep string) string {
+	parts := make([]string, 0, len(m)*2)
+	for _, key := range sortedKeys(m) {
+		parts = append(parts, key, m[key])
+	}
+	return strings.Join(parts, sep)
+}
+
+func joinMapWithEquals(m map[string]string, sep string) string {
+	parts := make([]string, 0, len(m))
+	for _, key := range sortedKeys(m) {
+		parts = append(parts, key+"="+m[key])
+	}
+	return strings.Join(parts, sep)
+}
+
+func joinEscapedMap(m map[string]string, sep string) string {
+	parts := make([]string, 0, len(m)*2)
+	for _, key := range sortedKeys(m) {
+		parts = append(parts, url.PathEscape(key), url.PathEscape(m[key]))
+	}
+	return strings.Join(parts, sep)
+}
+
+func joinEscapedMapWithEquals(m map[string]string, sep string) string {
+	parts := make([]string, 0, len(m))
+	for _, key := range sortedKeys(m) {
+		parts = append(parts, url.PathEscape(key)+"="+url.PathEscape(m[key]))
+	}
+	return strings.Join(parts, sep)
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // detectBodyContentType extracts the preferred content type from the
