@@ -262,6 +262,42 @@ func (e *Engine) SetRule(operationID string, required bool) error {
 	return err
 }
 
+// RuleRow holds an operation and its current approval rule state.
+type RuleRow struct {
+	OperationID string
+	SpecName    string
+	Method      string
+	Path        string
+	Summary     string
+	Required    bool
+}
+
+// ListRules returns all operations with their approval rule status (LEFT JOIN).
+func (e *Engine) ListRules() ([]RuleRow, error) {
+	rows, err := e.db.Query(`
+		SELECT o.operation_id, s.name, o.method, o.path, COALESCE(o.summary, ''),
+			COALESCE(ar.required, 0)
+		FROM operations o
+		JOIN specs s ON s.id = o.spec_id
+		LEFT JOIN approval_rules ar ON ar.operation_id = o.operation_id
+		ORDER BY s.name, o.path, o.method
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query rules: %w", err)
+	}
+	defer rows.Close()
+
+	var result []RuleRow
+	for rows.Next() {
+		var r RuleRow
+		if err := rows.Scan(&r.OperationID, &r.SpecName, &r.Method, &r.Path, &r.Summary, &r.Required); err != nil {
+			return nil, fmt.Errorf("scan rule: %w", err)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 func scanRequests(rows *sql.Rows) ([]Request, error) {
 	var result []Request
 	for rows.Next() {

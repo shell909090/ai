@@ -67,6 +67,14 @@ func (s *Store) Set(specName string, creds map[string]string) error {
 	return s.save()
 }
 
+// Delete removes credentials for a spec and persists to disk.
+func (s *Store) Delete(specName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, specName)
+	return s.save()
+}
+
 func (s *Store) load() error {
 	ciphertext, err := os.ReadFile(s.path)
 	if err != nil {

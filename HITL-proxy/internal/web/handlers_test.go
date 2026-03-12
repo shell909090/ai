@@ -22,7 +22,7 @@ func newTestHandler(t *testing.T, password string) *Handler {
 	t.Cleanup(func() { db.Close() })
 
 	authenticator := auth.NewAuthenticator(db)
-	h, err := NewHandler(nil, db, nil, nil, authenticator, password)
+	h, err := NewHandler(nil, db, nil, nil, authenticator, nil, password)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

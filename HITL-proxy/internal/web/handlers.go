@@ -13,12 +13,14 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"errors"
 	"log"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/approval"
 	"github.com/shell909090/ai/HITL-proxy/internal/auth"
+	"github.com/shell909090/ai/HITL-proxy/internal/cred"
 	"github.com/shell909090/ai/HITL-proxy/internal/openapi"
 	"github.com/shell909090/ai/HITL-proxy/internal/search"
 )
@@ -33,12 +35,13 @@ type Handler struct {
 	searcher      search.Searcher
 	hub           *approval.SSEHub
 	authenticator *auth.Authenticator
+	credStore     *cred.Store
 	adminPassword string
 	// tmpls holds one template set per page to avoid {{define "content"}} collisions.
 	tmpls map[string]*template.Template
 }
 
-func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub, authenticator *auth.Authenticator, adminPassword string) (*Handler, error) {
+func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub, authenticator *auth.Authenticator, credStore *cred.Store, adminPassword string) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"prettyJSON": func(s string) string {
 			var v any
@@ -53,7 +56,7 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 		},
 	}
 
-	pages := []string{"pending", "detail", "apikeys"}
+	pages := []string{"pending", "detail", "apikeys", "specs", "rules", "creds"}
 	tmpls := make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		t, err := template.New("").Funcs(funcMap).ParseFS(
@@ -73,6 +76,7 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 		searcher:      searcher,
 		hub:           hub,
 		authenticator: authenticator,
+		credStore:     credStore,
 		adminPassword: adminPassword,
 		tmpls:         tmpls,
 	}, nil
@@ -104,6 +108,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/apikeys", h.basicAuth(h.handleListAPIKeys))
 	mux.HandleFunc("POST /admin/apikeys", h.basicAuth(h.handleCreateAPIKey))
 	mux.HandleFunc("POST /admin/apikeys/{id}/delete", h.basicAuth(h.handleDeleteAPIKey))
+	mux.HandleFunc("GET /admin/specs", h.basicAuth(h.handleListSpecs))
+	mux.HandleFunc("POST /admin/specs/import", h.basicAuth(h.handleImportSpecForm))
+	mux.HandleFunc("POST /admin/specs/{id}/delete", h.basicAuth(h.handleDeleteSpec))
+	mux.HandleFunc("GET /admin/rules", h.basicAuth(h.handleListRules))
+	mux.HandleFunc("POST /admin/rules", h.basicAuth(h.handleSetRule))
+	mux.HandleFunc("GET /admin/creds", h.basicAuth(h.handleListCreds))
+	mux.HandleFunc("POST /admin/creds/{specName}", h.basicAuth(h.handleSetCreds))
 }
 
 func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +185,51 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request, approve
 	fmt.Fprintf(w, "<span class='status-%s'>%s</span>", status, status)
 }
 
+// importSpecBody parses and imports a spec into the DB. Returns import result info.
+func (h *Handler) importSpecBody(ctx context.Context, name string, body []byte) (specID int64, opCount, depCount int, prefixed bool, embeddingWarning string, err error) {
+	ops, deps, schemesJSON, globalSecJSON, err := openapi.ParseSpec(ctx, 0, body)
+	if err != nil {
+		return 0, 0, 0, false, "", fmt.Errorf("parse spec: %w", err)
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		return 0, 0, 0, false, "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec(
+		`INSERT INTO specs (name, raw_json, security_schemes_json, global_security_json) VALUES (?, ?, ?, ?)`,
+		name, string(body), schemesJSON, globalSecJSON,
+	)
+	if err != nil {
+		return 0, 0, 0, false, "", fmt.Errorf("insert spec: %w", err)
+	}
+	specID, _ = result.LastInsertId()
+
+	for i := range ops {
+		ops[i].SpecID = specID
+	}
+
+	prefixed, err = h.searcher.IndexTx(tx, ops, deps, specID, name)
+	if err != nil {
+		return 0, 0, 0, false, "", fmt.Errorf("index operations: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, 0, 0, false, "", fmt.Errorf("commit: %w", err)
+	}
+
+	if vi, ok := h.searcher.(search.VectorIndexer); ok {
+		if err := vi.IndexEmbeddings(ctx, ops, specID); err != nil {
+			log.Printf("warn: index embeddings for spec %d (%s): %v", specID, name, err)
+			embeddingWarning = err.Error()
+		}
+	}
+
+	return specID, len(ops), len(deps), prefixed, embeddingWarning, nil
+}
+
 func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -186,64 +242,16 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 		name = "imported"
 	}
 
-	// Parse spec before starting transaction
-	// (use specID=0 temporarily; we update it after INSERT)
-	ops, deps, schemesJSON, globalSecJSON, err := openapi.ParseSpec(context.Background(), 0, body)
+	specID, opCount, depCount, prefixed, embeddingWarning, err := h.importSpecBody(r.Context(), name, body)
 	if err != nil {
-		http.Error(w, "parse spec: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	// Begin atomic transaction for the entire import
-	tx, err := h.db.Begin()
-	if err != nil {
-		http.Error(w, "begin tx: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Insert spec into DB
-	result, err := tx.Exec(
-		`INSERT INTO specs (name, raw_json, security_schemes_json, global_security_json) VALUES (?, ?, ?, ?)`,
-		name, string(body), schemesJSON, globalSecJSON,
-	)
-	if err != nil {
-		http.Error(w, "insert spec: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	specID, _ := result.LastInsertId()
-
-	// Update specID in parsed operations
-	for i := range ops {
-		ops[i].SpecID = specID
-	}
-
-	// Index operations within the same transaction
-	prefixed, err := h.searcher.IndexTx(tx, ops, deps, specID, name)
-	if err != nil {
-		http.Error(w, "index operations: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// After commit: generate and store embeddings if the searcher supports it.
-	// Embedding failure is non-fatal: FTS5 search still works; report as a warning field.
-	var embeddingWarning string
-	if vi, ok := h.searcher.(search.VectorIndexer); ok {
-		if err := vi.IndexEmbeddings(r.Context(), ops, specID); err != nil {
-			log.Printf("warn: index embeddings for spec %d (%s): %v", specID, name, err)
-			embeddingWarning = err.Error()
-		}
 	}
 
 	resp := map[string]any{
 		"spec_id":    specID,
-		"operations": len(ops),
-		"deps":       len(deps),
+		"operations": opCount,
+		"deps":       depCount,
 	}
 	if prefixed {
 		resp["prefix"] = name + "."
@@ -256,6 +264,323 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// specRow holds a spec summary row for the specs admin page.
+type specRow struct {
+	ID        int64
+	Name      string
+	CreatedAt time.Time
+	OpCount   int
+}
+
+func (h *Handler) handleListSpecs(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(`
+		SELECT s.id, s.name, s.created_at, COUNT(o.id) as op_count
+		FROM specs s
+		LEFT JOIN operations o ON o.spec_id = s.id
+		GROUP BY s.id
+		ORDER BY s.created_at DESC
+	`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var specs []specRow
+	for rows.Next() {
+		var s specRow
+		if err := rows.Scan(&s.ID, &s.Name, &s.CreatedAt, &s.OpCount); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		specs = append(specs, s)
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.tmpls["specs"].ExecuteTemplate(w, "specs.html", map[string]any{
+		"Specs": specs,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleImportSpecForm(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+	if name == "" {
+		name = "imported"
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file required: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	body, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "read file: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if _, _, _, _, _, err := h.importSpecBody(r.Context(), name, body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/specs", http.StatusSeeOther)
+}
+
+func (h *Handler) handleDeleteSpec(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch spec name before deletion (for credStore cleanup)
+	var specName string
+	if err := h.db.QueryRow(`SELECT name FROM specs WHERE id = ?`, id).Scan(&specName); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "spec not found", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Delete vector embeddings (non-fatal)
+	if vi, ok := h.searcher.(search.VectorIndexer); ok {
+		if err := vi.DeleteSpecEmbeddings(r.Context(), id); err != nil {
+			log.Printf("warn: delete embeddings for spec %d: %v", id, err)
+		}
+	}
+
+	// Delete DB records in dependency order
+	tx, err := h.db.Begin()
+	if err != nil {
+		http.Error(w, "begin tx: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Delete approval rules for this spec's operations
+	if _, err := tx.Exec(`
+		DELETE FROM approval_rules WHERE operation_id IN (
+			SELECT operation_id FROM operations WHERE spec_id = ?
+		)`, id); err != nil {
+		http.Error(w, "delete rules: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := tx.Exec(`DELETE FROM operation_deps WHERE spec_id = ?`, id); err != nil {
+		http.Error(w, "delete deps: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM operations WHERE spec_id = ?`, id); err != nil {
+		http.Error(w, "delete operations: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM specs WHERE id = ?`, id); err != nil {
+		http.Error(w, "delete spec: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Clean up credentials for this spec (non-fatal)
+	if err := h.credStore.Delete(specName); err != nil {
+		log.Printf("warn: delete creds for spec %s: %v", specName, err)
+	}
+
+	http.Redirect(w, r, "/admin/specs", http.StatusSeeOther)
+}
+
+func (h *Handler) handleListRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := h.engine.ListRules()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.tmpls["rules"].ExecuteTemplate(w, "rules.html", map[string]any{
+		"Rules": rules,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleSetRule(w http.ResponseWriter, r *http.Request) {
+	operationID := r.FormValue("operation_id")
+	if operationID == "" {
+		http.Error(w, "operation_id required", http.StatusBadRequest)
+		return
+	}
+	required := r.FormValue("required") == "1"
+
+	if err := h.engine.SetRule(operationID, required); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch the updated row to return an updated HTML fragment
+	rules, err := h.engine.ListRules()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var row *approval.RuleRow
+	for i := range rules {
+		if rules[i].OperationID == operationID {
+			row = &rules[i]
+			break
+		}
+	}
+	if row == nil {
+		http.Error(w, "operation not found", http.StatusNotFound)
+		return
+	}
+
+	// Return a single rule row HTML fragment for htmx swap
+	newRequired := "0"
+	if !row.Required {
+		newRequired = "1"
+	}
+	btnClass := "btn-approve"
+	btnLabel := "Enable"
+	statusLabel := "disabled"
+	if row.Required {
+		btnClass = "btn-reject"
+		btnLabel = "Disable"
+		statusLabel = "required"
+	}
+	fmt.Fprintf(w, `<tr id="rule-%s">
+		<td><span class="method method-%s">%s</span></td>
+		<td class="path">%s</td>
+		<td>%s</td>
+		<td><span class="badge badge-%s">%s</span></td>
+		<td>
+			<form hx-post="/admin/rules" hx-swap="outerHTML" hx-target="#rule-%s" style="margin:0;">
+				<input type="hidden" name="operation_id" value="%s">
+				<input type="hidden" name="required" value="%s">
+				<button type="submit" class="btn %s">%s</button>
+			</form>
+		</td>
+	</tr>`,
+		row.OperationID,
+		row.Method, row.Method,
+		row.Path,
+		row.Summary,
+		statusLabel, statusLabel,
+		row.OperationID,
+		row.OperationID,
+		newRequired,
+		btnClass, btnLabel,
+	)
+}
+
+// credScheme holds a scheme name and whether a credential is already set.
+type credScheme struct {
+	Name  string
+	IsSet bool
+}
+
+// credSpecRow holds spec info plus parsed security schemes for the creds page.
+type credSpecRow struct {
+	ID      int64
+	Name    string
+	Schemes []credScheme
+}
+
+func (h *Handler) handleListCreds(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(`SELECT id, name, COALESCE(security_schemes_json, '{}') FROM specs ORDER BY name`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var specs []credSpecRow
+	for rows.Next() {
+		var id int64
+		var name, schemesJSON string
+		if err := rows.Scan(&id, &name, &schemesJSON); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var schemesMap map[string]any
+		_ = json.Unmarshal([]byte(schemesJSON), &schemesMap)
+
+		existingCreds, _ := h.credStore.Get(name)
+		schemes := make([]credScheme, 0, len(schemesMap))
+		for k := range schemesMap {
+			_, set := existingCreds[k]
+			schemes = append(schemes, credScheme{Name: k, IsSet: set})
+		}
+
+		specs = append(specs, credSpecRow{
+			ID:      id,
+			Name:    name,
+			Schemes: schemes,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.tmpls["creds"].ExecuteTemplate(w, "creds.html", map[string]any{
+		"Specs": specs,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleSetCreds(w http.ResponseWriter, r *http.Request) {
+	specName := r.PathValue("specName")
+	if specName == "" {
+		http.Error(w, "specName required", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Load existing creds so empty fields don't wipe existing values
+	existing, _ := h.credStore.Get(specName)
+	if existing == nil {
+		existing = make(map[string]string)
+	}
+
+	for k, vs := range r.Form {
+		if len(vs) > 0 && vs[0] != "" {
+			existing[k] = vs[0]
+		}
+	}
+
+	if err := h.credStore.Set(specName, existing); err != nil {
+		http.Error(w, "save creds: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/creds", http.StatusSeeOther)
 }
 
 func (h *Handler) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {

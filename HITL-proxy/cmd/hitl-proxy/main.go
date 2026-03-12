@@ -125,7 +125,7 @@ func main() {
 	}
 
 	// Web UI
-	webHandler, err := web.NewHandler(approvalEngine, db, searcher, hub, authenticator, adminPassword)
+	webHandler, err := web.NewHandler(approvalEngine, db, searcher, hub, authenticator, credStore, adminPassword)
 	if err != nil {
 		log.Fatalf("create web handler: %v", err)
 	}

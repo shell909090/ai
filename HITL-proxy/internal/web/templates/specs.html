@@ -1,0 +1,43 @@
+{{template "layout" .}}
+{{define "content"}}
+<h2 style="margin-bottom: 16px;">Spec Management</h2>
+
+<div class="card">
+    <h2 style="margin-bottom: 12px;">Import Spec</h2>
+    <form method="POST" action="/admin/specs/import" enctype="multipart/form-data">
+        <div class="field">
+            <div class="field-label">Spec Name</div>
+            <input type="text" name="name" placeholder="e.g. my-api" required
+                   style="width: 300px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+        </div>
+        <div class="field">
+            <div class="field-label">OpenAPI File (JSON or YAML)</div>
+            <input type="file" name="file" accept=".json,.yaml,.yml" required
+                   style="padding: 4px 0; font-size: 1em;">
+        </div>
+        <div class="actions">
+            <button type="submit" class="btn btn-approve">Import</button>
+        </div>
+    </form>
+</div>
+
+<h2 style="margin: 16px 0 12px;">Existing Specs</h2>
+{{if .Specs}}
+    {{range .Specs}}
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong>{{.Name}}</strong>
+                <div class="meta">ID: {{.ID}} | Operations: {{.OpCount}} | Imported: {{.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+            </div>
+            <form method="POST" action="/admin/specs/{{.ID}}/delete" style="margin: 0;"
+                  onsubmit="return confirm('Delete spec {{.Name}} and all its operations?')">
+                <button type="submit" class="btn btn-reject">Delete</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+{{else}}
+    <div class="empty">No specs imported yet.</div>
+{{end}}
+{{end}}

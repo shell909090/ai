@@ -1,0 +1,31 @@
+{{template "layout" .}}
+{{define "content"}}
+<h2 style="margin-bottom: 16px;">Credential Management</h2>
+
+{{if .Specs}}
+    {{range .Specs}}
+    <div class="card">
+        <h2 style="margin-bottom: 12px;">{{.Name}}</h2>
+        {{if .Schemes}}
+        <form method="POST" action="/admin/creds/{{.Name}}">
+            {{range .Schemes}}
+            <div class="field">
+                <div class="field-label">{{.Name}}</div>
+                <input type="text" name="{{.Name}}"
+                       placeholder="{{if .IsSet}}already set{{else}}enter value{{end}}"
+                       style="width: 400px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+            </div>
+            {{end}}
+            <div class="actions">
+                <button type="submit" class="btn btn-approve">Save Credentials</button>
+            </div>
+        </form>
+        {{else}}
+            <div class="meta">No security schemes defined in this spec.</div>
+        {{end}}
+    </div>
+    {{end}}
+{{else}}
+    <div class="empty">No specs imported yet.</div>
+{{end}}
+{{end}}
