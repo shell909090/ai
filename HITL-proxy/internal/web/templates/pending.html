@@ -1,6 +1,6 @@
 {{template "layout" .}}
 {{define "content"}}
-<div hx-get="/" hx-trigger="sse-refresh" hx-swap="innerHTML" hx-target=".container">
+<div id="pending-list" hx-get="/" hx-trigger="sse-refresh" hx-swap="outerHTML" hx-target="#pending-list" hx-select="#pending-list">
     <h2 style="margin-bottom: 16px;">Pending Approvals</h2>
     {{if .Requests}}
         {{range .Requests}}

@@ -38,7 +38,7 @@ API keys are stored as SHA-256 hashes in the SQLite `api_keys` table. There is n
 -- On Linux/macOS:
 echo -n "sk-mykey123" | sha256sum          -- copy the hex digest
 
-sqlite3 hitl.db "INSERT INTO api_keys (key_hash, label) VALUES ('<hex-digest>', 'my key');"
+sqlite3 hitl.db "INSERT INTO api_keys (key_hash, agent_name) VALUES ('<hex-digest>', 'my-agent');"
 ```
 
 Pass the **plaintext** key when connecting:
