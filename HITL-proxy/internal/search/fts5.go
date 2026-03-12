@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -110,16 +111,20 @@ func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []opena
 
 	// --- insert operations ---
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO operations
-		(spec_id, operation_id, method, path, summary, description, parameters_json, request_body_json, tags)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(spec_id, operation_id, method, path, summary, description, parameters_json, request_body_json, tags, security_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return false, fmt.Errorf("prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, op := range ops {
+		secJSON := op.SecurityJSON
+		if secJSON == "" {
+			secJSON = "[]"
+		}
 		_, err := stmt.Exec(op.SpecID, op.OperationID, op.Method, op.Path,
-			op.Summary, op.Description, op.ParametersJSON, op.RequestBodyJSON, op.Tags)
+			op.Summary, op.Description, op.ParametersJSON, op.RequestBodyJSON, op.Tags, secJSON)
 		if err != nil {
 			return false, fmt.Errorf("insert operation %s: %w", op.OperationID, err)
 		}
@@ -142,7 +147,7 @@ func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []opena
 	return prefixed, nil
 }
 
-func (s *FTS5Searcher) Search(query string, limit int) ([]SearchResult, error) {
+func (s *FTS5Searcher) Search(_ context.Context, query string, limit int) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -152,7 +157,7 @@ func (s *FTS5Searcher) Search(query string, limit int) ([]SearchResult, error) {
 
 	rows, err := s.db.Query(`
 		SELECT o.spec_id, o.operation_id, o.method, o.path, o.summary, o.description,
-			o.parameters_json, o.request_body_json, o.tags, f.rank
+			o.parameters_json, o.request_body_json, o.tags, o.security_json, f.rank
 		FROM operations_fts f
 		JOIN operations o ON o.id = f.rowid
 		WHERE operations_fts MATCH ?
@@ -171,7 +176,7 @@ func (s *FTS5Searcher) Search(query string, limit int) ([]SearchResult, error) {
 			&r.Operation.SpecID, &r.Operation.OperationID, &r.Operation.Method,
 			&r.Operation.Path, &r.Operation.Summary, &r.Operation.Description,
 			&r.Operation.ParametersJSON, &r.Operation.RequestBodyJSON, &r.Operation.Tags,
-			&r.Rank,
+			&r.Operation.SecurityJSON, &r.Rank,
 		); err != nil {
 			return nil, fmt.Errorf("scan result: %w", err)
 		}

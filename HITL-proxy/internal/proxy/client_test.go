@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"mime"
@@ -36,9 +37,13 @@ func setupTestClient(t *testing.T, targetURL string, op operationInfo) *Client {
 	}
 	specID, _ := res.LastInsertId()
 
+	secJSON := op.SecurityJSON
+	if secJSON == "" {
+		secJSON = "[]"
+	}
 	_, err = db.Exec(
-		`INSERT INTO operations (spec_id, operation_id, method, path, parameters_json, request_body_json) VALUES (?, ?, ?, ?, ?, ?)`,
-		specID, "test-op", op.Method, op.Path, op.ParametersJSON, op.RequestBodyJSON,
+		`INSERT INTO operations (spec_id, operation_id, method, path, parameters_json, request_body_json, security_json) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		specID, "test-op", op.Method, op.Path, op.ParametersJSON, op.RequestBodyJSON, secJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert operation: %v", err)
@@ -50,6 +55,18 @@ func setupTestClient(t *testing.T, targetURL string, op operationInfo) *Client {
 		t.Fatalf("new cred store: %v", err)
 	}
 	return NewClient(db, credStore)
+}
+
+// setupTestClientFull creates a Client with spec-level security schemes configured.
+func setupTestClientFull(t *testing.T, targetURL string, op operationInfo, specSchemesJSON string) *Client {
+	t.Helper()
+	client := setupTestClient(t, targetURL, op)
+	if specSchemesJSON != "" {
+		if _, err := client.db.Exec(`UPDATE specs SET security_schemes_json = ?`, specSchemesJSON); err != nil {
+			t.Fatalf("set spec security schemes: %v", err)
+		}
+	}
+	return client
 }
 
 // --- parseParamDefs tests ---
@@ -730,7 +747,9 @@ func TestCall_CookieObjectExplodeTrue(t *testing.T) {
 	}
 }
 
-func TestCall_CredentialsInjected(t *testing.T) {
+// TestCall_CredentialsInjected_Fallback verifies the backward-compat path:
+// when no security_schemes_json is set, all credential entries are injected as headers.
+func TestCall_CredentialsInjected_Fallback(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -755,6 +774,124 @@ func TestCall_CredentialsInjected(t *testing.T) {
 	}
 	if gotAuth != "Bearer secret" {
 		t.Errorf("Authorization: got %q, want %q", gotAuth, "Bearer secret")
+	}
+}
+
+func TestCall_CredentialsInjected_Bearer(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClientFull(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+		SecurityJSON:    `[{"BearerAuth":[]}]`,
+	}, `{"BearerAuth":{"type":"http","scheme":"bearer"}}`)
+
+	if err := client.credStore.Set("test-spec", map[string]string{"BearerAuth": "ghp_token123"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotAuth != "Bearer ghp_token123" {
+		t.Errorf("Authorization: got %q, want %q", gotAuth, "Bearer ghp_token123")
+	}
+}
+
+func TestCall_CredentialsInjected_Basic(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClientFull(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+		SecurityJSON:    `[{"BasicAuth":[]}]`,
+	}, `{"BasicAuth":{"type":"http","scheme":"basic"}}`)
+
+	if err := client.credStore.Set("test-spec", map[string]string{"BasicAuth": "user:pass"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass"))
+	if gotAuth != want {
+		t.Errorf("Authorization: got %q, want %q", gotAuth, want)
+	}
+}
+
+func TestCall_CredentialsInjected_APIKeyHeader(t *testing.T) {
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("X-API-Key")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClientFull(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+		SecurityJSON:    `[{"ApiKeyHeader":[]}]`,
+	}, `{"ApiKeyHeader":{"type":"apiKey","in":"header","name":"X-API-Key"}}`)
+
+	if err := client.credStore.Set("test-spec", map[string]string{"ApiKeyHeader": "mytoken"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if gotKey != "mytoken" {
+		t.Errorf("X-API-Key: got %q, want %q", gotKey, "mytoken")
+	}
+}
+
+func TestCall_CredentialsInjected_APIKeyQuery(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := setupTestClientFull(t, srv.URL, operationInfo{
+		Method:          "GET",
+		Path:            "/test",
+		ParametersJSON:  "[]",
+		RequestBodyJSON: "{}",
+		SecurityJSON:    `[{"ApiKeyQuery":[]}]`,
+	}, `{"ApiKeyQuery":{"type":"apiKey","in":"query","name":"api_key"}}`)
+
+	if err := client.credStore.Set("test-spec", map[string]string{"ApiKeyQuery": "secret123"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	_, err := client.Call("test-op", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	q, _ := url.ParseQuery(gotQuery)
+	if q.Get("api_key") != "secret123" {
+		t.Errorf("api_key: got %q, want %q", q.Get("api_key"), "secret123")
 	}
 }
 

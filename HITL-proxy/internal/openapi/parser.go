@@ -12,17 +12,36 @@ import (
 
 var pathParamRe = regexp.MustCompile(`\{(\w+)\}`)
 
-// ParseSpec parses an OpenAPI spec and returns operations and their dependencies.
-func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []Dependency, error) {
+// ParseSpec parses an OpenAPI spec and returns operations, dependencies, and
+// the spec-level security schemes JSON (map[schemeName]SecurityScheme).
+func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []Dependency, string, error) {
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(raw)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load spec: %w", err)
+		return nil, nil, "", fmt.Errorf("load spec: %w", err)
 	}
 
 	if err := doc.Validate(ctx); err != nil {
-		return nil, nil, fmt.Errorf("validate spec: %w", err)
+		return nil, nil, "", fmt.Errorf("validate spec: %w", err)
 	}
+
+	// Extract security scheme definitions from components.
+	schemes := make(map[string]SecurityScheme)
+	if doc.Components != nil {
+		for name, ref := range doc.Components.SecuritySchemes {
+			if ref == nil || ref.Value == nil {
+				continue
+			}
+			s := ref.Value
+			schemes[name] = SecurityScheme{
+				Type:   s.Type,
+				Scheme: s.Scheme,
+				In:     s.In,
+				Name:   s.Name,
+			}
+		}
+	}
+	schemesJSON, _ := json.Marshal(schemes)
 
 	var ops []Operation
 	for path, pathItem := range doc.Paths.Map() {
@@ -37,6 +56,13 @@ func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []De
 				bodyJSON, _ = json.Marshal(op.RequestBody)
 			}
 
+			// Serialize per-operation security requirements.
+			// nil Security means "inherit global"; store as "null".
+			secJSON := []byte("null")
+			if op.Security != nil {
+				secJSON, _ = json.Marshal(op.Security)
+			}
+
 			tags := strings.Join(op.Tags, ",")
 
 			ops = append(ops, Operation{
@@ -49,12 +75,13 @@ func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []De
 				ParametersJSON:  string(paramsJSON),
 				RequestBodyJSON: string(bodyJSON),
 				Tags:            tags,
+				SecurityJSON:    string(secJSON),
 			})
 		}
 	}
 
 	deps := analyzeDependencies(ops)
-	return ops, deps, nil
+	return ops, deps, string(schemesJSON), nil
 }
 
 // analyzeDependencies detects dependencies between operations.

@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 	}
 
 	// Search for repositories
-	results, err := searcher.Search("repository", 10)
+	results, err := searcher.Search(context.Background(), "repository", 10)
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 	}
 
 	// Search for issues
-	results, err = searcher.Search("issue", 10)
+	results, err = searcher.Search(context.Background(), "issue", 10)
 	if err != nil {
 		t.Fatalf("search issues: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 	}
 
 	// Check dependencies were loaded for getRepo
-	results, err = searcher.Search("specific repository", 10)
+	results, err = searcher.Search(context.Background(), "specific repository", 10)
 	if err != nil {
 		t.Fatalf("search specific: %v", err)
 	}

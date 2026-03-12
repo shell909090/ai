@@ -39,6 +39,9 @@ var migrations = []string{
 	`ALTER TABLE approval_requests ADD COLUMN timeout_at DATETIME;
 	 CREATE INDEX IF NOT EXISTS idx_approval_pending_timeout
 	     ON approval_requests(status, timeout_at);`,
+	// Migration 2: add security scheme columns for credential injection
+	`ALTER TABLE specs ADD COLUMN security_schemes_json TEXT NOT NULL DEFAULT '{}';
+	 ALTER TABLE operations ADD COLUMN security_json TEXT NOT NULL DEFAULT '[]';`,
 }
 
 func migrate(db *sql.DB) error {

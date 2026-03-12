@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,11 +47,21 @@ type operationInfo struct {
 	Path            string
 	ParametersJSON  string
 	RequestBodyJSON string
+	SecurityJSON    string // serialized []map[string][]string
 }
 
 type specInfo struct {
-	Name    string
-	RawJSON string
+	Name                string
+	RawJSON             string
+	SecuritySchemesJSON string // serialized map[string]SecurityScheme
+}
+
+// securitySchemeDef holds a parsed OpenAPI security scheme for credential injection.
+type securitySchemeDef struct {
+	Type   string `json:"type"`
+	Scheme string `json:"scheme,omitempty"` // http: "bearer" or "basic"
+	In     string `json:"in,omitempty"`     // apiKey: "header", "query", "cookie"
+	Name   string `json:"name,omitempty"`   // apiKey: parameter name
 }
 
 // Call executes an API call for the given operationId with the provided parameters.
@@ -120,6 +131,10 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 		}
 	}
 
+	// Inject query-param credentials before building URL.
+	creds, _ := c.credStore.Get(spec.Name)
+	injectQueryCredentials(queryValues, spec.SecuritySchemesJSON, opInfo.SecurityJSON, creds)
+
 	reqURL := strings.TrimRight(baseURL, "/") + path
 	if len(queryValues) > 0 {
 		reqURL += "?" + queryValues.Encode()
@@ -175,12 +190,8 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 		req.Header.Set("Cookie", strings.Join(cookieParts, "; "))
 	}
 
-	// Inject credentials
-	if creds, ok := c.credStore.Get(spec.Name); ok {
-		for k, v := range creds {
-			req.Header.Set(k, v)
-		}
-	}
+	// Inject header/cookie/bearer credentials.
+	injectRequestCredentials(req, spec.SecuritySchemesJSON, opInfo.SecurityJSON, creds)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -202,9 +213,9 @@ func (c *Client) Call(operationID string, params map[string]any) (*CallResult, e
 func (c *Client) getOperation(operationID string) (*operationInfo, error) {
 	var info operationInfo
 	err := c.db.QueryRow(
-		`SELECT spec_id, method, path, parameters_json, request_body_json FROM operations WHERE operation_id = ?`,
+		`SELECT spec_id, method, path, parameters_json, request_body_json, security_json FROM operations WHERE operation_id = ?`,
 		operationID,
-	).Scan(&info.SpecID, &info.Method, &info.Path, &info.ParametersJSON, &info.RequestBodyJSON)
+	).Scan(&info.SpecID, &info.Method, &info.Path, &info.ParametersJSON, &info.RequestBodyJSON, &info.SecurityJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -214,13 +225,119 @@ func (c *Client) getOperation(operationID string) (*operationInfo, error) {
 func (c *Client) getSpec(specID int64) (*specInfo, error) {
 	var info specInfo
 	err := c.db.QueryRow(
-		`SELECT name, raw_json FROM specs WHERE id = ?`,
+		`SELECT name, raw_json, security_schemes_json FROM specs WHERE id = ?`,
 		specID,
-	).Scan(&info.Name, &info.RawJSON)
+	).Scan(&info.Name, &info.RawJSON, &info.SecuritySchemesJSON)
 	if err != nil {
 		return nil, err
 	}
 	return &info, nil
+}
+
+// parseSchemeDefs parses the security scheme definitions from the spec.
+func parseSchemeDefs(schemesJSON string) map[string]securitySchemeDef {
+	defs := make(map[string]securitySchemeDef)
+	if schemesJSON == "" || schemesJSON == "{}" || schemesJSON == "null" {
+		return defs
+	}
+	_ = json.Unmarshal([]byte(schemesJSON), &defs)
+	return defs
+}
+
+// parseSecurityReqs parses the operation security requirements.
+// Returns nil when the operation has no explicit requirements (inherit global or public).
+func parseSecurityReqs(secJSON string) []map[string][]string {
+	if secJSON == "" || secJSON == "null" || secJSON == "[]" {
+		return nil
+	}
+	var reqs []map[string][]string
+	_ = json.Unmarshal([]byte(secJSON), &reqs)
+	return reqs
+}
+
+// injectQueryCredentials adds apiKey-in-query credentials to the URL query values.
+// Must be called before building the request URL.
+func injectQueryCredentials(q url.Values, schemesJSON, securityJSON string, creds map[string]string) {
+	if len(creds) == 0 {
+		return
+	}
+	defs := parseSchemeDefs(schemesJSON)
+	reqs := parseSecurityReqs(securityJSON)
+	if len(defs) == 0 || len(reqs) == 0 {
+		return
+	}
+	for _, secReq := range reqs {
+		for schemeName := range secReq {
+			secret, ok := creds[schemeName]
+			if !ok {
+				continue
+			}
+			def, ok := defs[schemeName]
+			if !ok {
+				continue
+			}
+			if def.Type == "apiKey" && def.In == "query" {
+				q.Set(def.Name, secret)
+			}
+		}
+	}
+}
+
+// injectRequestCredentials sets authentication headers and cookies on the request.
+// Falls back to injecting all credential entries as headers when no scheme
+// definitions are available (backward compatibility with manually-configured headers).
+func injectRequestCredentials(req *http.Request, schemesJSON, securityJSON string, creds map[string]string) {
+	if len(creds) == 0 {
+		return
+	}
+	defs := parseSchemeDefs(schemesJSON)
+	reqs := parseSecurityReqs(securityJSON)
+
+	// Fallback: no scheme definitions → inject all entries as headers.
+	if len(defs) == 0 || len(reqs) == 0 {
+		for k, v := range creds {
+			req.Header.Set(k, v)
+		}
+		return
+	}
+
+	for _, secReq := range reqs {
+		for schemeName := range secReq {
+			secret, ok := creds[schemeName]
+			if !ok {
+				continue
+			}
+			def, ok := defs[schemeName]
+			if !ok {
+				continue
+			}
+			switch def.Type {
+			case "http":
+				switch strings.ToLower(def.Scheme) {
+				case "bearer":
+					req.Header.Set("Authorization", "Bearer "+secret)
+				case "basic":
+					req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(secret)))
+				default:
+					req.Header.Set("Authorization", secret)
+				}
+			case "apiKey":
+				switch def.In {
+				case "header":
+					req.Header.Set(def.Name, secret)
+				case "cookie":
+					existing := req.Header.Get("Cookie")
+					cookie := def.Name + "=" + secret
+					if existing != "" {
+						req.Header.Set("Cookie", existing+"; "+cookie)
+					} else {
+						req.Header.Set("Cookie", cookie)
+					}
+					// "query" is handled by injectQueryCredentials
+				}
+			}
+		}
+	}
 }
 
 func formatPathValue(key string, value any, def paramDef) string {

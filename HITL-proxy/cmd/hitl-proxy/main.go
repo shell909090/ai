@@ -53,8 +53,26 @@ func main() {
 		log.Fatalf("create credential store: %v", err)
 	}
 
+	// Vector search: enabled when OPENAI_BASE_URL is set.
+	var vecSearcher *search.VectorSearcher
+	if baseURLEnv := os.Getenv("OPENAI_BASE_URL"); baseURLEnv != "" {
+		embedder := search.NewHTTPEmbedder(
+			baseURLEnv,
+			os.Getenv("OPENAI_API_KEY"),
+			cfg.Embedding.Model,
+		)
+		store, err := search.NewChromemStore(cfg.Vector.Path)
+		if err != nil {
+			log.Fatalf("open vector store: %v", err)
+		}
+		vecSearcher = search.NewVectorSearcher(embedder, store)
+		log.Printf("vector search enabled: model=%s base=%s", cfg.Embedding.Model, baseURLEnv)
+	} else {
+		log.Println("vector search disabled: set OPENAI_BASE_URL to enable")
+	}
+
 	// Components
-	searcher := search.NewFTS5Searcher(db)
+	searcher := search.NewHybridSearcher(db, vecSearcher)
 	auditLog := audit.NewLogger(db)
 	hub := approval.NewSSEHub()
 	approvalEngine := approval.NewEngine(

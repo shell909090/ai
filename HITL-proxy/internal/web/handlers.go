@@ -185,7 +185,7 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 
 	// Parse spec before starting transaction
 	// (use specID=0 temporarily; we update it after INSERT)
-	ops, deps, err := openapi.ParseSpec(context.Background(), 0, body)
+	ops, deps, schemesJSON, err := openapi.ParseSpec(context.Background(), 0, body)
 	if err != nil {
 		http.Error(w, "parse spec: "+err.Error(), http.StatusBadRequest)
 		return
@@ -201,7 +201,8 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 
 	// Insert spec into DB
 	result, err := tx.Exec(
-		`INSERT INTO specs (name, raw_json) VALUES (?, ?)`, name, string(body),
+		`INSERT INTO specs (name, raw_json, security_schemes_json) VALUES (?, ?, ?)`,
+		name, string(body), schemesJSON,
 	)
 	if err != nil {
 		http.Error(w, "insert spec: "+err.Error(), http.StatusInternalServerError)
@@ -224,6 +225,15 @@ func (h *Handler) handleImportSpec(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// After commit: generate and store embeddings if the searcher supports it.
+	if vi, ok := h.searcher.(search.VectorIndexer); ok {
+		if err := vi.IndexEmbeddings(r.Context(), ops, specID); err != nil {
+			// Non-fatal: log and continue; FTS5 search still works.
+			http.Error(w, "index embeddings: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	resp := map[string]any{

@@ -27,7 +27,7 @@ Agent (Claude Code 等)
 │  Policy Engine           │
 │  Credential Store        │
 │                          │
-│  LanceDB (RAG)           │
+│  chromem-go (向量)       │
 │  SQLite (结构化数据)       │
 │  加密文件 (凭证)          │
 └──────────────────────────┘
@@ -43,10 +43,10 @@ Agent (Claude Code 等)
 | 语言 | Go |
 | Agent 协议 | MCP SSE transport |
 | CLI Bridge | 独立二进制，MCP stdio↔SSE 桥接 |
-| RAG 存储 | LanceDB（OpenAPI endpoint 向量检索） |
-| 结构化存储 | SQLite（审批规则、审计日志、API 元数据） |
+| 向量存储 | chromem-go（内存 + 磁盘持久化，HNSW 索引）；接口抽象，未来支持 Qdrant |
+| 结构化存储 | SQLite（primary store：审批规则、审计日志、API 元数据、FTS5 关键词索引） |
 | 凭证存储 | 加密文件（MVP），接口抽象，未来支持 keyring/vault |
-| Embedding | 可配置（外部 API 或本地模型） |
+| Embedding | OpenAI-compatible HTTP API（环境变量 OPENAI_BASE_URL / OPENAI_API_KEY，兼容 Ollama） |
 | Web UI | Go html/template + htmx |
 | 测试目标 | GitHub API（MVP） |
 
@@ -56,7 +56,7 @@ Agent (Claude Code 等)
 
 - 通过 HTTP API 导入 OpenAPI/Swagger spec（Web UI 支持上传）
 - 解析 spec，提取每个 operation（operationId、method、path、summary、description、parameters、request body）
-- 将 operation 描述文本向量化，存入 LanceDB
+- 将 operation 描述文本向量化，存入 chromem-go 向量存储（spec 导入后异步触发）
 - **依赖分析**：导入时预计算 API 间的依赖关系（如 DELETE /logs/{id} 依赖 GET /logs 来获取 id），存储依赖图
 
 ### 4.2 MCP Server
@@ -65,7 +65,7 @@ Agent (Claude Code 等)
 
 #### `search_tools`
 - 输入：自然语言查询
-- 处理：LanceDB 向量检索匹配的 API endpoint
+- 处理：混合检索（FTS5 关键词 + chromem-go 向量语义），RRF 融合排序
 - 输出：匹配的 API 列表及其描述，**同时返回依赖的相关接口**
 
 #### `call_api`
@@ -138,7 +138,7 @@ Agent (Claude Code 等)
 最小可用，先跑通完整流程：
 
 1. OpenAPI spec 导入（API + Web UI 上传）
-2. LanceDB RAG 检索（含依赖接口返回）
+2. 混合检索（FTS5 + chromem-go 向量，RRF 融合，含依赖接口返回）
 3. MCP SSE Server（search_tools + call_api）
 4. CLI Bridge（stdio↔SSE）
 5. SQLite 审批规则（per operationId）

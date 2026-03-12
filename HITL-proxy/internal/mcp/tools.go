@@ -27,7 +27,7 @@ func (s *Server) handleSearchTools(ctx context.Context, request mcp.CallToolRequ
 		limit = int(l)
 	}
 
-	results, err := s.searcher.Search(query, limit)
+	results, err := s.searcher.Search(ctx, query, limit)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{mcp.TextContent{Type: "text", Text: fmt.Sprintf("search error: %v", err)}},

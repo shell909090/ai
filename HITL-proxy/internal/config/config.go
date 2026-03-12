@@ -9,10 +9,12 @@ import (
 )
 
 type Config struct {
-	Listen   string         `yaml:"listen"`
-	Database DatabaseConfig `yaml:"database"`
-	Cred     CredConfig     `yaml:"cred"`
-	Approval ApprovalConfig `yaml:"approval"`
+	Listen    string          `yaml:"listen"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Cred      CredConfig      `yaml:"cred"`
+	Approval  ApprovalConfig  `yaml:"approval"`
+	Embedding EmbeddingConfig `yaml:"embedding"`
+	Vector    VectorConfig    `yaml:"vector"`
 }
 
 type DatabaseConfig struct {
@@ -21,6 +23,18 @@ type DatabaseConfig struct {
 
 type CredConfig struct {
 	File string `yaml:"file"`
+}
+
+// EmbeddingConfig configures the OpenAI-compatible embedding API.
+// BaseURL and APIKey are read from OPENAI_BASE_URL and OPENAI_API_KEY
+// environment variables; the yaml fields serve as fallbacks.
+type EmbeddingConfig struct {
+	Model string `yaml:"model"` // e.g. "text-embedding-3-small" or "nomic-embed-text"
+}
+
+// VectorConfig configures the vector store.
+type VectorConfig struct {
+	Path string `yaml:"path"` // chromem-go persistence directory, default "vector.db"
 }
 
 type ApprovalConfig struct {
@@ -71,6 +85,12 @@ func Load(path string) (*Config, error) {
 			Timeout:      "5m",
 			PollInterval: "1s",
 			ScanInterval: "10s",
+		},
+		Embedding: EmbeddingConfig{
+			Model: "text-embedding-3-small",
+		},
+		Vector: VectorConfig{
+			Path: "vector.db",
 		},
 	}
 
