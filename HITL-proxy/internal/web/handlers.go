@@ -31,7 +31,8 @@ type Handler struct {
 	hub           *approval.SSEHub
 	authenticator *auth.Authenticator
 	adminPassword string
-	tmpl          *template.Template
+	// tmpls holds one template set per page to avoid {{define "content"}} collisions.
+	tmpls map[string]*template.Template
 }
 
 func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, hub *approval.SSEHub, authenticator *auth.Authenticator, adminPassword string) (*Handler, error) {
@@ -49,9 +50,18 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 		},
 	}
 
-	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
+	pages := []string{"pending", "detail", "apikeys"}
+	tmpls := make(map[string]*template.Template, len(pages))
+	for _, page := range pages {
+		t, err := template.New("").Funcs(funcMap).ParseFS(
+			templateFS,
+			"templates/layout.html",
+			"templates/"+page+".html",
+		)
+		if err != nil {
+			return nil, fmt.Errorf("parse template %s: %w", page, err)
+		}
+		tmpls[page] = t
 	}
 
 	return &Handler{
@@ -61,7 +71,7 @@ func NewHandler(engine *approval.Engine, db *sql.DB, searcher search.Searcher, h
 		hub:           hub,
 		authenticator: authenticator,
 		adminPassword: adminPassword,
-		tmpl:          tmpl,
+		tmpls:         tmpls,
 	}, nil
 }
 
@@ -105,7 +115,7 @@ func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "pending.html", map[string]any{
+	if err := h.tmpls["pending"].ExecuteTemplate(w, "pending.html", map[string]any{
 		"Requests": pending,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -125,7 +135,7 @@ func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "detail.html", map[string]any{
+	if err := h.tmpls["detail"].ExecuteTemplate(w, "detail.html", map[string]any{
 		"Request": req,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -238,7 +248,7 @@ func (h *Handler) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "apikeys.html", map[string]any{
+	if err := h.tmpls["apikeys"].ExecuteTemplate(w, "apikeys.html", map[string]any{
 		"Keys": keys,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -271,7 +281,7 @@ func (h *Handler) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Cache-Control", "no-store")
-	if err := h.tmpl.ExecuteTemplate(w, "apikeys.html", map[string]any{
+	if err := h.tmpls["apikeys"].ExecuteTemplate(w, "apikeys.html", map[string]any{
 		"Keys":         keys,
 		"NewKey":       newKey,
 		"NewAgentName": agentName,

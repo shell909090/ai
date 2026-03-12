@@ -103,8 +103,7 @@ func main() {
 	// Admin password for Web UI
 	adminPassword := os.Getenv("HITL_ADMIN_PASSWORD")
 	if adminPassword == "" {
-		adminPassword = "admin"
-		log.Println("WARNING: using default admin password, set HITL_ADMIN_PASSWORD in production")
+		log.Fatal("HITL_ADMIN_PASSWORD must be set")
 	}
 
 	// Web UI

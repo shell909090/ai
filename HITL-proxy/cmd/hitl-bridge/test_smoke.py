@@ -62,10 +62,12 @@ def proxy_server(tmp_path: Path):
         f"cred:\n  file: '{cred_file}'\n"
     )
 
+    env = {"HITL_ADMIN_PASSWORD": "smoke-test-password"}
     proc = subprocess.Popen(
         [str(PROXY_BIN), "--config", str(config_path)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=env,
     )
 
     try:
