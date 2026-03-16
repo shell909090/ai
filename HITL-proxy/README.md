@@ -40,6 +40,10 @@ Pass the **plaintext** key when connecting:
 
 ## Import an OpenAPI Spec
 
+Via the Web UI at `http://localhost:8080/admin/specs` — upload a JSON or YAML file with a name.
+
+Or via API:
+
 ```bash
 curl -X POST "http://localhost:8080/specs/import?name=github" \
   -H "Content-Type: application/json" \
@@ -103,11 +107,21 @@ Parameters:
 
 ## Web UI
 
-Open `http://localhost:8080/` to view and manage pending approval requests.
+| Path | Purpose |
+|---|---|
+| `/` | Pending approval requests — approve or reject |
+| `/admin/apikeys` | Create and revoke API keys for agents |
+| `/admin/specs` | Import, list, and delete OpenAPI specs |
+| `/admin/rules` | Enable/disable approval requirements per operation |
+| `/admin/creds` | Set credentials per spec and security scheme |
+
+All pages are protected by HTTP Basic Auth (username `admin`, password from `HITL_ADMIN_PASSWORD`).
 
 ## Credentials
 
-Credentials are stored per spec using OpenAPI security scheme names as keys. Set credentials via the Web UI or directly in the encrypted file:
+Credentials are stored per spec using OpenAPI security scheme names as keys. Set them in the Web UI at `http://localhost:8080/admin/creds` — fields show "already set" when a value exists (plaintext is never displayed). Empty fields on submit are skipped, preserving existing values.
+
+The stored format is:
 
 ```
 specName → { "SchemeName": "secret-value" }
