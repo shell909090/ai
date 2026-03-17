@@ -202,3 +202,81 @@ TELEGRAM_CHAT_ID=123456789,987654321,111222333
 - `beautifulsoup4 + lxml`：HTML 解析
 - `langchain + litellm`：LLM 统一接口
 - **无需** `python-dotenv`：手动加载环境变量
+
+# kev_report
+
+## 背景和目标
+
+自动化漏洞跟踪工具，用于：
+1. 拉取 CISA KEV（已知被利用漏洞）等数据源
+2. 过滤指定时间窗口内新增的漏洞条目
+3. 可选：按本地软件清单过滤，只关注影响本地环境的漏洞
+4. 输出报告（stdout / 本地文件 / Telegram）
+
+## 系统架构：四个模块
+
+### 1. 数据源（Source）
+
+- 当前实现：CISA KEV CSV（两个备用 URL，带本地缓存）
+- 架构上须为其他数据源留扩展口，例如 NVD、OSV 直连等
+- 每个数据源实现统一接口，返回漏洞条目列表（CVE ID + 元数据）
+- 漏洞详情（受影响软件 + 最低安全版本）通过 OSV 优先、NVD 回退方式查询，带缓存
+
+### 2. 过滤日期（Date Filter）
+
+- 参数：`--window-days`，默认 31 天
+- 只保留在时间窗口内新增的漏洞条目
+
+### 3. 软件清单过滤（Inventory Filter）
+
+- **不提供清单时**：显示时间窗口内所有 CVE
+- **提供清单时**：只显示影响本地已安装软件的 CVE
+- 清单来源支持：dpkg / rpm / apk / pip / npm global / gem（自动采集），以及 CSV / JSON（CycloneDX、SPDX、通用列表）/ 纯文本文件
+- 参数：`--inventory-file`（可重复），`--no-auto-inventory`
+
+### 4. 输出（Output）
+
+支持三种输出目标，可同时启用多个：
+
+- **stdout**：打印到控制台，格式与本地文件相同（Markdown 文本）
+- **本地文件**：Markdown + JSON 双格式，按日期命名
+- **Telegram**：复用现有 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` 配置，支持多 Chat ID（逗号分隔）
+
+参数：`--output-stdout`、`--output-dir`（不设则不写文件）、`--output-telegram`
+
+## 显示模式（`--mode`）
+
+### CVE 列表模式（默认，`--mode cve`）
+
+按 CVE 维度展示，每条 CVE 列出：
+- CVE ID、日期、厂商/产品、必要操作、截止日期
+- 命中的本地软件（如有）
+- 受影响软件列表，每项显示各自的 min_safe_version 和数据来源
+
+### 汇总清单模式（`--mode summary`）
+
+按软件包维度聚合，跨所有 CVE 汇总：
+- 软件包名称
+- 最低安全版本：同一软件出现在多个 CVE 时取所有 min_safe_version 的最大值（最严格）
+- 关联的 CVE 列表
+
+## 版本比较规则
+
+- 使用轻量级版本比较器（按 `.+-_:` 分割，数字段按数值比较，字母段按字典序）
+- 汇总模式下同一软件取 max(min_safe_version)，即要求最高的那个
+
+## 已有 vs 待实现
+
+| 功能 | 状态 |
+|---|---|
+| KEV 数据源 + 缓存 | ✅ 已实现 |
+| `--window-days` 日期过滤 | ✅ 已实现 |
+| 本地软件清单采集（dpkg/rpm/apk/pip/npm/gem） | ✅ 已实现 |
+| 自定义清单文件（CSV/JSON/TXT） | ✅ 已实现 |
+| 本地文件输出（Markdown + JSON） | ✅ 已实现 |
+| CVE 列表视图（`--mode cve`） | ✅ 已实现 |
+| 数据源扩展接口（`Source` ABC + `KevSource`） | ✅ 已实现 |
+| stdout 输出（`--output-stdout`） | ✅ 已实现 |
+| Telegram 输出（`--output-telegram`） | ✅ 已实现 |
+| 汇总清单模式（`--mode summary`） | ✅ 已实现 |
+| 过滤语义修正（不提供清单时显示全部） | ✅ 已实现 |

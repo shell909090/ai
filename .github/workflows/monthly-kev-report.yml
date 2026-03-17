@@ -1,0 +1,54 @@
+name: monthly-kev-report
+
+on:
+  schedule:
+    - cron: '20 1 1 * *' # 每月1日 UTC 01:20
+  workflow_dispatch:
+
+jobs:
+  kev-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: uv sync
+        working-directory: summary
+
+      - name: Restore KEV cache
+        uses: actions/cache@v4
+        with:
+          path: summary/.cache/kev-report
+          key: kev-report-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            kev-report-${{ runner.os }}-${{ github.ref_name }}-
+            kev-report-${{ runner.os }}-
+
+      - name: Run monthly report
+        run: |
+          uv run kev_report.py \
+            --window-days 31 \
+            --cache-dir .cache/kev-report \
+            --output-dir reports/kev \
+            --no-auto-inventory
+        working-directory: summary
+
+      - name: Commit report artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add summary/reports/kev
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(security): monthly KEV report"
+          git push

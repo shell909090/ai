@@ -201,34 +201,84 @@ source .env
 - `--rss-url`: RSS feed URL（默认：`https://cn.nytimes.com/rss/`）
 - `--seen-links-file`: 已发送链接记录文件路径（默认：`seen_links.json`）
 
+### kev_report
+
+自动拉取 CISA KEV（已知被利用漏洞）列表，与本地软件清单比对，生成月度漏洞报告。
+
+**功能特点**：
+- 从 CISA KEV CSV 拉取指定时间窗口内（默认31天）的新增漏洞
+- 通过 OSV（优先）+ NVD（回退）查询每个 CVE 的受影响软件和最低安全版本
+- 可选：与本地已安装软件（dpkg/rpm/apk/pip/npm/gem）比对，只显示影响本地环境的条目
+- 支持两种显示模式：CVE 列表（`--mode cve`）和按软件包聚合的汇总清单（`--mode summary`）
+- 支持三种输出目标：stdout、本地文件（Markdown + JSON）、Telegram
+
+**使用方法**：
+
+```bash
+# 显示过去31天所有 KEV 漏洞（CVE 列表模式，输出到 stdout）
+uv run kev_report.py --output-stdout --no-auto-inventory
+
+# 汇总模式：按软件包聚合，显示最低安全版本
+uv run kev_report.py --output-stdout --no-auto-inventory --mode summary
+
+# 与本地 dpkg 清单比对，只显示影响本地软件的 CVE
+uv run kev_report.py --output-stdout --mode cve
+
+# 输出到文件
+uv run kev_report.py --output-dir reports/kev --no-auto-inventory
+
+# 推送到 Telegram
+uv run kev_report.py --output-telegram --no-auto-inventory
+```
+
+**kev_report 参数说明**：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--window-days` | 时间窗口（天） | `31` |
+| `--cache-dir` | 缓存目录 | `.cache/kev-report` |
+| `--inventory-file` | 自定义清单文件（可重复），支持 CSV/JSON/TXT | — |
+| `--no-auto-inventory` | 禁用本地包自动采集 | — |
+| `--mode` | 输出模式：`cve`（默认）或 `summary` | `cve` |
+| `--output-stdout` | 打印到 stdout | — |
+| `--output-dir` | 写入本地文件目录 | — |
+| `--output-telegram` | 推送到 Telegram | — |
+| `--feed-ttl-hours` | KEV feed 缓存有效期（小时） | `24` |
+| `--vuln-ttl-hours` | OSV/NVD 缓存有效期（小时） | `168` |
+| `--fail-on-hits` | 有匹配项时以退出码 2 退出（CI 用） | — |
+
+**清单过滤规则**：
+- 不提供清单（`--no-auto-inventory` 且无 `--inventory-file`）：显示所有 CVE
+- 提供清单（自动采集或指定文件）：只显示影响本地已安装软件的 CVE
+
+**汇总模式版本取值**：同一软件在多个 CVE 中出现时，取 `min_safe_version` 的最大值（最严格的安全版本要求）。
+
 ## GitHub Actions 自动化
 
 ### 配置 Secrets
 
 在 GitHub 仓库设置中配置以下 Secrets（Settings → Secrets and variables → Actions）：
 
-| Secret 名称 | 说明 | 示例 |
-|------------|------|------|
-| `GROQ_API_KEY` | LLM API Key | `gsk_...` |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` |
-| `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` |
-| `MODEL` | 可选，模型名称 | `groq/llama-3.3-70b-versatile` |
+| Secret 名称 | 说明 | 示例 | 适用 Workflow |
+|------------|------|------|--------------|
+| `GROQ_API_KEY` | LLM API Key | `gsk_...` | Daily NYT |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` | Daily NYT、Monthly KEV |
+| `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` | Daily NYT、Monthly KEV |
+| `MODEL` | 可选，模型名称 | `groq/llama-3.3-70b-versatile` | Daily NYT |
 
 ### 定时运行
 
-Workflow 配置为：
-- ⏰ **每天北京时间早上 9:00 自动运行**（UTC 1:00）
-- 📰 **抓取 49 小时内的新闻**（保证覆盖边界，避免遗漏）
-- 🔄 **自动去重**：通过 GitHub Actions Cache 持久化 `seen_links.json`，跳过已推送文章
-- 📱 **自动推送到 Telegram**
+| Workflow | 触发时间 | 说明 |
+|----------|----------|------|
+| Daily NYT News Summary | 每天 UTC 01:00 | 抓取 49 小时内新闻，生成 LLM 摘要，推送 Telegram |
+| Monthly KEV Report | 每月1日 UTC 01:20 | 拉取 CISA KEV 月报，生成漏洞报告，提交到仓库 |
 
 ### 手动触发
 
 1. 进入 GitHub 仓库的 **Actions** 标签
-2. 选择左侧的 **Daily NYT News Summary** workflow
+2. 选择左侧对应的 workflow（Daily NYT News Summary 或 Monthly KEV Report）
 3. 点击右侧的 **Run workflow** 按钮
-4. 可选择自定义时间范围（默认 49 小时）
-5. 点击绿色的 **Run workflow** 按钮
+4. 点击绿色的 **Run workflow** 按钮
 
 ### 查看运行结果
 

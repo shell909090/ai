@@ -4,6 +4,9 @@
 # Dedup state
 seen_links.json
 
+# Cache
+.cache/
+
 # Output files
 nyt_summary.txt
 *.txt
