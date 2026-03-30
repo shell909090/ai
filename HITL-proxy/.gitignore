@@ -17,3 +17,13 @@ config.yaml
 *.exe
 *.test
 *.out
+
+# Logs
+*.log
+
+# Docs (local only)
+docs/review.md
+docs/log.md
+
+# Spec files
+*.json

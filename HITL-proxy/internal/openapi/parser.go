@@ -22,7 +22,7 @@ func ParseSpec(ctx context.Context, specID int64, raw []byte) ([]Operation, []De
 		return nil, nil, "", "", fmt.Errorf("load spec: %w", err)
 	}
 
-	if err := doc.Validate(ctx); err != nil {
+	if err := doc.Validate(ctx, openapi3.DisableExamplesValidation(), openapi3.DisableSchemaDefaultsValidation()); err != nil {
 		return nil, nil, "", "", fmt.Errorf("validate spec: %w", err)
 	}
 
