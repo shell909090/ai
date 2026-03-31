@@ -126,6 +126,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/rules", h.basicAuth(h.handleSetRule))
 	mux.HandleFunc("GET /admin/creds", h.basicAuth(h.handleListCreds))
 	mux.HandleFunc("POST /admin/creds", h.basicAuth(h.handleSetCreds))
+	mux.HandleFunc("POST /admin/creds/delete", h.basicAuth(h.handleDeleteCred))
 }
 
 func (h *Handler) handlePending(w http.ResponseWriter, r *http.Request) {
@@ -581,6 +582,33 @@ func (h *Handler) handleSetCreds(w http.ResponseWriter, r *http.Request) {
 	if newKey != "" {
 		existing[newKey] = newVal
 	}
+
+	if err := h.credStore.Set(specName, existing); err != nil {
+		http.Error(w, "save creds: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/creds", http.StatusSeeOther)
+}
+
+func (h *Handler) handleDeleteCred(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	specName := r.FormValue("spec_name")
+	key := r.FormValue("key")
+	if specName == "" || key == "" {
+		http.Error(w, "spec_name and key required", http.StatusBadRequest)
+		return
+	}
+
+	existing, _ := h.credStore.Get(specName)
+	if existing == nil {
+		existing = make(map[string]string)
+	}
+	delete(existing, key)
 
 	if err := h.credStore.Set(specName, existing); err != nil {
 		http.Error(w, "save creds: "+err.Error(), http.StatusInternalServerError)

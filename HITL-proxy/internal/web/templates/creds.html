@@ -6,20 +6,42 @@
     {{range .Specs}}
     <div class="card">
         <h2 style="margin-bottom: 12px;">{{.Name}}</h2>
+
+        {{if .IsRaw}}
+        <div class="meta" style="margin-bottom: 12px;">No security schemes — credentials are injected as raw headers.</div>
+        {{end}}
+
+        {{if .Schemes}}
+        {{$specName := .Name}}
+        <table style="margin-bottom: 16px; border-collapse: collapse; width: 100%;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding: 4px 8px; border-bottom: 1px solid #ddd;">Key</th>
+                    <th style="text-align:left; padding: 4px 8px; border-bottom: 1px solid #ddd;">Value</th>
+                    <th style="padding: 4px 8px; border-bottom: 1px solid #ddd;"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Schemes}}
+                <tr>
+                    <td style="padding: 4px 8px;">{{.Name}}</td>
+                    <td style="padding: 4px 8px; color: #888;">already set</td>
+                    <td style="padding: 4px 8px;">
+                        <form method="POST" action="/admin/creds/delete" style="display:inline;">
+                            <input type="hidden" name="spec_name" value="{{$specName}}">
+                            <input type="hidden" name="key" value="{{.Name}}">
+                            <button type="submit" class="btn btn-reject" style="padding: 4px 10px; font-size: 0.85em;">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+
         <form method="POST" action="/admin/creds">
             <input type="hidden" name="spec_name" value="{{.Name}}">
-            {{if .Schemes}}
-            {{range .Schemes}}
-            <div class="field">
-                <div class="field-label">{{.Name}}</div>
-                <input type="text" name="{{.Name}}"
-                       placeholder="{{if .IsSet}}already set{{else}}enter value{{end}}"
-                       style="width: 400px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
-            </div>
-            {{end}}
-            {{end}}
             {{if .IsRaw}}
-            <div class="meta" style="margin-bottom: 8px;">No security schemes — credentials are injected as raw headers.</div>
             <div class="field">
                 <div class="field-label">New header name</div>
                 <input type="text" name="__new_key" placeholder="e.g. Authorization"
@@ -27,6 +49,14 @@
                 <input type="text" name="__new_val" placeholder="value"
                        style="width: 200px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em; margin-left: 8px;">
             </div>
+            {{else}}
+            {{range .Schemes}}
+            <div class="field">
+                <div class="field-label">{{.Name}}</div>
+                <input type="text" name="{{.Name}}" placeholder="update value"
+                       style="width: 400px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+            </div>
+            {{end}}
             {{end}}
             <div class="actions">
                 <button type="submit" class="btn btn-approve">Save Credentials</button>

@@ -476,6 +476,46 @@ func TestSetCreds_RawMode_NewKeyVal(t *testing.T) {
 	}
 }
 
+func TestDeleteCred_RemovesEntry(t *testing.T) {
+	h, mux := newFullTestHandler(t, "testpass")
+
+	// Seed a cred entry directly.
+	if err := h.credStore.Set("svc", map[string]string{"Authorization": "Bearer tok"}); err != nil {
+		t.Fatalf("set creds: %v", err)
+	}
+
+	form := "spec_name=svc&key=Authorization"
+	r := httptest.NewRequest(http.MethodPost, "/admin/creds/delete", strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.SetBasicAuth("admin", "testpass")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("want 303, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	creds, _ := h.credStore.Get("svc")
+	if _, exists := creds["Authorization"]; exists {
+		t.Errorf("expected Authorization to be deleted, still present")
+	}
+}
+
+func TestDeleteCred_MissingParams_Returns400(t *testing.T) {
+	_, mux := newFullTestHandler(t, "testpass")
+
+	r := httptest.NewRequest(http.MethodPost, "/admin/creds/delete",
+		strings.NewReader("spec_name=svc"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.SetBasicAuth("admin", "testpass")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
 func TestAdminCreds_RawMode_Shows200(t *testing.T) {
 	_, mux := newFullTestHandler(t, "testpass")
 
