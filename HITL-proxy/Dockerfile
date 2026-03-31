@@ -9,11 +9,15 @@ RUN go build -o /bin/hitl-proxy ./cmd/hitl-proxy
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    adduser -D -u 1000 hitl
 
 WORKDIR /app
 COPY --from=builder /bin/hitl-proxy /app/hitl-proxy
 COPY static/ /app/static/
+RUN mkdir -p /app/data && chown -R hitl:hitl /app
+
+USER hitl
 
 EXPOSE 8080
 
