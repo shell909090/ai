@@ -2,6 +2,8 @@
 
 OpenAPI proxy service for AI Agent operations with Human-in-the-Loop approval. Provides AAAA (Authentication, Authorization, Auditing, Approval) as a middleware between AI agents and target APIs.
 
+[中文说明](README.cn.md)
+
 ## Features
 
 - **OpenAPI Spec Import** — import any OpenAPI 3.0 spec, auto-extract operations and dependencies
@@ -201,3 +203,11 @@ make lint     # golangci-lint + ruff check
 make test     # go test + pytest
 make build    # build proxy (Go) + sync bridge (Python/uv)
 ```
+
+## Author
+
+Shell Xu &lt;shell909090@gmail.com&gt;
+
+## License
+
+Copyright (c) 2024 Shell Xu. MIT License.

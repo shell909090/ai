@@ -21,6 +21,7 @@ build-proxy:
 
 build-bridge:
 	cd cmd/hitl-bridge && uv sync
+	cd cmd/hitl-bridge && uv run python -m py_compile hitl_bridge.py
 
 smoketest: build-proxy
 	cd cmd/hitl-bridge && uv run pytest test_smoke.py

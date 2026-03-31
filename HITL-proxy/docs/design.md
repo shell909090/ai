@@ -144,29 +144,26 @@ type VectorResult struct {
 }
 ```
 
-### 2.4 Searcher 接口修订
+### 2.4 Searcher 接口
 
-现有接口中 `IndexTx(*sql.Tx, ...)` 把 SQLite 事务泄漏到接口上，向量库无法实现。修订：
-
-- `IndexTx` 从接口移除，保留为 `FTS5Searcher` 的具体公有方法（handler 直接调用）
-- 接口新增 `Index(ctx, ops, specID)`，在 SQLite 事务提交后调用，负责向量层索引
-- 新增 `DeleteSpec(ctx, specID)`
-- 全面加 `context.Context`
+`Searcher` 是检索的统一接口，由 `HybridSearcher` 实现。向量索引操作单独抽为 `VectorIndexer` 接口，在事务提交后调用，避免把 SQLite 事务泄漏到接口层。
 
 ```go
 // Searcher 是检索的统一接口。
-// FTS5Searcher：纯关键词检索（无 embedding 时的完整实现或降级）。
-// HybridSearcher：FTS5 + 向量检索，RRF 融合。
 type Searcher interface {
-    // Index 在 SQLite 事务提交后调用，触发向量索引生成。
-    // FTS5Searcher 此方法为 no-op（FTS5 由触发器自动维护）。
-    Index(ctx context.Context, ops []openapi.Operation, specID int64) error
-
-    // DeleteSpec 删除 spec 相关的所有向量索引条目。
-    DeleteSpec(ctx context.Context, specID int64) error
+    // IndexTx 在 SQLite 事务内写入 FTS5 索引和操作元数据。
+    IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []openapi.Dependency,
+            specID int64, specName string) (bool, error)
 
     // Search 返回语义/关键词相关的操作列表。
     Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
+}
+
+// VectorIndexer 是可选接口，供支持向量 embedding 的 Searcher 实现。
+// 在 SQLite 事务提交后调用，不阻塞原子导入。
+type VectorIndexer interface {
+    IndexEmbeddings(ctx context.Context, ops []openapi.Operation, specID int64) error
+    DeleteSpecEmbeddings(ctx context.Context, specID int64) error
 }
 ```
 

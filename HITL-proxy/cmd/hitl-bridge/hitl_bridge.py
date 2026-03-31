@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Test connectivity: connect, initialize, ping, then exit",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
     return parser.parse_args()
 
 
@@ -130,12 +135,12 @@ async def run(url: str, api_key: str) -> None:
 
 def main() -> None:
     """Entry point for the hitl-bridge CLI."""
+    args = parse_args()
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if args.debug else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
-    args = parse_args()
     try:
         if args.ping:
             asyncio.run(ping(args.url, args.api_key))

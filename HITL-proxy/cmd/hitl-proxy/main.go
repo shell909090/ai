@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,7 +26,14 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
+
+	logLevel := slog.LevelInfo
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

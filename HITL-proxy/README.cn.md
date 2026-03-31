@@ -2,6 +2,8 @@
 
 OpenAPI 代理服务，作为 AI Agent 操作第三方 API 的中间层，提供 AAAA（Authentication 认证、Authorization 授权、Auditing 审计、Approval 审批）能力。
 
+[English](README.md)
+
 ## 功能特性
 
 - **OpenAPI Spec 导入** — 导入任意 OpenAPI 3.0 规范，自动提取操作及依赖关系
@@ -201,3 +203,11 @@ make lint     # golangci-lint + ruff check
 make test     # go test + pytest
 make build    # 构建 proxy (Go) + 同步 bridge (Python/uv)
 ```
+
+## 作者
+
+Shell Xu &lt;shell909090@gmail.com&gt;
+
+## 版权与授权
+
+Copyright (c) 2024 Shell Xu。MIT License。

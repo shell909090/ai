@@ -17,3 +17,12 @@ dev = [
     "ruff>=0.15.5",
     "uvicorn>=0.30",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
