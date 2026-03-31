@@ -12,6 +12,7 @@
 # Credentials
 credentials.enc
 config.yaml
+.env
 
 # Go
 *.exe

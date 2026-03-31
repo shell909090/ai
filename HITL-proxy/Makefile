@@ -1,4 +1,6 @@
-.PHONY: fmt lint unittest build smoketest test clean
+.PHONY: fmt lint unittest build smoketest test run clean
+
+IMAGE ?= hitl-proxy:latest
 
 fmt:
 	gofmt -w .
@@ -24,6 +26,17 @@ smoketest: build-proxy
 	cd cmd/hitl-bridge && uv run pytest test_smoke.py
 
 test: build smoketest
+
+docker-build:
+	docker build -t $(IMAGE) .
+
+run: docker-build
+	docker run --rm \
+		--env-file .env \
+		-p 8080:8080 \
+		-v $(PWD)/config.yaml:/app/config.yaml:ro \
+		-v $(PWD)/data:/app/data \
+		$(IMAGE)
 
 clean:
 	rm -rf bin/

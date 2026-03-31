@@ -16,17 +16,24 @@ OpenAPI 代理服务，作为 AI Agent 操作第三方 API 的中间层，提供
 ## 快速开始
 
 ```bash
-# 构建
-make build
-
 # 复制并编辑配置
 cp config.example.yaml config.yaml
 
-# 设置凭证加密密钥（32 字节 hex）
-export HITL_CRED_KEY=$(openssl rand -hex 32)
+# 根据示例创建 .env 并填入真实值
+cp .env.example .env
+$EDITOR .env
 
-# 运行
-./bin/hitl-proxy -config config.yaml
+# 构建镜像并通过 Docker 运行（从 .env 读取环境变量）
+make run
+```
+
+环境变量说明参见 [`.env.example`](.env.example)。
+
+### 不使用 Docker 运行
+
+```bash
+make build
+./bin/hitl-proxy --config config.yaml
 ```
 
 ## 认证

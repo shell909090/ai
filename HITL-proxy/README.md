@@ -16,17 +16,24 @@ OpenAPI proxy service for AI Agent operations with Human-in-the-Loop approval. P
 ## Quick Start
 
 ```bash
-# Build
-make build
-
 # Copy and edit config
 cp config.example.yaml config.yaml
 
-# Set credential encryption key (32 bytes hex)
-export HITL_CRED_KEY=$(openssl rand -hex 32)
+# Create .env from the example and fill in your values
+cp .env.example .env
+$EDITOR .env
 
-# Run
-./bin/hitl-proxy -config config.yaml
+# Build image and run via Docker (reads environment from .env)
+make run
+```
+
+See [`.env.example`](.env.example) for all available environment variables.
+
+### Running without Docker
+
+```bash
+make build
+./bin/hitl-proxy --config config.yaml
 ```
 
 ## Authentication
