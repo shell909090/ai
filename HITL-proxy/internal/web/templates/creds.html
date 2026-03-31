@@ -6,9 +6,9 @@
     {{range .Specs}}
     <div class="card">
         <h2 style="margin-bottom: 12px;">{{.Name}}</h2>
-        {{if .Schemes}}
         <form method="POST" action="/admin/creds">
             <input type="hidden" name="spec_name" value="{{.Name}}">
+            {{if .Schemes}}
             {{range .Schemes}}
             <div class="field">
                 <div class="field-label">{{.Name}}</div>
@@ -17,13 +17,21 @@
                        style="width: 400px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
             </div>
             {{end}}
+            {{end}}
+            {{if .IsRaw}}
+            <div class="meta" style="margin-bottom: 8px;">No security schemes — credentials are injected as raw headers.</div>
+            <div class="field">
+                <div class="field-label">New header name</div>
+                <input type="text" name="__new_key" placeholder="e.g. Authorization"
+                       style="width: 200px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
+                <input type="text" name="__new_val" placeholder="value"
+                       style="width: 200px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1em; margin-left: 8px;">
+            </div>
+            {{end}}
             <div class="actions">
                 <button type="submit" class="btn btn-approve">Save Credentials</button>
             </div>
         </form>
-        {{else}}
-            <div class="meta">No security schemes defined in this spec.</div>
-        {{end}}
     </div>
     {{end}}
 {{else}}

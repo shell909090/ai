@@ -427,3 +427,77 @@ func TestDeleteSpec_NotFound_Returns404(t *testing.T) {
 		t.Errorf("want 404, got %d", w.Code)
 	}
 }
+
+// --- Raw-header creds (spec with no securitySchemes) ---
+
+// minimalSpecNoSchemes has no components.securitySchemes, triggering raw-header mode.
+const minimalSpecNoSchemes = `{
+  "openapi": "3.0.0",
+  "info": {"title": "NoSchemes", "version": "1.0.0"},
+  "paths": {
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`
+
+func TestSetCreds_RawMode_NewKeyVal(t *testing.T) {
+	h, mux := newFullTestHandler(t, "testpass")
+
+	// Import spec with no security schemes.
+	r := httptest.NewRequest(http.MethodPost, "/specs/import?name=rawspec",
+		strings.NewReader(minimalSpecNoSchemes))
+	r.Header.Set("Content-Type", "application/json")
+	r.SetBasicAuth("admin", "testpass")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("import failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// Set a raw header cred via __new_key/__new_val.
+	form := "spec_name=rawspec&__new_key=Authorization&__new_val=Bearer+tok123"
+	r2 := httptest.NewRequest(http.MethodPost, "/admin/creds", strings.NewReader(form))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r2.SetBasicAuth("admin", "testpass")
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, r2)
+	if w2.Code != http.StatusSeeOther {
+		t.Errorf("want 303, got %d; body: %s", w2.Code, w2.Body.String())
+	}
+
+	// Verify the cred was stored.
+	creds, _ := h.credStore.Get("rawspec")
+	if creds["Authorization"] != "Bearer tok123" {
+		t.Errorf("want 'Bearer tok123', got %q", creds["Authorization"])
+	}
+}
+
+func TestAdminCreds_RawMode_Shows200(t *testing.T) {
+	_, mux := newFullTestHandler(t, "testpass")
+
+	// Import spec with no security schemes.
+	r := httptest.NewRequest(http.MethodPost, "/specs/import?name=rawspec2",
+		strings.NewReader(minimalSpecNoSchemes))
+	r.Header.Set("Content-Type", "application/json")
+	r.SetBasicAuth("admin", "testpass")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("import failed: %d %s", w.Code, w.Body.String())
+	}
+
+	r2 := httptest.NewRequest(http.MethodGet, "/admin/creds", nil)
+	r2.SetBasicAuth("admin", "testpass")
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, r2)
+	if w2.Code != http.StatusOK {
+		t.Errorf("want 200, got %d; body: %s", w2.Code, w2.Body.String())
+	}
+	if !strings.Contains(w2.Body.String(), "raw headers") {
+		t.Errorf("want raw-header hint in body, got: %s", w2.Body.String())
+	}
+}

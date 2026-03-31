@@ -487,10 +487,13 @@ type credScheme struct {
 }
 
 // credSpecRow holds spec info plus parsed security schemes for the creds page.
+// IsRaw is true when the spec has no securitySchemes; credentials are injected
+// as raw headers and the user can add arbitrary key/value pairs.
 type credSpecRow struct {
 	ID      int64
 	Name    string
 	Schemes []credScheme
+	IsRaw   bool
 }
 
 func (h *Handler) handleListCreds(w http.ResponseWriter, r *http.Request) {
@@ -514,16 +517,25 @@ func (h *Handler) handleListCreds(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal([]byte(schemesJSON), &schemesMap)
 
 		existingCreds, _ := h.credStore.Get(name)
-		schemes := make([]credScheme, 0, len(schemesMap))
-		for k := range schemesMap {
-			_, set := existingCreds[k]
-			schemes = append(schemes, credScheme{Name: k, IsSet: set})
+		isRaw := len(schemesMap) == 0
+		schemes := make([]credScheme, 0)
+		if isRaw {
+			// No security schemes: show existing raw header entries for editing.
+			for k := range existingCreds {
+				schemes = append(schemes, credScheme{Name: k, IsSet: true})
+			}
+		} else {
+			for k := range schemesMap {
+				_, set := existingCreds[k]
+				schemes = append(schemes, credScheme{Name: k, IsSet: set})
+			}
 		}
 
 		specs = append(specs, credSpecRow{
 			ID:      id,
 			Name:    name,
 			Schemes: schemes,
+			IsRaw:   isRaw,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -556,13 +568,18 @@ func (h *Handler) handleSetCreds(w http.ResponseWriter, r *http.Request) {
 		existing = make(map[string]string)
 	}
 
+	newKey := strings.TrimSpace(r.FormValue("__new_key"))
+	newVal := r.FormValue("__new_val")
 	for k, vs := range r.Form {
-		if k == "spec_name" {
+		if k == "spec_name" || k == "__new_key" || k == "__new_val" {
 			continue
 		}
 		if len(vs) > 0 && vs[0] != "" {
 			existing[k] = vs[0]
 		}
+	}
+	if newKey != "" {
+		existing[newKey] = newVal
 	}
 
 	if err := h.credStore.Set(specName, existing); err != nil {
