@@ -3,11 +3,51 @@ package search
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shell909090/ai/HITL-proxy/internal/database"
 	"github.com/shell909090/ai/HITL-proxy/internal/openapi"
 )
+
+func TestBuildFTSQuery_PlainWords(t *testing.T) {
+	got := buildFTSQuery("list repos")
+	// Each word should get a * suffix and be joined with OR
+	if got != "list* OR repos*" {
+		t.Errorf("got %q, want %q", got, "list* OR repos*")
+	}
+}
+
+func TestBuildFTSQuery_EmptyString(t *testing.T) {
+	got := buildFTSQuery("")
+	if got != "" {
+		t.Errorf("got %q, want empty string", got)
+	}
+}
+
+func TestBuildFTSQuery_PunctuationStripped(t *testing.T) {
+	got := buildFTSQuery("hello, world!")
+	// Punctuation trimmed, wildcards added
+	if got != "hello* OR world*" {
+		t.Errorf("got %q, want %q", got, "hello* OR world*")
+	}
+}
+
+func TestBuildFTSQuery_SingleWord(t *testing.T) {
+	got := buildFTSQuery("repository")
+	if got != "repository*" {
+		t.Errorf("got %q, want %q", got, "repository*")
+	}
+}
+
+func TestBuildFTSQuery_OnlyPunctuation(t *testing.T) {
+	// A string that is only punctuation should return the original query
+	// (all words stripped to empty → len(parts)==0 → return query)
+	got := buildFTSQuery("!!!")
+	if got != "!!!" {
+		t.Errorf("got %q, want %q", got, "!!!")
+	}
+}
 
 func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 	dir := t.TempDir()
@@ -241,5 +281,78 @@ func TestFTS5SearcherConflictPrefix(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("original listRepos should still exist, got count %d", count)
+	}
+}
+
+func TestMarshalResults_NonEmpty(t *testing.T) {
+	results := []SearchResult{
+		{
+			Operation: openapi.Operation{
+				OperationID: "listItems",
+				Method:      "GET",
+				Path:        "/items",
+				Summary:     "List items",
+			},
+			Rank: 1.0,
+		},
+	}
+	out, err := MarshalResults(results)
+	if err != nil {
+		t.Fatalf("MarshalResults: %v", err)
+	}
+	if out == "" {
+		t.Error("expected non-empty JSON output")
+	}
+	// Should contain the operation ID
+	if !strings.Contains(out, "listItems") {
+		t.Errorf("expected listItems in output, got: %s", out)
+	}
+}
+
+func TestMarshalResults_Empty(t *testing.T) {
+	out, err := MarshalResults(nil)
+	if err != nil {
+		t.Fatalf("MarshalResults nil: %v", err)
+	}
+	if out == "" {
+		t.Error("expected non-empty JSON (null or [])")
+	}
+}
+
+func TestFTS5Searcher_Search_NoResults(t *testing.T) {
+	dir := t.TempDir()
+	db, err := database.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	searcher := NewFTS5Searcher(db)
+	results, err := searcher.Search(context.Background(), "zzznomatch", 10)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestFTS5Searcher_Search_DefaultLimit(t *testing.T) {
+	// limit=0 should default to 10 (not panic)
+	dir := t.TempDir()
+	db, err := database.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	searcher := NewFTS5Searcher(db)
+	results, err := searcher.Search(context.Background(), "anything", 0)
+	if err != nil {
+		t.Fatalf("search with limit=0: %v", err)
+	}
+	// no ops indexed, result should be empty
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
 	}
 }
