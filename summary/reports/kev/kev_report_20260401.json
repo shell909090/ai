@@ -1,0 +1,613 @@
+{
+  "generated_at_utc": "2026-04-01T04:23:46.578301+00:00",
+  "window_days": 31,
+  "inventory_count": 0,
+  "kev_entries_in_window": 26,
+  "report_count": 26,
+  "rows": [
+    {
+      "cve_id": "CVE-2026-3055",
+      "date_added": "2026-03-30",
+      "kev_vendor_project": "Citrix",
+      "kev_product": "NetScaler",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-02",
+      "kev_notes": "https://support.citrix.com/support-home/kbsearch/article?articleNumber=CTX696300&articleURL=NetScaler_ADC_and_NetScaler_Gateway_Security_Bulletin_for_CVE_2026_3055_and_CVE_2026_4368 ; https://nvd.nist.gov/vuln/detail/CVE-2026-3055",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "citrix:netscaler_application_delivery_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "13.1-37.262",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "citrix:netscaler_application_delivery_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "13.1-62.23",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "citrix:netscaler_application_delivery_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.1-60.58",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "citrix:netscaler_gateway",
+          "ecosystem": "cpe",
+          "min_safe_version": "13.1-62.23",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "citrix:netscaler_gateway",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.1-60.58",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-53521",
+      "date_added": "2026-03-27",
+      "kev_vendor_project": "F5",
+      "kev_product": "BIG-IP",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-30",
+      "kev_notes": "Please adhere to F5’s guidelines to assess exposure and mitigate risks. Check for signs of potential compromise on all internet accessible F5 products affected by this vulnerability. For more information please see: https://my.f5.com/manage/s/article/K000156741 ; https://my.f5.com/manage/s/article/K000160486 ; https://my.f5.com/manage/s/article/K11438344 ; https://nvd.nist.gov/vuln/detail/CVE-2025-53521",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "f5:big-ip_access_policy_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "15.1.10.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "f5:big-ip_access_policy_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "16.1.6.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "f5:big-ip_access_policy_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "17.1.3",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "f5:big-ip_access_policy_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "17.5.1.3",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-33634",
+      "date_added": "2026-03-26",
+      "kev_vendor_project": "Aquasecurity",
+      "kev_product": "Trivy",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-09",
+      "kev_notes": "This vulnerability involves a supply‑chain compromise in a product that may be used across multiple products and environments. Additional vendor‑provided guidance must be followed to ensure full remediation. For more information, please see: https://github.com/advisories/GHSA-69fq-xp46-6x23 ; https://nvd.nist.gov/vuln/detail/CVE-2026-33634",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "aquasec:setup-trivy",
+          "ecosystem": "cpe",
+          "min_safe_version": "0.2.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "aquasec:trivy",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "aquasec:trivy_action",
+          "ecosystem": "cpe",
+          "min_safe_version": "0.35.0",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "litellm:litellm",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "telnyx:telnyx",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-33017",
+      "date_added": "2026-03-25",
+      "kev_vendor_project": "Langflow",
+      "kev_product": "Langflow",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-08",
+      "kev_notes": "https://github.com/langflow-ai/langflow/security/advisories/GHSA-vwmf-pq79-vjvx ; https://nvd.nist.gov/vuln/detail/CVE-2026-33017",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "langflow:langflow",
+          "ecosystem": "cpe",
+          "min_safe_version": "1.8.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-32432",
+      "date_added": "2026-03-20",
+      "kev_vendor_project": "Craft CMS",
+      "kev_product": "Craft CMS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-03",
+      "kev_notes": "https://craftcms.com/knowledge-base/craft-cms-cve-2025-32432 ; https://github.com/craftcms/cms/security/advisories/GHSA-f3gw-9ww9-jmc3 ; https://nvd.nist.gov/vuln/detail/CVE-2025-32432",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "craftcms:craft_cms",
+          "ecosystem": "cpe",
+          "min_safe_version": "3.9.15",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "craftcms:craft_cms",
+          "ecosystem": "cpe",
+          "min_safe_version": "4.14.15",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "craftcms:craft_cms",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.6.17",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-54068",
+      "date_added": "2026-03-20",
+      "kev_vendor_project": "Laravel",
+      "kev_product": "Livewire",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-03",
+      "kev_notes": "https://github.com/livewire/livewire/security/advisories/GHSA-29cq-5w36-x7w3 ; https://github.com/livewire/livewire/commit/ef04be759da41b14d2d129e670533180a44987dc ; https://nvd.nist.gov/vuln/detail/CVE-2025-54068",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "laravel:livewire",
+          "ecosystem": "cpe",
+          "min_safe_version": "3.6.4",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-43510",
+      "date_added": "2026-03-20",
+      "kev_vendor_project": "Apple",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-03",
+      "kev_notes": "https://support.apple.com/en-us/125632 ; https://support.apple.com/en-us/125633 ; https://support.apple.com/en-us/125634 ; https://support.apple.com/en-us/125635 ; https://support.apple.com/en-us/125636 ; https://support.apple.com/en-us/125637 ; https://support.apple.com/en-us/125638 ; https://support.apple.com/en-us/125639 ; https://nvd.nist.gov/vuln/detail/CVE-2025-43510",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "apple:ipados",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:ipados",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:iphone_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:iphone_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.8.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "15.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:tvos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:visionos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:watchos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-43520",
+      "date_added": "2026-03-20",
+      "kev_vendor_project": "Apple",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-03",
+      "kev_notes": "https://support.apple.com/en-us/125632 ; https://support.apple.com/en-us/125633 ; https://support.apple.com/en-us/125634 ; https://support.apple.com/en-us/125635 ; https://support.apple.com/en-us/125636 ; https://support.apple.com/en-us/125637 ; https://support.apple.com/en-us/125638 ; https://support.apple.com/en-us/125639 ; https://nvd.nist.gov/vuln/detail/CVE-2025-43520",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "apple:ipados",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:ipados",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:iphone_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:iphone_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.8.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "15.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:tvos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:visionos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:watchos",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-31277",
+      "date_added": "2026-03-20",
+      "kev_vendor_project": "Apple",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-03",
+      "kev_notes": "https://support.apple.com/en-us/124147 ; https://support.apple.com/en-us/124149 ; https://support.apple.com/en-us/124152 ; https://support.apple.com/en-us/124153 ; https://support.apple.com/en-us/124155 ; https://nvd.nist.gov/vuln/detail/CVE-2025-31277",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "apple:safari",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:ipados",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:iphone_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:macos",
+          "ecosystem": "cpe",
+          "min_safe_version": "15.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:tvos",
+          "ecosystem": "cpe",
+          "min_safe_version": "18.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:visionos",
+          "ecosystem": "cpe",
+          "min_safe_version": "2.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "apple:watchos",
+          "ecosystem": "cpe",
+          "min_safe_version": "11.6",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20131",
+      "date_added": "2026-03-19",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Secure Firewall Management Center (FMC)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-22",
+      "kev_notes": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-fmc-rce-NKhnULJh ; https://nvd.nist.gov/vuln/detail/CVE-2026-20131",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cisco:secure_firewall_management_center",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-66376",
+      "date_added": "2026-03-18",
+      "kev_vendor_project": "Synacor",
+      "kev_product": "Zimbra Collaboration Suite (ZCS)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-01",
+      "kev_notes": "https://wiki.zimbra.com/wiki/Zimbra_Security_Advisories ; https://nvd.nist.gov/vuln/detail/CVE-2025-66376",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "synacor:zimbra_collaboration_suite",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.18",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "synacor:zimbra_collaboration_suite",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.1.13",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20963",
+      "date_added": "2026-03-18",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-21",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-20963 ; https://nvd.nist.gov/vuln/detail/CVE-2026-20963",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-47813",
+      "date_added": "2026-03-16",
+      "kev_vendor_project": "Wing FTP Server",
+      "kev_product": "Wing FTP Server",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-30",
+      "kev_notes": "https://www.wftpserver.com/serverhistory.htm ; https://nvd.nist.gov/vuln/detail/CVE-2025-47813",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-3910",
+      "date_added": "2026-03-13",
+      "kev_vendor_project": "Google",
+      "kev_product": "Chromium V8",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-27",
+      "kev_notes": "https://chromereleases.googleblog.com/2026/03/stable-channel-update-for-desktop_12.html ; https://nvd.nist.gov/vuln/detail/CVE-2026-3910",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-3909",
+      "date_added": "2026-03-13",
+      "kev_vendor_project": "Google",
+      "kev_product": "Skia",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-27",
+      "kev_notes": "This vulnerability affects a common open-source component, third-party library, or a protocol used by different products. Please check with specific vendors for information on patching status. For more information, please see: https://chromereleases.googleblog.com/2026/03/stable-channel-update-for-desktop_13.html ; https://nvd.nist.gov/vuln/detail/CVE-2026-3909",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-68613",
+      "date_added": "2026-03-11",
+      "kev_vendor_project": "n8n",
+      "kev_product": "n8n",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-25",
+      "kev_notes": "https://github.com/n8n-io/n8n/security/advisories/GHSA-v98v-ff95-f3cp ; https://nvd.nist.gov/vuln/detail/CVE-2025-68613",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2021-22054",
+      "date_added": "2026-03-09",
+      "kev_vendor_project": "Omnissa",
+      "kev_product": "Workspace One UEM",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-23",
+      "kev_notes": "https://web.archive.org/web/20211222154335/https://www.vmware.com/security/advisories/VMSA-2021-0029.html ; https://nvd.nist.gov/vuln/detail/CVE-2021-22054",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-26399",
+      "date_added": "2026-03-09",
+      "kev_vendor_project": "SolarWinds",
+      "kev_product": "Web Help Desk",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-12",
+      "kev_notes": "https://www.solarwinds.com/trust-center/security-advisories/cve-2025-26399 ; https://documentation.solarwinds.com/en/success_center/whd/content/release_notes/whd_12-8-7-hotfix-1_release_notes.htm ; https://nvd.nist.gov/vuln/detail/CVE-2025-26399",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-1603",
+      "date_added": "2026-03-09",
+      "kev_vendor_project": "Ivanti",
+      "kev_product": "Endpoint Manager (EPM)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-23",
+      "kev_notes": "https://hub.ivanti.com/s/article/Security-Advisory-EPM-February-2026-for-EPM-2024?language=en_US ; https://nvd.nist.gov/vuln/detail/CVE-2026-1603",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "ivanti:endpoint_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "2024",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ivanti:endpoint_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2017-7921",
+      "date_added": "2026-03-05",
+      "kev_vendor_project": "Hikvision",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-26",
+      "kev_notes": "https://www.hikvision.com/us-en/support/document-center/special-notices/privilege-escalating-vulnerability-in-certain-hikvision-ip-cameras/ ; https://nvd.nist.gov/vuln/detail/CVE-2017-7921",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2021-22681",
+      "date_added": "2026-03-05",
+      "kev_vendor_project": "Rockwell",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-26",
+      "kev_notes": "https://support.rockwellautomation.com/app/answers/answer_view/a_id/1130301/~/cve-2021-22681%3A-authentication-bypass-vulnerability-found-in-logix-controllers- ; https://www.cisa.gov/news-events/ics-advisories/icsa-21-056-03 ; https://nvd.nist.gov/vuln/detail/CVE-2021-22681",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2023-43000",
+      "date_added": "2026-03-05",
+      "kev_vendor_project": "Apple",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-26",
+      "kev_notes": "https://support.apple.com/en-us/120324 ; https://support.apple.com/en-us/120331 ; https://support.apple.com/en-us/120338 ; https://nvd.nist.gov/vuln/detail/CVE-2023-43000",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2021-30952",
+      "date_added": "2026-03-05",
+      "kev_vendor_project": "Apple",
+      "kev_product": "Multiple Products",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-26",
+      "kev_notes": "https://support.apple.com/en-us/HT212975 ; https://support.apple.com/en-us/HT212976 ; https://support.apple.com/en-us/HT212978 ; https://support.apple.com/en-us/HT212980 ; https://support.apple.com/en-us/HT212982 ; https://nvd.nist.gov/vuln/detail/CVE-2021-30952",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2023-41974",
+      "date_added": "2026-03-05",
+      "kev_vendor_project": "Apple",
+      "kev_product": "iOS and iPadOS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-26",
+      "kev_notes": "https://support.apple.com/en-us/HT213938 ; https://support.apple.com/kb/HT213938 ; https://nvd.nist.gov/vuln/detail/CVE-2023-41974",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-22719",
+      "date_added": "2026-03-03",
+      "kev_vendor_project": "Broadcom",
+      "kev_product": "VMware Aria Operations",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-24",
+      "kev_notes": "https://support.broadcom.com/web/ecx/support-content-notification/-/external/content/SecurityAdvisories/0/36947 ; https://knowledge.broadcom.com/external/article/430349 ; https://nvd.nist.gov/vuln/detail/CVE-2026-22719",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-21385",
+      "date_added": "2026-03-03",
+      "kev_vendor_project": "Qualcomm",
+      "kev_product": "Multiple Chipsets",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-03-24",
+      "kev_notes": "Please check with specific vendors (OEMs,) for information on patching status. For more information, please see: https://source.android.com/docs/security/bulletin/2026/2026-03-01 ; https://nvd.nist.gov/vuln/detail/CVE-2026-21385",
+      "matched_local_software": [],
+      "affected_software": []
+    }
+  ]
+}
