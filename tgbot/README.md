@@ -73,6 +73,45 @@ python3 tgbot.py send "hello"
 python3 tgbot.py send -c 123456 "hello"
 ```
 
+### ACP 守护模式
+
+将 Telegram 消息转发给 ACP 兼容的 agent（Claude Code、Codex、OpenCode 等），并将回复流式发回。
+
+```bash
+# 使用 config 中配置的后端
+python3 tgbot.py acp
+
+# 指定后端命令（覆盖 config）
+python3 tgbot.py acp --agent-cmd "codex --acp"
+
+# 恢复已有会话
+python3 tgbot.py acp --session-id <UUID>
+
+# 自动批准所有权限请求（无人值守模式）
+python3 tgbot.py acp --yolo
+```
+
+**配置文件**（`~/.config/telegram/config.ini`）新增 `[acp]` section：
+
+```ini
+[bot]
+token = YOUR_BOT_TOKEN
+chat_id = YOUR_CHAT_ID
+
+[acp]
+command = claude --acp
+cwd = /home/user/project
+```
+
+**权限处理**：默认模式下，agent 请求工具权限时，bot 会向用户发送 Telegram 消息列出选项，等待用户回复：
+- `y` / `Y`：允许（选第一个 allow 选项）
+- `n` / `N`：拒绝
+- 数字（如 `1`、`2`）：选择对应选项编号
+
+回复必须是以上格式，其他内容会收到提示并继续等待。
+
+**回复流式推送**：agent 的回复会实时 edit 同一条 Telegram 消息，完成后去掉光标。
+
 ### 日志
 
 通过 `-l` 控制日志级别，默认 WARNING。
@@ -80,4 +119,5 @@ python3 tgbot.py send -c 123456 "hello"
 ```bash
 python3 tgbot.py -l DEBUG get
 python3 tgbot.py -l INFO send "hello"
+python3 tgbot.py -l INFO acp
 ```
