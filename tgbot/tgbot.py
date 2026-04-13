@@ -461,6 +461,52 @@ def _handle_permission(token: str, chat_id: int, params: dict,
             time.sleep(0.5)
 
 
+# ─── Group message helpers ───────────────────────────────────────────────────
+
+def _strip_bot_mentions(text: str, entities: list, bot_username: str) -> str:
+    """Remove all @bot_username mentions from text using Telegram's UTF-16 entity offsets."""
+    bot_at = f"@{bot_username}".lower()
+    utf16 = text.encode("utf-16-le")
+    # Collect UTF-16 byte ranges to remove
+    remove: list[tuple[int, int]] = []
+    for ent in entities:
+        if ent.get("type") != "mention":
+            continue
+        start = ent["offset"] * 2
+        end = (ent["offset"] + ent["length"]) * 2
+        if utf16[start:end].decode("utf-16-le").lower() == bot_at:
+            remove.append((start, end))
+    if not remove:
+        return text
+    parts = []
+    prev = 0
+    for start, end in sorted(remove):
+        parts.append(utf16[prev:start])
+        prev = end
+    parts.append(utf16[prev:])
+    return " ".join(b"".join(parts).decode("utf-16-le").split())
+
+
+def _addressed_in_group(msg: dict, bot_id: int, bot_username: str) -> bool:
+    """Return True if the group message is addressed to the bot (@mention or reply)."""
+    # Reply to a message sent by the bot
+    reply_from = msg.get("reply_to_message", {}).get("from", {})
+    if reply_from.get("id") == bot_id:
+        return True
+    # Explicit @mention in entities
+    bot_at = f"@{bot_username}".lower()
+    text = msg.get("text", "")
+    utf16 = text.encode("utf-16-le")
+    for ent in msg.get("entities", []):
+        if ent.get("type") != "mention":
+            continue
+        start = ent["offset"] * 2
+        end = (ent["offset"] + ent["length"]) * 2
+        if utf16[start:end].decode("utf-16-le").lower() == bot_at:
+            return True
+    return False
+
+
 # ─── ACP daemon ───────────────────────────────────────────────────────────────
 
 def cmd_acp(args):
@@ -498,6 +544,14 @@ def cmd_acp(args):
         else:
             log.warning("Cron file not found: %s", cron_path)
     cron_last: dict[int, tuple] = {}  # job index → (year, month, day, hour, minute)
+
+    # Identify ourselves
+    me = api_call(token, "getMe")
+    if not me.get("ok"):
+        sys.exit(f"Error: getMe failed: {me}")
+    bot_id: int = me["result"]["id"]
+    bot_username: str = me["result"]["username"]
+    log.info("ACP bot: @%s (id=%d)", bot_username, bot_id)
 
     log.info("Starting ACP: cmd=%r cwd=%r yolo=%s session=%s",
              acp_cmd, cwd, args.yolo, args.session_id)
@@ -601,7 +655,18 @@ def cmd_acp(args):
                 if from_id not in allow_users:
                     continue
 
+                chat_type = msg.get("chat", {}).get("type", "private")
+                if chat_type in ("group", "supergroup"):
+                    if not _addressed_in_group(msg, bot_id, bot_username):
+                        continue
+
                 text = msg.get("text", "").strip()
+                if not text:
+                    continue
+
+                entities = msg.get("entities", [])
+                if chat_type in ("group", "supergroup"):
+                    text = _strip_bot_mentions(text, entities, bot_username)
                 if not text:
                     continue
 
