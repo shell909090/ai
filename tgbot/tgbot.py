@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 from http.client import RemoteDisconnected
@@ -20,7 +21,7 @@ log = logging.getLogger("tgbot")
 
 CONFIG_PATH = Path.home() / ".config" / "telegram" / "config.ini"
 BASE_URL = "https://api.telegram.org/bot{token}"
-_retry_delay = 3  # seconds between retries; overridden by --retry-delay in acp mode
+_retry_delay = 3  # seconds between network-error retries
 
 
 def load_config(path: Path = CONFIG_PATH) -> configparser.ConfigParser:
@@ -63,7 +64,7 @@ def api_call(token: str, method: str, params: dict | None = None, retries: int =
             except Exception:
                 return {"ok": False, "description": body}
         except (URLError, RemoteDisconnected) as e:
-            # Network error (SSL, connection refused, remote disconnect, …) — retry
+            # Network error — retry up to `retries` times
             log.error("API %s failed: %s", method, e)
             if attempt < retries:
                 log.warning("Retrying %s in %ds… (%d/%d)", method, _retry_delay, attempt + 1, retries)
@@ -102,7 +103,7 @@ def cmd_get(args):
             continue
         has_output = True
         if args.json:
-            from datetime import datetime, timezone
+            from datetime import timezone
             json_out.append({
                 "time": datetime.fromtimestamp(date, tz=timezone.utc).isoformat(),
                 "chat_id": chat_id,
@@ -213,7 +214,6 @@ class AcpSession:
         # 2. session: load existing or create new
         if session_id:
             sess_req = inst._request("session/load", {"sessionId": session_id, "cwd": cwd, "mcpServers": []})
-            # drain session/update notifications that precede the final response
             while True:
                 msg = inst._recv()
                 if "id" in msg and msg["id"] == sess_req:
@@ -246,12 +246,12 @@ class AcpSession:
         Send a user message and return the complete response text.
 
         on_chunk(accumulated: str)
-            Called when a newline is received; use for line-buffered streaming edits.
+            Called on each newline; use for line-buffered streaming edits.
         on_permission(params: dict) -> str | None
             Called when agent requests permission; return optionId or None to cancel.
 
-        A background thread reads the agent's stdout continuously so that Telegram
-        API calls in on_chunk never block the agent's output pipe.
+        A background thread reads the agent's stdout so that Telegram API calls
+        in on_chunk never block the agent's output pipe.
         """
         req_id = self._request("session/prompt", {
             "sessionId": self.session_id,
@@ -265,7 +265,6 @@ class AcpSession:
                 while True:
                     msg = self._recv()
                     msg_q.put(msg)
-                    # Stop after receiving the final response to our prompt
                     if "id" in msg and "method" not in msg and msg.get("id") == req_id:
                         break
             except Exception as e:
@@ -300,7 +299,7 @@ class AcpSession:
                     })
                 continue
 
-            # Notification from agent (no id, no reply expected)
+            # Notification from agent (no reply expected)
             if has_method and not has_id:
                 if msg["method"] == "session/update":
                     upd = msg["params"].get("update", {})
@@ -308,7 +307,6 @@ class AcpSession:
                     if kind == "agent_message_chunk":
                         chunk = upd.get("content", {}).get("text", "")
                         parts.append(chunk)
-                        # Flush to Telegram only when a complete line is available
                         if "\n" in chunk:
                             on_chunk("".join(parts))
                     elif kind == "tool_call":
@@ -331,6 +329,73 @@ class AcpSession:
                 return "".join(parts)
 
 
+# ─── Cron helpers ─────────────────────────────────────────────────────────────
+
+def parse_crontab(path: Path) -> list[dict]:
+    """Parse crontab.md: ## <cron-expr> headers, body paragraph is the prompt text."""
+    jobs: list[dict] = []
+    current_expr: str | None = None
+    current_lines: list[str] = []
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith("## "):
+                if current_expr is not None:
+                    prompt = "\n".join(current_lines).strip()
+                    if prompt:
+                        jobs.append({"expr": current_expr, "prompt": prompt})
+                current_expr = line[3:].strip()
+                current_lines = []
+            elif current_expr is not None:
+                current_lines.append(line)
+    if current_expr is not None:
+        prompt = "\n".join(current_lines).strip()
+        if prompt:
+            jobs.append({"expr": current_expr, "prompt": prompt})
+    return jobs
+
+
+def _cron_field_matches(field: str, value: int, lo: int, hi: int) -> bool:
+    for part in field.split(","):
+        if part == "*":
+            return True
+        if "/" in part:
+            r, step = part.split("/", 1)
+            step = int(step)
+            if r == "*":
+                start, end = lo, hi
+            elif "-" in r:
+                start, end = map(int, r.split("-"))
+            else:
+                start, end = int(r), hi
+            if start <= value <= end and (value - start) % step == 0:
+                return True
+        elif "-" in part:
+            a, b = map(int, part.split("-"))
+            if a <= value <= b:
+                return True
+        else:
+            if int(part) == value:
+                return True
+    return False
+
+
+def _cron_matches(expr: str, dt: datetime) -> bool:
+    """True if the 5-field cron expression matches dt (dow: 0=Sun … 6=Sat, standard cron)."""
+    parts = expr.split()
+    if len(parts) != 5:
+        return False
+    minute, hour, dom, month, dow = parts
+    dt_dow = dt.isoweekday() % 7  # isoweekday: Mon=1..Sun=7 → 0=Sun, 1=Mon, …, 6=Sat
+    return (
+        _cron_field_matches(minute, dt.minute, 0, 59) and
+        _cron_field_matches(hour, dt.hour, 0, 23) and
+        _cron_field_matches(dom, dt.day, 1, 31) and
+        _cron_field_matches(month, dt.month, 1, 12) and
+        _cron_field_matches(dow, dt_dow, 0, 6)
+    )
+
+
 # ─── Permission handling ──────────────────────────────────────────────────────
 
 def _handle_permission(token: str, chat_id: int, params: dict,
@@ -340,9 +405,8 @@ def _handle_permission(token: str, chat_id: int, params: dict,
     Returns (option_id_or_None, updated_offset).
 
     In yolo mode: auto-selects the first allow option.
-    Otherwise: sends a Telegram message and short-polls for a valid reply.
+    Otherwise: sends a Telegram message to chat_id and short-polls for a valid reply.
     Valid replies: y/Y/n/N or a bare integer option number.
-    Other messages trigger a hint but are left for the main loop to process.
     """
     options = params.get("options", [])
 
@@ -352,7 +416,6 @@ def _handle_permission(token: str, chat_id: int, params: dict,
                 return opt["optionId"], offset
         return (options[0]["optionId"] if options else "allow-once"), offset
 
-    # Build and send permission prompt to user
     tool_call = params.get("toolCall", {})
     lines = ["⚠️ 权限请求"]
     if tool_call.get("toolCallId"):
@@ -376,7 +439,6 @@ def _handle_permission(token: str, chat_id: int, params: dict,
             if lower in ("y", "n"):
                 if lower == "n":
                     return None, offset
-                # y → first allow option
                 for opt in options:
                     if "allow" in opt.get("kind", "").lower():
                         return opt["optionId"], offset
@@ -386,9 +448,8 @@ def _handle_permission(token: str, chat_id: int, params: dict,
                 idx = int(reply) - 1
                 if 0 <= idx < len(options):
                     return options[idx]["optionId"], offset
-                # out-of-range number falls through to hint
+                # out-of-range falls through to hint
 
-            # Not a valid permission reply — send one-time hint, leave for main loop
             if not hint_sent:
                 api_call(token, "sendMessage", {
                     "chat_id": chat_id,
@@ -408,7 +469,7 @@ def cmd_acp(args):
     my_chat_id = cfg["bot"].get("chat_id")
     if not my_chat_id:
         sys.exit("Error: chat_id not set in config")
-    chat_id = int(my_chat_id)
+    owner_chat_id = int(my_chat_id)
 
     acp_cmd = args.agent_cmd or cfg.get("acp", "command", fallback=None)
     if not acp_cmd:
@@ -418,17 +479,103 @@ def cmd_acp(args):
         )
     cwd = args.cwd or cfg.get("acp", "cwd", fallback=str(Path.home()))
 
+    # allow_users: comma-separated Telegram user IDs allowed to send commands.
+    # If unset, only the owner (chat_id) may interact.
+    allow_str = cfg.get("bot", "allow_users", fallback="")
+    allow_users: set[int] = (
+        {int(x.strip()) for x in allow_str.split(",") if x.strip()}
+        if allow_str else {owner_chat_id}
+    )
+
+    # cron jobs from markdown file
+    cron_jobs: list[dict] = []
+    cron_file_str = cfg.get("cron", "file", fallback=None)
+    if cron_file_str:
+        cron_path = Path(cron_file_str).expanduser()
+        if cron_path.exists():
+            cron_jobs = parse_crontab(cron_path)
+            log.info("Loaded %d cron job(s) from %s", len(cron_jobs), cron_path)
+        else:
+            log.warning("Cron file not found: %s", cron_path)
+    cron_last: dict[int, tuple] = {}  # job index → (year, month, day, hour, minute)
+
     log.info("Starting ACP: cmd=%r cwd=%r yolo=%s session=%s",
              acp_cmd, cwd, args.yolo, args.session_id)
     acp = AcpSession.start(acp_cmd, cwd, session_id=args.session_id)
     print(f"ACP session ready: {acp.session_id}", flush=True)
 
     offset = 0
+    MAX_TG = 4000
 
     def on_permission(params):
         nonlocal offset
-        option_id, offset = _handle_permission(token, chat_id, params, args.yolo, offset)
+        # Permission dialogs always go to owner, regardless of which chat triggered the prompt
+        option_id, offset = _handle_permission(
+            token, owner_chat_id, params, args.yolo, offset
+        )
         return option_id
+
+    def handle_prompt(text: str, reply_chat_id: int):
+        """Send text to ACP and stream the response back to reply_chat_id."""
+        sr = api_call(token, "sendMessage", {"chat_id": reply_chat_id, "text": "⏳"}, retries=3)
+        if not sr.get("ok"):
+            log.error("sendMessage failed: %s", sr)
+            return
+
+        edit_state = {"id": sr["result"]["message_id"], "offset": 0, "chat_id": reply_chat_id}
+
+        def on_chunk(t, _es=edit_state):
+            segment = t[_es["offset"]:]
+            display = (segment + "▌") if segment else "⏳"
+            if len(display) > MAX_TG:
+                # Finalize current message at a line boundary, start a new one
+                cut = segment.rfind("\n", 0, MAX_TG)
+                if cut < 0:
+                    cut = MAX_TG - 1
+                try:
+                    api_call(token, "editMessageText", {
+                        "chat_id": _es["chat_id"],
+                        "message_id": _es["id"],
+                        "text": segment[:cut],
+                    }, retries=3)
+                except SystemExit:
+                    pass
+                _es["offset"] += cut
+                sr2 = api_call(token, "sendMessage",
+                               {"chat_id": _es["chat_id"], "text": "⏳"}, retries=3)
+                if sr2.get("ok"):
+                    _es["id"] = sr2["result"]["message_id"]
+                return
+            try:
+                result = api_call(token, "editMessageText", {
+                    "chat_id": _es["chat_id"],
+                    "message_id": _es["id"],
+                    "text": display,
+                }, retries=3)
+                if not result.get("ok"):
+                    desc = result.get("description", "")
+                    if "not modified" not in desc:
+                        log.warning("editMessageText: %s", desc or result)
+            except SystemExit:
+                log.warning("editMessageText failed after retries, skipping")
+
+        try:
+            response = acp.prompt(text, on_chunk=on_chunk, on_permission=on_permission)
+        except Exception as e:
+            log.error("ACP prompt failed: %s", e)
+            api_call(token, "editMessageText", {
+                "chat_id": edit_state["chat_id"],
+                "message_id": edit_state["id"],
+                "text": f"❌ {e}",
+            }, retries=3)
+            return
+
+        tail = response[edit_state["offset"]:] if response else ""
+        api_call(token, "editMessageText", {
+            "chat_id": edit_state["chat_id"],
+            "message_id": edit_state["id"],
+            "text": tail or "(无回复)",
+        }, retries=3)
 
     try:
         while True:
@@ -439,82 +586,36 @@ def cmd_acp(args):
                 continue
 
             for u in resp.get("result", []):
-                # Skip updates already consumed by the permission handler
                 if u["update_id"] + 1 <= offset:
                     continue
                 offset = u["update_id"] + 1
 
                 msg = u.get("message", {})
-                if msg.get("chat", {}).get("id") != chat_id:
+                from_info = msg.get("from", {})
+                from_id = from_info.get("id")
+                username = from_info.get("username", "")
+                reply_chat_id = msg.get("chat", {}).get("id")
+
+                if from_id is None or reply_chat_id is None:
                     continue
+                if from_id not in allow_users:
+                    continue
+
                 text = msg.get("text", "").strip()
                 if not text:
                     continue
 
-                # Send a placeholder message; we'll edit it as the response streams in
-                sr = api_call(token, "sendMessage", {"chat_id": chat_id, "text": "⏳"}, retries=3)
-                if not sr.get("ok"):
-                    log.error("sendMessage failed: %s", sr)
-                    continue
+                log.info("ACP ← [%d @%s] %s", from_id, username, text)
+                handle_prompt(text, reply_chat_id)
 
-                # edit_state tracks the current message id and how many chars of the
-                # full response have already been committed to previous messages.
-                MAX_TG = 4000  # Telegram hard limit is 4096; leave margin
-                edit_state = {"id": sr["result"]["message_id"], "offset": 0}
-
-                def on_chunk(t, _es=edit_state):
-                    segment = t[_es["offset"]:]
-                    display = (segment + "▌") if segment else "⏳"
-                    if len(display) > MAX_TG:
-                        # Finalize current message at a line boundary before the limit
-                        cut = segment.rfind("\n", 0, MAX_TG)
-                        if cut < 0:
-                            cut = MAX_TG - 1
-                        try:
-                            api_call(token, "editMessageText", {
-                                "chat_id": chat_id,
-                                "message_id": _es["id"],
-                                "text": segment[:cut],
-                            }, retries=3)
-                        except SystemExit:
-                            pass
-                        _es["offset"] += cut
-                        sr2 = api_call(token, "sendMessage",
-                                       {"chat_id": chat_id, "text": "⏳"}, retries=3)
-                        if sr2.get("ok"):
-                            _es["id"] = sr2["result"]["message_id"]
-                        return
-                    try:
-                        result = api_call(token, "editMessageText", {
-                            "chat_id": chat_id,
-                            "message_id": _es["id"],
-                            "text": display,
-                        }, retries=3)
-                        if not result.get("ok"):
-                            desc = result.get("description", "")
-                            if "not modified" not in desc:
-                                log.warning("editMessageText: %s", desc or result)
-                    except SystemExit:
-                        log.warning("editMessageText failed after retries, skipping")
-
-                try:
-                    response = acp.prompt(text, on_chunk=on_chunk, on_permission=on_permission)
-                except Exception as e:
-                    log.error("ACP prompt failed: %s", e)
-                    api_call(token, "editMessageText", {
-                        "chat_id": chat_id,
-                        "message_id": edit_state["id"],
-                        "text": f"❌ {e}",
-                    }, retries=3)
-                    continue
-
-                # Final edit: show remaining content (after last message split)
-                tail = response[edit_state["offset"]:] if response else ""
-                api_call(token, "editMessageText", {
-                    "chat_id": chat_id,
-                    "message_id": edit_state["id"],
-                    "text": tail or "(无回复)",
-                }, retries=3)
+            # fire any due cron jobs
+            now = datetime.now()
+            now_key = (now.year, now.month, now.day, now.hour, now.minute)
+            for i, job in enumerate(cron_jobs):
+                if _cron_matches(job["expr"], now) and cron_last.get(i) != now_key:
+                    cron_last[i] = now_key
+                    log.info("Cron[%d] firing: %s", i, job["expr"])
+                    handle_prompt(job["prompt"], owner_chat_id)
 
     finally:
         acp.close()
