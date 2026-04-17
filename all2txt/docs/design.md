@@ -257,54 +257,55 @@ video/x-msvideo (.avi), video/webm
 
 ---
 
-## 五、配置文件格式（all2txt.toml）
+## 五、配置文件格式（all2txt.yaml）
 
-```toml
+```yaml
 # 1. 按 MIME 覆盖后端顺序（列出的后端优先，其余按默认 priority 追加）
-[mime."application/pdf"]
-backends = ["pymupdf", "tika", "unstructured"]
-
-[mime."image/png"]
-backends = ["openai_vision", "tesseract"]
+mime:
+  "application/pdf":
+    backends: [pymupdf, tika, unstructured]
+  "image/png":
+    backends: [openai_vision, tesseract]
 
 # 2. 按后端名称传入配置（可选）
-[extractor.openai_vision]
-mode    = "extract_text"   # "extract_text" | "describe"
-model   = "gpt-4o"
-# prompt 可选，覆盖默认系统提示
+extractor:
+  openai_vision:
+    mode: extract_text    # extract_text | describe
+    model: gpt-4o
+    # prompt: "..."       # 可选，覆盖默认系统提示
 
-[extractor.openai_whisper]
-model           = "whisper-1"
-language        = "zh"
-response_format = "text"   # text | srt | vtt | verbose_json
+  openai_whisper:
+    model: whisper-1
+    language: zh
+    response_format: text   # text | srt | vtt | verbose_json
 
-[extractor.whisper_local]
-model    = "base"
-language = "zh"
+  whisper_local:
+    model: base
+    language: zh
 
-[extractor.faster_whisper]
-model    = "base"
-language = "zh"
-device   = "cpu"   # cpu | cuda
+  faster_whisper:
+    model: base             # tiny | base | small | medium | large
+    language: zh
+    device: cpu             # cpu | cuda
 
-[extractor.tesseract]
-lang = "eng+chi_sim"
-psm  = 3
+  tesseract:
+    lang: eng+chi_sim
+    psm: 3
 
-[extractor.easyocr]
-langs = ["en", "ch_sim"]
+  easyocr:
+    langs: [en, ch_sim]
 
-[extractor.paddleocr]
-lang = "ch"
+  paddleocr:
+    lang: ch
 
 # 3. 扩展名覆盖（仅当 file 命令返回通用类型时生效）
-[extensions]
-".rst"    = "text/x-rst"
-".org"    = "text/x-org"
-".ipynb"  = "application/x-ipynb+json"
-".fb2"    = "application/x-fictionbook+xml"
-".opml"   = "text/x-opml"
-".creole" = "text/x-creole"
+extensions:
+  .rst: text/x-rst
+  .org: text/x-org
+  .ipynb: application/x-ipynb+json
+  .fb2: application/x-fictionbook+xml
+  .opml: text/x-opml
+  .creole: text/x-creole
 ```
 
 ---

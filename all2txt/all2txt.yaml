@@ -1,0 +1,55 @@
+# all2txt configuration
+
+# Section 1: backend priority per MIME type
+# Listed backends are tried first (in order); unlisted backends follow by default priority.
+#
+# mime:
+#   "application/pdf":
+#     backends: [pymupdf, tika, unstructured]
+#   "image/png":
+#     backends: [openai_vision, tesseract]
+#   "audio/mpeg":
+#     backends: [openai_whisper, faster_whisper]
+
+# Section 2: per-extractor configuration
+#
+# extractor:
+#   openai_vision:
+#     mode: extract_text    # extract_text | describe
+#     model: gpt-4o
+#     # prompt: "..."       # optional: override default system prompt
+#
+#   openai_whisper:
+#     model: whisper-1
+#     language: zh
+#     response_format: text   # text | srt | vtt | verbose_json
+#
+#   faster_whisper:
+#     model: base             # tiny | base | small | medium | large
+#     language: zh
+#     device: cpu             # cpu | cuda
+#
+#   whisper_local:
+#     model: base
+#     language: zh
+#
+#   tesseract:
+#     lang: eng+chi_sim
+#     psm: 3
+#
+#   easyocr:
+#     langs: [en, ch_sim]
+#
+#   paddleocr:
+#     lang: ch
+
+# Section 3: extension overrides
+# Applied only when file(1) returns a generic MIME type (text/plain, application/json, etc.)
+#
+# extensions:
+#   .rst: text/x-rst
+#   .org: text/x-org
+#   .ipynb: application/x-ipynb+json
+#   .fb2: application/x-fictionbook+xml
+#   .opml: text/x-opml
+#   .creole: text/x-creole

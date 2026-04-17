@@ -1,7 +1,8 @@
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 # MIME types for which file(1) output is too generic to be useful.
 # When detect() gets one of these, it falls back to the extensions map.
@@ -16,7 +17,7 @@ _GENERIC_MIMES = frozenset({
 
 @dataclass
 class Config:
-    """Loaded configuration from all2txt.toml."""
+    """Loaded configuration from all2txt.yaml."""
 
     backends: dict[str, list[str]] = field(default_factory=dict)
     # mime → ordered list of backend names; listed backends go first,
@@ -31,13 +32,13 @@ class Config:
 
 
 def load_config(path: Path | None = None) -> Config:
-    """Load config from path, defaulting to all2txt.toml in cwd."""
+    """Load config from path, defaulting to all2txt.yaml in cwd."""
     if path is None:
-        path = Path("all2txt.toml")
+        path = Path("all2txt.yaml")
     if not path.exists():
         return Config()
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
     backends = {
         mime: v.get("backends", [])
         for mime, v in data.get("mime", {}).items()
