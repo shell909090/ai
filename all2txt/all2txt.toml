@@ -1,0 +1,9 @@
+# all2txt configuration — override default backend priority per MIME type.
+# Backend names: pandoc, tika, pymupdf, unstructured, man, info, plaintext
+# Backends listed here are tried first (in order); unlisted backends follow by default priority.
+
+# [mime."application/pdf"]
+# backends = ["pymupdf", "tika", "unstructured"]
+
+# [mime."text/x-tex"]
+# backends = ["pandoc"]

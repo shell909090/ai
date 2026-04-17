@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
+.env
+docs/tasks.md
+docs/review.md
+docs/log.md
+uv.lock
