@@ -3,15 +3,18 @@ from pathlib import Path
 from ..core.base import Extractor
 from ..core.registry import registry
 
-
-@registry.register(
+_UNSTRUCTURED_MIMES = (
     "application/pdf",
     "image/png",
     "image/jpeg",
     "image/tiff",
     "image/bmp",
     "image/webp",
+    "image/gif",
 )
+
+
+@registry.register(*_UNSTRUCTURED_MIMES)
 class UnstructuredExtractor(Extractor):
     """Extract text via unstructured (supports OCR for images and scanned PDFs)."""
 

@@ -1,10 +1,10 @@
+import shutil
 from pathlib import Path
 
 from ..core.base import Extractor
 from ..core.registry import registry
 
-_TIKA_MIMES = (
-    "application/pdf",
+_OFFICE_MIMES = (
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
@@ -19,21 +19,17 @@ _TIKA_MIMES = (
 )
 
 
-@registry.register(*_TIKA_MIMES)
-class TikaExtractor(Extractor):
-    """Extract text via Apache Tika (requires tika Python package + JVM)."""
+@registry.register(*_OFFICE_MIMES)
+class LibreOfficeExtractor(Extractor):
+    """Convert Office/ODF documents to plain text via LibreOffice headless."""
 
-    name = "tika"
-    priority = 20
+    name = "libreoffice"
+    priority = 25
 
     def available(self) -> bool:
-        """Check that the tika Python package is installed."""
-        try:
-            import tika  # noqa: F401
-        except ImportError:
-            return False
-        return True
+        """Check that libreoffice (or soffice) is installed."""
+        return shutil.which("libreoffice") is not None or shutil.which("soffice") is not None
 
     def extract(self, path: Path) -> str:
-        """Call tika.parser.from_file and return stripped content field."""
+        """Run libreoffice --headless --convert-to txt, read result, then clean up."""
         raise NotImplementedError

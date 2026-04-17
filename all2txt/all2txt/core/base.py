@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 
 class Extractor(ABC):
@@ -7,6 +8,9 @@ class Extractor(ABC):
 
     name: str = ""
     priority: int = 50
+
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self._cfg: dict[str, Any] = config or {}
 
     @abstractmethod
     def extract(self, path: Path) -> str:

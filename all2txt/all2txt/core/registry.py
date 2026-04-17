@@ -3,10 +3,10 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from .base import Extractor
-from .config import Config
+from .config import _GENERIC_MIMES, Config
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,15 @@ class Registry:
             self._sort(mime)
 
     def detect(self, path: Path) -> str:
-        """Return MIME type of path using the system file command."""
+        """Return MIME type via file(1); apply extension override for generic results."""
         mime = subprocess.check_output(
             ["file", "--mime-type", "-b", str(path)], text=True
         ).strip()
+        if mime in _GENERIC_MIMES and self._config:
+            override = self._config.extensions.get(path.suffix.lower())
+            if override:
+                logger.debug("extension override %s → %s", mime, override)
+                mime = override
         logger.debug("detected %s → %s", path, mime)
         return mime
 
@@ -53,7 +58,10 @@ class Registry:
         candidates = self._map.get(mime, [])
         errors: list[str] = []
         for cls in candidates:
-            inst = cls()
+            extractor_cfg: dict[str, Any] = (
+                self._config.extractors.get(cls.name, {}) if self._config else {}
+            )
+            inst = cls(config=extractor_cfg)
             if not inst.available():
                 logger.debug("skipping %s (unavailable)", cls.__name__)
                 continue
@@ -63,10 +71,12 @@ class Registry:
             except Exception as exc:
                 logger.debug("%s failed: %s", cls.__name__, exc)
                 errors.append(f"{cls.__name__}: {exc}")
-        raise RuntimeError(f"No backend succeeded for {mime} ({path}). Errors: {errors}")
+        raise RuntimeError(
+            f"No backend succeeded for {mime} ({path}). Errors: {errors}"
+        )
 
     def _sort(self, mime: str) -> None:
-        order = (self._config.backends.get(mime, []) if self._config else [])
+        order = self._config.backends.get(mime, []) if self._config else []
 
         def key(cls: type[Extractor]) -> tuple[int, int]:
             name = getattr(cls, "name", "")
