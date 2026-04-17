@@ -51,7 +51,7 @@ CLI (cli.py)
 | `content` | `utf8` | chunk 文本（用于 regex 过滤和 snippet） |
 | `vector` | `list<float32>[dim]` | 嵌入向量，metric=cosine |
 
-**表关联**：`chunks.file_hash` → `files.file_hash`（1 对多，多个 path 可共享同一 hash）
+**表关联**：`chunks.file_hash` → `files.file_hash`（一个 hash 对应多个 path，chunks 共享）
 
 ---
 
@@ -64,23 +64,23 @@ CLI (cli.py)
   查 files 表找同 path 的记录 rec
 
   ① rec 存在 且 size == rec.size 且 mtime == rec.mtime
-      → 跳过（内容大概率未变）
+      → 跳过
 
   ② rec 存在 但 size 或 mtime 不同
       → 计算 SHA-256
         hash == rec.file_hash → 只更新 files 表的 size/mtime，不重算向量
-        hash != rec.file_hash → 走"内容变化"分支（见下）
+        hash != rec.file_hash → 走"内容变化"分支
 
   ③ rec 不存在（新文件）
       → 计算 SHA-256
-        hash 已在 chunks 表 → 只写 files 表（文件副本/移动来的）
-        hash 不在 chunks 表 → 切分 + embed + 写 chunks，再写 files 表
+        hash 已在 chunks 表 → 只写 files 表（副本或移动来的文件）
+        hash 不在 chunks 表 → 提取文本 → 切分 → embed → 写 chunks，再写 files 表
 ```
 
 ### 内容变化分支
 
 ```
-1. 旧 hash 的引用计数（files 表中同 hash 的 path 数）减 1
+1. 旧 hash 的引用计数（files 表中同 hash 的行数）减 1
 2. 若引用计数归零 → 删除 chunks 表中该 hash 的所有行
 3. 新 hash 走"新文件"③ 逻辑
 ```
@@ -90,16 +90,15 @@ CLI (cli.py)
 ```
 files 表中存在但磁盘上消失的 path：
 1. 从 files 表删除该 path
-2. 计算该 hash 剩余引用数
-3. 若归零 → 删除 chunks 表中该 hash 的所有行
+2. 若该 hash 引用计数归零 → 删除 chunks
 ```
 
 ### 文件移动自动处理
 
-文件移动 = 旧 path 消失 + 新 path 出现（hash 相同）。
-扫描时：新 path 的 hash 已在 chunks 表 → 只写 files 表，不重算向量。
-旧 path 处理时因 hash 还有引用（新 path）→ 不删 chunks。
-**无需任何额外的"移动检测"逻辑。**
+移动 = 旧 path 消失 + 新 path 出现（hash 相同）。
+新 path 扫描时 hash 已在 chunks → 只写 files，不重算。
+旧 path 删除时因 hash 仍有引用 → chunks 保留。
+**无需任何额外移动检测逻辑。**
 
 ---
 
@@ -115,6 +114,39 @@ files 表中存在但磁盘上消失的 path：
 
 ---
 
+## 文本抽取（Extractor 集成）
+
+### 两种模式
+
+| `extractor` 值 | 行为 |
+|----------------|------|
+| `"plaintext"` | 直接 `path.read_text(errors="replace")`，无外部依赖 |
+| `"all2txt"` | 调用 `all2txt.registry.extract(path)`，all2txt 为可选依赖 |
+
+all2txt 是 **optional dependency**，未安装时使用 `"all2txt"` extractor 会在启动时报错。
+
+### extractor_config 透传
+
+当 `extractor = "all2txt"` 时，`extractor_config` 字典按 all2txt 的 `Config` 格式
+透传给 `all2txt.registry.configure()`。结构与 all2txt 的 YAML 格式一致：
+
+```yaml
+# all2txt Config 字段
+mime:
+  "image/jpeg":
+    backends: [openai_vision]   # 覆盖该 MIME 的后端顺序
+extractor:
+  openai_vision:
+    model: gpt-4o               # 传给 Extractor.__init__(config=...)
+extensions:
+  ".md": "text/markdown"        # file(1) 返回 generic MIME 时的扩展名覆盖
+```
+
+Indexer 为每个 `DirConfig` 构造一个独立的 all2txt `Config` 实例并调用 `registry.configure()`，
+处理完该目录后恢复原状态（避免目录间互相干扰）。
+
+---
+
 ## 配置文件格式（YAML）
 
 ```yaml
@@ -127,16 +159,41 @@ chunk_size: 500
 chunk_overlap: 50
 
 dirs:
-  - path: ~/Documents/work
-    extensions: [.md, .txt]
-    extractors: [plaintext]
+  # 纯文本笔记，内置 plaintext 抽取器
   - path: ~/notes
-    extensions: [.md, .org]
-    extractors: [plaintext]
-```
+    extensions: [.md, .org, .txt]
+    extractor: plaintext
 
-`extractors` 为字符串列表，当前仅支持 `"plaintext"`（直接读取 UTF-8 文本）。
-后续可扩展其他抽取器，由各抽取器决定如何将文件转换为纯文本后交给 Chunker。
+  # PDF/Word 文档，委托 all2txt 处理
+  - path: ~/Documents
+    extensions: [.pdf, .docx, .md]
+    extractor: all2txt
+
+  # 图片目录：用 GPT-4o 描述内容
+  - path: ~/photos
+    extensions: [.jpg, .png, .webp]
+    extractor: all2txt
+    extractor_config:
+      mime:
+        "image/jpeg":
+          backends: [openai_vision]
+        "image/png":
+          backends: [openai_vision]
+      extractor:
+        openai_vision:
+          model: gpt-4o
+
+  # 扫描件：OCR 模式
+  - path: ~/scanned
+    extensions: [.jpg, .png]
+    extractor: all2txt
+    extractor_config:
+      mime:
+        "image/jpeg":
+          backends: [ocr]
+        "image/png":
+          backends: [ocr]
+```
 
 ---
 
@@ -148,8 +205,9 @@ dirs:
 @dataclass
 class DirConfig:
     path: str
-    extensions: list[str]          # e.g. [".md", ".txt"]
-    extractors: list[str]          # e.g. ["plaintext"]
+    extensions: list[str]                   # e.g. [".md", ".txt"]
+    extractor: str = "plaintext"            # "plaintext" | "all2txt"
+    extractor_config: dict = field(...)     # forwarded to all2txt.Config (当 extractor="all2txt")
 
 @dataclass
 class Config:
@@ -157,8 +215,8 @@ class Config:
     index_path: Path
     top_k: int
     embedding_model: str
-    chunk_size: int                # default 500
-    chunk_overlap: int             # default 50
+    chunk_size: int                         # default 500
+    chunk_overlap: int                      # default 50
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config: ...
 ```
@@ -169,9 +227,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config: ...
 @dataclass
 class Chunk:
     content: str
-    chunk_index: int   # 0-based
-    start: int         # character offset in original text
-    end: int           # character offset, exclusive
+    chunk_index: int
+    start: int          # character offset, inclusive
+    end: int            # character offset, exclusive
 
 class Chunker:
     def __init__(self, chunk_size: int = 500, overlap: int = 50) -> None: ...
@@ -209,7 +267,7 @@ class VectorDB:
     # chunks 表
     def hash_has_chunks(self, file_hash: str) -> bool: ...
     def add_chunks(self, records: list[dict]) -> None:
-        # records: {file_hash, chunk_index, start, end, content, vector}
+        # record keys: file_hash, chunk_index, start, end, content, vector
         ...
     def delete_chunks_by_hash(self, file_hash: str) -> None: ...
     def query(self, vector: list[float], top_k: int) -> list[dict]:
@@ -226,7 +284,12 @@ class Indexer:
     def __init__(self, config: Config) -> None: ...
     def run(self) -> tuple[int, int, int]: ...  # (added, updated, removed) file counts
     def _collect_files(self) -> list[tuple[Path, DirConfig]]: ...
-    def _file_hash(self, path: Path) -> str: ...  # SHA-256 hex
+    def _file_hash(self, path: Path) -> str: ...
+    def _extract_text(self, path: Path, dir_cfg: DirConfig) -> str:
+        # extractor="plaintext": path.read_text(errors="replace")
+        # extractor="all2txt":   configure registry with dir_cfg.extractor_config,
+        #                        call registry.extract(path), restore registry state
+        ...
 ```
 
 ### searcher.py
@@ -234,13 +297,13 @@ class Indexer:
 ```python
 @dataclass
 class SearchResult:
-    paths: list[str]   # all file paths sharing this file_hash
+    paths: list[str]    # all file paths sharing this file_hash
     file_hash: str
     chunk_index: int
     start: int
     end: int
-    score: float       # 1 - cosine_distance
-    snippet: str       # content[:200]
+    score: float        # 1 - cosine_distance
+    snippet: str        # content[:200]
 
 class Searcher:
     def __init__(self, config: Config) -> None: ...
@@ -268,6 +331,7 @@ elocate-updatedb [--debug]
 | 配置文件缺失 | 使用默认值 |
 | `dirs` 为空 | CLI warning + exit(1) |
 | 目录不存在 | warning 跳过 |
-| 文件读取失败 | warning 跳过该文件 |
+| 文件读取/抽取失败 | warning 跳过该文件 |
+| `all2txt` 未安装但配置中使用 | 启动时 ImportError → CLI 友好提示 + exit(1) |
 | 索引不存在（搜索时） | RuntimeError → CLI 友好提示 + exit(1) |
 | 非法正则 | re.error → CLI 友好提示 + exit(1) |

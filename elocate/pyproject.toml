@@ -12,6 +12,9 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+all2txt = ["all2txt"]
+
 [project.scripts]
 elocate = "elocate.cli:main_search"
 elocate-updatedb = "elocate.cli:main_updatedb"

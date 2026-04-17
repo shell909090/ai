@@ -31,3 +31,12 @@ class Indexer:
     def _file_hash(self, path: Path) -> str:
         """Compute SHA-256 hex digest of file content."""
         raise NotImplementedError
+
+    def _extract_text(self, path: Path, dir_cfg: DirConfig) -> str:
+        """Extract plain text from path using the dir's configured extractor.
+
+        "plaintext": read directly as UTF-8.
+        "all2txt":   configure all2txt registry with dir_cfg.extractor_config,
+                     call registry.extract(path), then restore registry state.
+        """
+        raise NotImplementedError

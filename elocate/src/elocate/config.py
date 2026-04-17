@@ -2,12 +2,12 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "elocate" / "config.yaml"
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "elocate" / "index"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_EXTENSIONS = [".md", ".txt", ".rst", ".org"]
-DEFAULT_EXTRACTORS = ["plaintext"]
 
 
 @dataclass
@@ -16,7 +16,10 @@ class DirConfig:
 
     path: str
     extensions: list[str] = field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
-    extractors: list[str] = field(default_factory=lambda: list(DEFAULT_EXTRACTORS))
+    extractor: str = "plaintext"                      # "plaintext" | "all2txt"
+    extractor_config: dict[str, Any] = field(default_factory=dict)
+    # extractor_config is forwarded to all2txt.Config when extractor="all2txt";
+    # keys mirror all2txt's YAML format: mime / extractor / extensions.
 
 
 @dataclass
