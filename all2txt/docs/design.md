@@ -221,8 +221,15 @@ PandocExtractor 通过 `pandoc -t plain --wrap=none` 统一处理以下格式。
 | NativeDocxExtractor | `python_docx` | 18 | 仅 .docx，提取段落和表格 | `python-docx` 包 |
 | NativeXlsxExtractor | `openpyxl` | 18 | 仅 .xlsx，逐行输出单元格 | `openpyxl` 包 |
 | NativePptxExtractor | `python_pptx` | 18 | 仅 .pptx，提取文本框 | `python-pptx` 包 |
-| LibreOfficeExtractor | `libreoffice` | 25 | 全系列 Office+ODF，headless 模式转 txt | `libreoffice` CLI |
+| LibreOfficeExtractor | `libreoffice` | 25 | 全系列 Office+ODF，headless 模式转 txt（见注） | `libreoffice` CLI |
 | TikaExtractor | `tika` | 20 | 全系列，见 4.4 | `tika` 包 + JVM |
+
+**LibreOffice 输出文件处理**：`libreoffice --headless --convert-to txt` 默认将结果写到
+源文件所在目录，文件名为 `<原名>.txt`，无法自定义。实现时必须：
+1. 用 `tempfile.mkdtemp()` 创建临时目录。
+2. 通过 `--outdir <tmpdir>` 将输出重定向到临时目录。
+3. 读取 `<tmpdir>/<原文件名去扩展名>.txt` 的内容。
+4. 在 `finally` 块中用 `shutil.rmtree(tmpdir)` 清理。
 
 ### 4.6 图片 OCR
 
@@ -247,7 +254,21 @@ audio/flac (.flac), audio/mp4 (.m4a), audio/aac (.aac), audio/webm
 **视频**：video/mp4 (.mp4), video/x-matroska (.mkv), video/quicktime (.mov),
 video/x-msvideo (.avi), video/webm
 
-视频后端内部需先用 ffmpeg 提取音频轨再送 ASR。
+视频文件需先提取音频轨再送 ASR；三个后端共用同一工具函数（见下）。
+
+**共享工具函数** `backends/_util.py`：
+
+```python
+def extract_audio(path: Path) -> Path:
+    """用 ffmpeg 将 path 的音频轨提取为临时 WAV 文件，返回临时文件路径。
+    调用方负责在使用完毕后删除该文件。
+    仅当 path 的 MIME 为视频类型时调用；音频文件直接传入 ASR，无需提取。"""
+```
+
+实现要点：
+- 用 `tempfile.mkstemp(suffix=".wav")` 创建临时文件。
+- 调用 `ffmpeg -i <path> -vn -ar 16000 -ac 1 -f wav <tmpwav>`（单声道 16 kHz，Whisper 推荐格式）。
+- 返回临时文件路径；ASR 后端在 `finally` 块中 `os.unlink(tmpwav)` 清理。
 
 | 后端 | name | priority | 外部依赖 | 可配置项 |
 |---|---|---|---|---|
