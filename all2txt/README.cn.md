@@ -21,12 +21,14 @@
 | 电子表格 | `.xlsx`、`.ods` | `openpyxl`、`libreoffice`、`tika` |
 | 演示文稿 | `.pptx`、`.odp` | `python_pptx`、`libreoffice`、`tika` |
 | 旧版 Office | `.doc`、`.xls`、`.ppt` | `libreoffice`、`tika` |
-| PDF | `.pdf` | `pymupdf`、`tika`、`unstructured` |
+| PDF | `.pdf` | `pdftotext`、`pymupdf`、`tika`、`unstructured` |
 | 标记语言 | `.html`、`.tex`、`.rst`、`.org`、`.textile`、`.creole` | `pandoc` |
 | Man 手册页 | `.1`–`.8` | `man`（groff+col）、`pandoc` |
 | GNU Info | `.info` | `info` |
 | 图片（OCR） | `.png`、`.jpg`、`.tiff`、`.bmp`、`.webp`、`.gif` | `tesseract`、`easyocr`、`paddleocr`、`unstructured`、`openai_vision` |
 | 音频 / 视频 | `.mp3`、`.wav`、`.mp4`、`.mkv`、`.mov` 等 | `openai_whisper`、`faster_whisper`、`whisper_local` |
+| 压缩包 | `.zip`、`.tar`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.7z`、`.rar` | `archive_recurse`、`7zip_recurse`、`rar_recurse` |
+| 单文件压缩 | `.gz`、`.bz2`、`.xz`、`.lzma` | `archive_recurse`（默认启用） |
 
 ## 安装
 
@@ -51,6 +53,8 @@ pip install "all2txt[unstructured]"
 ```bash
 uv add all2txt
 uv add "all2txt[pymupdf]"
+uv sync --extra 7zip   # 7-Zip 支持
+uv sync --extra rar    # RAR 支持（还需：apt install unrar）
 ```
 
 ## 使用方法
@@ -65,8 +69,14 @@ all2txt --mime text/x-rst README.rst
 # 使用自定义配置文件
 all2txt --config ~/my-all2txt.yaml notes.epub
 
+# 查看后端选择信息（INFO 级别）
+all2txt --verbose 文档.pdf
+
 # 启用调试日志
 all2txt --debug 未知文件
+
+# 启用压缩包递归提取（默认禁用）
+all2txt --allow-archive 归档.zip
 ```
 
 输出写入 stdout；错误信息写入 stderr，退出码为 1。
