@@ -25,6 +25,11 @@ def main() -> None:
     parser.add_argument("--mime", metavar="MIME", help="Override MIME type detection")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable info logging")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--allow-archive",
+        action="store_true",
+        help="Enable the archive_recurse backend (disabled by default)",
+    )
     args = parser.parse_args()
 
     level = logging.WARNING
@@ -35,6 +40,13 @@ def main() -> None:
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
     config = load_config(args.config)
+    if args.allow_archive:
+        from .backends.archive import _ALL_ARCHIVE_BACKEND_NAMES
+
+        for _name in _ALL_ARCHIVE_BACKEND_NAMES:
+            if _name not in config.extractors:
+                config.extractors[_name] = {}
+            config.extractors[_name]["enabled"] = True
     registry.configure(config)
 
     exit_code = 0

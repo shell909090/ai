@@ -135,7 +135,7 @@ registry: Registry   # 模块级单例
 ### 3.4 CLI（\_\_main\_\_.py）
 
 ```
-all2txt [--config FILE] [--mime MIME] [--debug] FILE [FILE ...]
+all2txt [--config FILE] [--mime MIME] [--verbose] [--debug] [--allow-archive] FILE [FILE ...]
 ```
 
 | 参数 | 说明 |
@@ -143,7 +143,11 @@ all2txt [--config FILE] [--mime MIME] [--debug] FILE [FILE ...]
 | `FILE` | 一个或多个输入文件路径 |
 | `--config FILE` | 指定配置文件，默认 `./all2txt.yaml` |
 | `--mime MIME` | 跳过自动检测，强制所有输入文件使用同一 MIME |
+| `--verbose` / `-v` | 启用 INFO 日志（显示 MIME 检测、后端选择信息） |
 | `--debug` | 启用 DEBUG 日志到 stderr |
+| `--allow-archive` | 启用压缩包递归提取（默认禁用，防 zip bomb） |
+
+`--allow-archive` 等价于在配置文件中设置 `extractor.zip_recurse.enabled: true`。它在 `load_config` 之后、`registry.configure` 之前注入到 `config.extractors`。
 
 每个文件输出顺序写入 stdout，文件间无分隔符。任意文件失败则 stderr 报错、退出码 1。
 
@@ -244,7 +248,35 @@ PandocExtractor 通过 `pandoc -t plain --wrap=none` 统一处理以下格式。
 | UnstructuredExtractor | `unstructured` | 30 | 内置 Tesseract，见 4.4 | `unstructured` 包 | — |
 | OpenAIVisionExtractor | `openai_vision` | 50 | AI 识图，可识内容也可提取文字 | `openai` 包 | `mode`（`extract_text`\|`describe`）, `model`, `prompt` |
 
-### 4.7 音频 / 视频 ASR
+### 4.8 压缩包递归提取
+
+使用 Python 标准库实现，无外部依赖。
+
+| 后端 | name | priority | 注册 MIME | 外部依赖 | 说明 |
+|---|---|---|---|---|---|
+| ArchiveExtractor | `archive_recurse` | 10 | application/zip, application/x-tar, application/gzip, application/x-bzip2, application/x-xz, application/x-lzma | 无（标准库） | ZIP 用 `zipfile`；TAR.* 用 `tarfile(mode='r:*')`；gzip/bzip2/xz/lzma 单文件用对应标准库模块解压后递归提取 |
+| SevenZipExtractor | `7zip_recurse` | 10 | application/x-7z-compressed | `py7zr` 包 | 7-Zip 格式 |
+| RarExtractor | `rar_recurse` | 10 | application/x-rar, application/vnd.rar, application/x-rar-compressed | `rarfile` 包 | RAR 格式（需系统安装 `unrar` 或 `bsdtar`） |
+
+**默认禁用**：所有后端的 `available()` 均检查 `self._cfg.get("enabled", False)`，未显式开启时返回 False。SevenZipExtractor 和 RarExtractor 还额外检查对应库是否已安装。
+
+**`--allow-archive` 标志**：在 CLI 层对 `archive_recurse`、`7zip_recurse`、`rar_recurse` 统一注入 `enabled=True`。
+
+**ArchiveExtractor 提取逻辑**：
+1. 依次检测格式：`zipfile.is_zipfile()` → `tarfile.is_tarfile()` → 按 MIME 做单文件解压。
+2. 多成员格式（ZIP/TAR）：先检查所有成员未压缩大小之和，超 `max_bytes` 则抛异常；解压到临时目录，遍历每个文件成员调用 `registry.extract()` 递归处理。
+3. 单文件压缩（gzip/bzip2/xz/lzma）：流式解压并累计已输出字节数，超 `max_bytes` 立即抛异常；将解压后的文件（以 `path.stem` 命名）放入临时目录，调用 `registry.extract()` 处理。
+4. 每个成员输出：`=== {内部路径} ===\n{文本}`，成员间以空行分隔；单个成员失败记录 `=== {路径} === (error: {原因})` 并继续。
+5. `finally` 块 `shutil.rmtree(tmpdir)` 清理。
+
+**配置项**（各后端名均支持相同键）：
+
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `enabled` | bool | false | 必须显式设为 true 才生效 |
+| `max_bytes` | int | 104857600 | 最大解压总字节数（100 MB） |
+
+### 4.9 音频 / 视频 ASR
 
 ASR 后端注册以下 MIME：
 

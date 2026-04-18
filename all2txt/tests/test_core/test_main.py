@@ -1,4 +1,5 @@
 """Tests for the CLI entry point (__main__.py)."""
+
 import logging
 import sys
 from pathlib import Path
@@ -79,16 +80,22 @@ def test_main_detect_error_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "error" in capsys.readouterr().err
 
 
-def test_main_file_not_found_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_file_command_missing_falls_back_to_mimetypes(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When file(1) is missing, mimetypes fallback is used and extraction still succeeds."""
+    import logging
+
     f = tmp_path / "x.txt"
     f.write_text("x")
     with patch(
         "all2txt.core.registry.subprocess.check_output",
         side_effect=FileNotFoundError("file not found"),
     ):
-        exit_code = _run_main([str(f)], mock_detect=False)
-    assert exit_code == 1
-    assert "error" in capsys.readouterr().err
+        with caplog.at_level(logging.WARNING, logger="all2txt.core.registry"):
+            exit_code = _run_main([str(f)], mock_detect=False)
+    assert exit_code == 0
+    assert any("mimetypes" in r.message for r in caplog.records)
 
 
 def test_main_mime_override(tmp_path: Path) -> None:

@@ -24,7 +24,13 @@
    - 纯文本、CSV
    - 图片（通过 OCR 后端）
 
-6. **CLI 接口**：`all2txt [--config FILE] [--mime MIME] [--debug] FILE...`
+6. **CLI 接口**：`all2txt [--config FILE] [--mime MIME] [--debug] [--verbose] [--allow-archive] FILE...`
+
+7. **压缩包递归提取**：支持对 ZIP 等压缩格式递归提取内部文件的纯文本。
+   - 每个内部文件的提取结果以 `=== 内部路径 ===` 为标题行分隔。
+   - **默认禁用**，必须通过 `--allow-archive` 标志或配置文件显式开启，以防止 zip bomb 攻击。
+   - 可配置最大解压字节数上限（默认 100 MB），超限时报错而非继续解压。
+   - 内部文件的提取路径信息由该后端负责在输出文本中体现，调用方无需额外处理。
 
 ## 非目标
 
