@@ -65,6 +65,32 @@ def test_main_failed_file_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert "error" in capsys.readouterr().err
 
 
+def test_main_detect_error_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    f = tmp_path / "x.txt"
+    f.write_text("x")
+    from subprocess import CalledProcessError
+
+    with patch(
+        "all2txt.core.registry.subprocess.check_output",
+        side_effect=CalledProcessError(1, "file"),
+    ):
+        exit_code = _run_main([str(f)], mock_detect=False)
+    assert exit_code == 1
+    assert "error" in capsys.readouterr().err
+
+
+def test_main_file_not_found_exits_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    f = tmp_path / "x.txt"
+    f.write_text("x")
+    with patch(
+        "all2txt.core.registry.subprocess.check_output",
+        side_effect=FileNotFoundError("file not found"),
+    ):
+        exit_code = _run_main([str(f)], mock_detect=False)
+    assert exit_code == 1
+    assert "error" in capsys.readouterr().err
+
+
 def test_main_mime_override(tmp_path: Path) -> None:
     f = tmp_path / "data.txt"
     f.write_text("some text")
@@ -96,11 +122,21 @@ def test_main_config_path_passed_to_load(tmp_path: Path) -> None:
     mock_cfg.assert_called_once_with(cfg)
 
 
-def test_backends_init_tolerates_failing_module() -> None:
+def test_backends_init_tolerates_import_error() -> None:
     import importlib
 
     import all2txt.backends as backends_pkg
 
     with patch.dict(sys.modules, {"all2txt.backends.plaintext": None}):
-        # Should not raise even though plaintext fails to import
+        # ImportError is silently swallowed (optional dependency absent)
         importlib.reload(backends_pkg)
+
+
+def test_backends_init_reraises_non_import_error() -> None:
+    import importlib
+
+    import all2txt.backends as backends_pkg
+
+    with patch("builtins.__import__", side_effect=SyntaxError("bad syntax")):
+        with pytest.raises(SyntaxError):
+            importlib.reload(backends_pkg)

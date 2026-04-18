@@ -216,3 +216,33 @@ def test_extract_raises_for_unregistered_mime(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError):
         reg.extract(dummy, mime="application/x-unknown")
+
+
+# ---------------------------------------------------------------------------
+# 9. _mime is injected into extractor config
+# ---------------------------------------------------------------------------
+
+
+def test_extract_injects_mime_into_extractor_config(tmp_path: Path) -> None:
+    """Registry must pass _mime in the config dict so backends can use it."""
+    received: dict[str, object] = {}
+
+    class CapturingExtractor(Extractor):
+        name = "capturing"
+        priority = 1
+
+        def __init__(self, config: dict | None = None) -> None:
+            super().__init__(config)
+            received.update(self._cfg)
+
+        def extract(self, path: Path) -> str:
+            return "ok"
+
+    reg = Registry()
+    reg.register("text/plain")(CapturingExtractor)
+
+    dummy = tmp_path / "file.txt"
+    dummy.write_text("hi")
+    reg.extract(dummy, mime="text/plain")
+
+    assert received.get("_mime") == "text/plain"

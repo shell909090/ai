@@ -56,9 +56,10 @@ class Registry:
         candidates = self._map.get(mime, [])
         errors: list[str] = []
         for cls in candidates:
-            extractor_cfg: dict[str, Any] = (
+            extractor_cfg: dict[str, Any] = dict(
                 self._config.extractors.get(cls.name, {}) if self._config else {}
             )
+            extractor_cfg["_mime"] = mime
             inst = cls(config=extractor_cfg)
             if not inst.available():
                 logger.debug("skipping %s (unavailable)", cls.__name__)

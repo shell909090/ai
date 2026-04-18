@@ -1,38 +1,33 @@
 import shutil
+import subprocess
 from pathlib import Path
 
 from ..core.base import Extractor
 from ..core.registry import registry
 
+# Maps registered MIME types to the pandoc -f reader name.
+_MIME_TO_READER: dict[str, str] = {
+    "text/x-tex": "latex",
+    "text/troff": "man",
+    "text/html": "html",
+    "application/xhtml+xml": "html",
+    "application/epub+zip": "epub",
+    "application/vnd.oasis.opendocument.text": "odt",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "text/x-rst": "rst",
+    "text/x-org": "org",
+    "text/rtf": "rtf",
+    "application/rtf": "rtf",
+    "text/x-opml": "opml",
+    "application/docbook+xml": "docbook",
+    "application/x-fictionbook+xml": "fb2",
+    "application/x-ipynb+json": "ipynb",
+    "text/x-creole": "creole",
+    "text/x-textile": "textile",
+}
 
-@registry.register(
-    # LaTeX
-    "text/x-tex",
-    # Man / troff
-    "text/troff",
-    # HTML
-    "text/html",
-    "application/xhtml+xml",
-    # E-book
-    "application/epub+zip",
-    # Word / ODT
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.oasis.opendocument.text",
-    # RTF
-    "text/rtf",
-    "application/rtf",
-    # Markup / wiki
-    "text/x-rst",
-    "text/x-org",
-    "text/x-opml",
-    "text/x-creole",
-    "text/x-textile",
-    # Structured documents
-    "application/docbook+xml",
-    "application/x-fictionbook+xml",
-    # Jupyter notebook (.ipynb maps here via extensions override)
-    "application/x-ipynb+json",
-)
+
+@registry.register(*_MIME_TO_READER.keys())
 class PandocExtractor(Extractor):
     """Convert documents to plain text via pandoc CLI."""
 
@@ -44,13 +39,12 @@ class PandocExtractor(Extractor):
         return shutil.which("pandoc") is not None
 
     def extract(self, path: Path) -> str:
-        """Run pandoc -t plain --wrap=none and return stdout."""
-        import subprocess
-
-        result = subprocess.run(
-            ["pandoc", "-t", "plain", "--wrap=none", str(path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        """Run pandoc -f <reader> -t plain --wrap=none and return stdout."""
+        mime = self._cfg.get("_mime", "")
+        reader = _MIME_TO_READER.get(mime)
+        cmd = ["pandoc", "-t", "plain", "--wrap=none"]
+        if reader:
+            cmd += ["-f", reader]
+        cmd.append(str(path))
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout

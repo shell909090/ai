@@ -19,5 +19,5 @@ _BACKEND_MODULES = [
 for _mod in _BACKEND_MODULES:
     try:
         __import__(f"{__name__}.{_mod}")
-    except Exception as _exc:
+    except ImportError as _exc:
         logger.warning("backend module %r failed to load: %s", _mod, _exc)

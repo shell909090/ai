@@ -104,6 +104,34 @@ class TestPandocExtractor:
         )
         assert result == "extracted text\n"
 
+    def test_extract_passes_reader_format_when_mime_known(self, tmp_path: Path) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        fake_result = MagicMock()
+        fake_result.stdout = "rst content\n"
+        f = tmp_path / "notes.rst"
+
+        with patch("subprocess.run", return_value=fake_result) as mock_run:
+            extractor = PandocExtractor(config={"_mime": "text/x-rst"})
+            extractor.extract(f)
+
+        cmd = mock_run.call_args[0][0]
+        assert "-f" in cmd
+        assert cmd[cmd.index("-f") + 1] == "rst"
+
+    def test_extract_omits_reader_when_mime_unknown(self, tmp_path: Path) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        fake_result = MagicMock()
+        fake_result.stdout = ""
+
+        with patch("subprocess.run", return_value=fake_result) as mock_run:
+            extractor = PandocExtractor(config={"_mime": "application/unknown"})
+            extractor.extract(tmp_path / "file.bin")
+
+        cmd = mock_run.call_args[0][0]
+        assert "-f" not in cmd
+
 
 # ===========================================================================
 # ManExtractor

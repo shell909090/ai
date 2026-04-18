@@ -22,7 +22,7 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="FILE",
-        help="Path to all2txt.toml (default: ./all2txt.toml)",
+        help="Path to all2txt.yaml (default: ./all2txt.yaml)",
     )
     parser.add_argument("--mime", metavar="MIME", help="Override MIME type detection")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
@@ -43,7 +43,7 @@ def main() -> None:
             sys.stdout.write(text)
             if not text.endswith("\n"):
                 sys.stdout.write("\n")
-        except RuntimeError as exc:
+        except Exception as exc:
             print(f"error: {path}: {exc}", file=sys.stderr)
             exit_code = 1
 
