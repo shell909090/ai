@@ -34,12 +34,7 @@ def test_load_config_missing_file(tmp_path: Path) -> None:
 
 def test_load_config_global_fields(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(
-        "top_k: 5\n"
-        "embedding_model: my-model\n"
-        "chunk_size: 300\n"
-        "chunk_overlap: 30\n"
-    )
+    cfg_file.write_text("top_k: 5\nembedding_model: my-model\nchunk_size: 300\nchunk_overlap: 30\n")
     config = load_config(cfg_file)
     assert config.top_k == 5
     assert config.embedding_model == "my-model"
@@ -50,10 +45,7 @@ def test_load_config_global_fields(tmp_path: Path) -> None:
 def test_load_config_dirs(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
-        "dirs:\n"
-        "  - path: /docs\n"
-        "    extensions: [.md, .txt]\n"
-        "    extractor: plaintext\n"
+        "dirs:\n  - path: /docs\n    extensions: [.md, .txt]\n    extractor: plaintext\n"
     )
     config = load_config(cfg_file)
     assert len(config.dirs) == 1

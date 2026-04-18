@@ -1,6 +1,7 @@
 """CLI entry points: elocate (search) and elocate-updatedb (index builder)."""
 
 import logging
+import re
 import sys
 
 import click
@@ -24,10 +25,25 @@ def main_search(query: str, top_k: int | None, pattern: str | None, debug: bool)
     config = load_config()
     if top_k is not None:
         config.top_k = top_k
-    searcher = Searcher(config)
-    results = searcher.search(query, pattern=pattern)
+
+    if pattern:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            click.echo(f"Error: invalid regex pattern: {exc}", err=True)
+            sys.exit(1)
+
+    try:
+        searcher = Searcher(config)
+        results = searcher.search(query, pattern=pattern)
+    except RuntimeError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
     for r in results:
-        click.echo(f"{r.score:.4f}  {r.path}")
+        for path in r.paths:
+            click.echo(f"{r.score:.4f}  {path}")
+
     if not results:
         click.echo("No results found.", err=True)
         sys.exit(1)
@@ -40,9 +56,9 @@ def main_updatedb(debug: bool) -> None:
     if debug:
         logging.basicConfig(level=logging.DEBUG)
     config = load_config()
-    if not config.index_dirs:
-        click.echo("Warning: no index_dirs configured. Nothing to index.", err=True)
+    if not config.dirs:
+        click.echo("Warning: no dirs configured. Nothing to index.", err=True)
         sys.exit(1)
     indexer = Indexer(config)
-    count = indexer.run()
-    click.echo(f"Indexed {count} documents.")
+    added, updated, removed = indexer.run()
+    click.echo(f"Done: +{added} added, ~{updated} updated, -{removed} removed.")

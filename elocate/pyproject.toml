@@ -46,3 +46,6 @@ max-complexity = 10
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=elocate --cov-report=term-missing"
+
+[tool.uv]
+torch-backend = "cpu"
