@@ -33,6 +33,7 @@ class PandocExtractor(Extractor):
 
     name = "pandoc"
     priority = 10
+    install_hint = "apt install pandoc"
 
     def available(self) -> bool:
         """Check that pandoc is installed."""

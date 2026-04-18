@@ -12,6 +12,7 @@ class PdfToTextExtractor(Extractor):
 
     name = "pdftotext"
     priority = 20
+    install_hint = "apt install poppler-utils"
 
     def available(self) -> bool:
         """Check that pdftotext is installed."""

@@ -8,6 +8,7 @@ class Extractor(ABC):
 
     name: str = ""
     priority: int = 50
+    install_hint: str = ""
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self._cfg: dict[str, Any] = config or {}

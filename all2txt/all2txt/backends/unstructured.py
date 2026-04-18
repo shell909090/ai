@@ -20,6 +20,7 @@ class UnstructuredExtractor(Extractor):
 
     name = "unstructured"
     priority = 30
+    install_hint = "uv sync --extra unstructured"
 
     def available(self) -> bool:
         """Check that unstructured is installed."""

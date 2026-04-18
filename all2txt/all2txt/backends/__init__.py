@@ -3,6 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _BACKEND_MODULES = [
+    "archive",
     "asr",
     "libreoffice",
     "native_office",

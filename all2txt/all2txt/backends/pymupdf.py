@@ -10,6 +10,7 @@ class PyMuPDFExtractor(Extractor):
 
     name = "pymupdf"
     priority = 25
+    install_hint = "uv sync --extra pymupdf"
 
     def available(self) -> bool:
         """Check that pymupdf is installed."""

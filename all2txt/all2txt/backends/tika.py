@@ -25,6 +25,7 @@ class TikaExtractor(Extractor):
 
     name = "tika"
     priority = 20
+    install_hint = "uv sync --extra tika  (requires JVM)"
 
     def available(self) -> bool:
         """Check that the tika Python package is installed."""

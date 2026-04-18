@@ -27,6 +27,7 @@ class LibreOfficeExtractor(Extractor):
 
     name = "libreoffice"
     priority = 25
+    install_hint = "apt install libreoffice"
 
     def available(self) -> bool:
         """Check that libreoffice (or soffice) is installed."""
@@ -38,7 +39,15 @@ class LibreOfficeExtractor(Extractor):
         tmpdir = tempfile.mkdtemp()
         try:
             subprocess.run(
-                [binary, "--headless", "--convert-to", "txt:Text (encoded):UTF8,LF,,,,0", "--outdir", tmpdir, str(path)],
+                [
+                    binary,
+                    "--headless",
+                    "--convert-to",
+                    "txt:Text (encoded):UTF8,LF,,,,0",
+                    "--outdir",
+                    tmpdir,
+                    str(path),
+                ],
                 capture_output=True,
                 check=True,
             )

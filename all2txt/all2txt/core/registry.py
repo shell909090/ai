@@ -40,9 +40,11 @@ class Registry:
             self._sort(mime)
 
     def detect(self, path: Path) -> str:
-        """Return MIME type via file(1) or mimetypes fallback; apply extension override for generic results."""
+        """Return MIME type via file(1) or mimetypes fallback; apply extension override."""
         try:
-            mime = subprocess.check_output(["file", "--mime-type", "-b", str(path)], text=True).strip()
+            mime = subprocess.check_output(
+                ["file", "--mime-type", "-b", str(path)], text=True
+            ).strip()
         except FileNotFoundError:
             logger.warning("'file' command not found, falling back to mimetypes for MIME detection")
             guessed, _ = mimetypes.guess_type(str(path))
@@ -70,8 +72,29 @@ class Registry:
             instances.append((cls, cls(config=extractor_cfg)))
         available_names = [cls.name for cls, inst in instances if inst.available()]
         all_names = [cls.name for cls, _ in instances]
-        logger.info("%s: %d registered backends: %s", path.name, len(candidates), ", ".join(all_names) or "none")
-        logger.info("%s: %d available backends: %s", path.name, len(available_names), ", ".join(available_names) or "none")
+        logger.info(
+            "%s: %d registered backends: %s",
+            path.name,
+            len(candidates),
+            ", ".join(all_names) or "none",
+        )
+        logger.info(
+            "%s: %d available backends: %s",
+            path.name,
+            len(available_names),
+            ", ".join(available_names) or "none",
+        )
+        if candidates and not available_names:
+            hints = "\n".join(
+                f"  {cls.name}: {cls.install_hint}" if cls.install_hint else f"  {cls.name}"
+                for cls, _ in instances
+            )
+            logger.error(
+                "%s: no backend available for %s. Install one of:\n%s",
+                path.name,
+                mime,
+                hints,
+            )
         for cls, inst in instances:
             if not inst.available():
                 logger.debug("skipping %s (unavailable)", cls.__name__)

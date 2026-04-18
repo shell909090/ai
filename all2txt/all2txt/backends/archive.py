@@ -29,6 +29,8 @@ _SINGLE_COMPRESSED: dict[str, Any] = {
     "application/x-lzma": lzma.open,
 }
 
+_SINGLE_FILE_MIMES = frozenset(_SINGLE_COMPRESSED)
+
 _ALL_ARCHIVE_BACKEND_NAMES = (
     "archive_recurse",
     "7zip_recurse",
@@ -42,13 +44,16 @@ class ArchiveExtractor(Extractor):
 
     name = "archive_recurse"
     priority = 10
+    install_hint = "pass --allow-archive flag (multi-file archives disabled by default)"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
         self._max_bytes: int = int(self._cfg.get("max_bytes", _DEFAULT_MAX_BYTES))
 
     def available(self) -> bool:
-        """Return True only when explicitly enabled in config."""
+        """Return True for single-file compression always; multi-file requires explicit enable."""
+        if self._cfg.get("_mime", "") in _SINGLE_FILE_MIMES:
+            return True
         return bool(self._cfg.get("enabled", False))
 
     def extract(self, path: Path) -> str:
@@ -140,6 +145,7 @@ class SevenZipExtractor(Extractor):
 
     name = "7zip_recurse"
     priority = 10
+    install_hint = "uv sync --extra 7zip  (then --allow-archive to enable)"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -197,6 +203,7 @@ class RarExtractor(Extractor):
 
     name = "rar_recurse"
     priority = 10
+    install_hint = "uv sync --extra rar + apt install unrar  (then --allow-archive to enable)"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
