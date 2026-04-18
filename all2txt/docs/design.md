@@ -94,7 +94,7 @@ class Config:
     # 仅在 file 命令返回通用类型时生效
 
 def load_config(path: Path | None = None) -> Config:
-    """从 all2txt.toml 加载配置，文件不存在时返回空 Config。"""
+    """从 all2txt.yaml 加载配置，文件不存在时返回空 Config。"""
 ```
 
 ### 3.3 Registry（core/registry.py）
@@ -141,7 +141,7 @@ all2txt [--config FILE] [--mime MIME] [--debug] FILE [FILE ...]
 | 参数 | 说明 |
 |---|---|
 | `FILE` | 一个或多个输入文件路径 |
-| `--config FILE` | 指定配置文件，默认 `./all2txt.toml` |
+| `--config FILE` | 指定配置文件，默认 `./all2txt.yaml` |
 | `--mime MIME` | 跳过自动检测，强制所有输入文件使用同一 MIME |
 | `--debug` | 启用 DEBUG 日志到 stderr |
 
