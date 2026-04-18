@@ -33,7 +33,9 @@ def _make_config(tmp_path: Path, dirs: list[DirConfig]) -> Config:
 def notes_dir(tmp_path: Path) -> Path:
     d = tmp_path / "notes"
     d.mkdir()
-    (d / "a.md").write_text("First paragraph with real content.\n\nSecond paragraph with real content.")
+    (d / "a.md").write_text(
+        "First paragraph with real content.\n\nSecond paragraph with real content."
+    )
     (d / "b.txt").write_text("Another document with sufficient content for indexing.")
     return d
 

@@ -80,4 +80,4 @@ Shell.Xu
 
 ## License
 
-MIT License. Copyright (c) 2024 Shell.Xu.
+MIT License. Copyright (c) 2026 Shell.Xu.

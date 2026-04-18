@@ -82,4 +82,4 @@ Shell.Xu
 
 ## 版权与授权
 
-MIT License. Copyright (c) 2024 Shell.Xu.
+MIT License. Copyright (c) 2026 Shell.Xu.
