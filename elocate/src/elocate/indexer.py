@@ -29,7 +29,28 @@ class Indexer:
             api_base=self._config.openai_base_url,
             api_key=self._config.openai_api_key,
         )
+
+        # B002: if model/backend changed since last run, force full rebuild
+        if self._db.tables_exist():
+            stored_model = self._db.get_meta("embedding_model")
+            stored_backend = self._db.get_meta("embedder_backend")
+            if (
+                stored_model != self._config.embedding_model
+                or stored_backend != self._config.embedder_backend
+            ):
+                logger.info(
+                    "Embedding config changed (%s/%s → %s/%s); rebuilding index.",
+                    stored_backend,
+                    stored_model,
+                    self._config.embedder_backend,
+                    self._config.embedding_model,
+                )
+                self._db.drop_tables()
+
         self._db.init_tables(embedder.dim)
+        self._db.set_meta("embedding_model", self._config.embedding_model)
+        self._db.set_meta("embedder_backend", self._config.embedder_backend)
+
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
 
         disk_files = self._collect_files()
@@ -59,9 +80,9 @@ class Indexer:
 
     def _scan_disk_files(
         self, disk_files: list[tuple[Path, DirConfig]]
-    ) -> tuple[list[tuple[str, str, int, float, str]], int, int]:
+    ) -> tuple[list[tuple[str, str, int, float, str, str | None]], int, int]:
         """Scan disk files; return (to_embed list, added count, updated count)."""
-        to_embed: list[tuple[str, str, int, float, str]] = []
+        to_embed: list[tuple[str, str, int, float, str, str | None]] = []
         added = updated = 0
 
         for path, dir_cfg in disk_files:
@@ -82,9 +103,11 @@ class Indexer:
                 logger.warning("Cannot hash %s: %s", path_str, exc)
                 continue
 
-            added, updated = self._handle_file(
-                path_str, stat, file_hash, dir_cfg, rec, to_embed, added, updated
-            )
+            action = self._handle_file(path_str, stat, file_hash, dir_cfg, rec, to_embed)
+            if action == "added":
+                added += 1
+            elif action == "updated":
+                updated += 1
 
         return to_embed, added, updated
 
@@ -96,50 +119,47 @@ class Indexer:
         dir_cfg: DirConfig,
         rec: dict | None,
         to_embed: list,
-        added: int,
-        updated: int,
-    ) -> tuple[int, int]:
-        """Process a single changed/new file; mutate to_embed as needed."""
-
+    ) -> str | None:
+        """Process a single changed/new file; mutate to_embed as needed. Returns action or None."""
         size = stat.st_size  # type: ignore[union-attr]
         mtime = stat.st_mtime  # type: ignore[union-attr]
 
-        if rec:
-            if file_hash == rec["file_hash"]:
-                self._db.upsert_file_meta(path_str, size, mtime, file_hash)
-                return added, updated + 1
-            old_hash = rec["file_hash"]
-            self._db.delete_file_meta(path_str)
-            if not self._db.get_paths_by_hash(old_hash):
-                self._db.delete_chunks_by_hash(old_hash)
-            updated += 1
-        else:
-            added += 1
+        old_hash: str | None = rec["file_hash"] if rec else None
 
-        if self._db.hash_has_chunks(file_hash):
+        if rec and file_hash == old_hash:
+            # Metadata drift (size/mtime) but content identical — just refresh metadata
             self._db.upsert_file_meta(path_str, size, mtime, file_hash)
-            return added, updated
+            return "updated"
 
-        try:
-            text = self._extract_text(Path(path_str), dir_cfg)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Cannot extract text from %s: %s", path_str, exc)
-            return added, updated
+        # Content changed or new file.
+        # B001: extract text BEFORE touching existing index so failures leave old data intact.
+        if not self._db.hash_has_chunks(file_hash):
+            try:
+                text = self._extract_text(Path(path_str), dir_cfg)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Cannot extract text from %s: %s", path_str, exc)
+                return None  # old index preserved
 
-        to_embed.append((path_str, file_hash, size, mtime, text))
-        return added, updated
+            to_embed.append((path_str, file_hash, size, mtime, text, old_hash))
+            return "updated" if rec else "added"
+
+        # New hash already indexed — update metadata and clean up old hash if unreferenced
+        self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+        if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
+            self._db.delete_chunks_by_hash(old_hash)
+        return "updated" if rec else "added"
 
     def _index_batch(
         self,
-        batch: list[tuple[str, str, int, float, str]],
+        batch: list[tuple[str, str, int, float, str, str | None]],
         embedder: Embedder,
         chunker: Chunker,
     ) -> None:
-        """Chunk, embed and store a batch of (path, hash, size, mtime, text) tuples."""
+        """Chunk, embed and store a batch of (path, hash, size, mtime, text, old_hash) tuples."""
         all_chunks: list[dict] = []
-        file_metas: list[tuple[str, int, float, str]] = []
+        file_metas: list[tuple[str, int, float, str, str | None]] = []
 
-        for path_str, file_hash, size, mtime, text in batch:
+        for path_str, file_hash, size, mtime, text, old_hash in batch:
             chunks = chunker.chunk(text)
             texts = [c.content for c in chunks] if chunks else [""]
             vectors = embedder.embed(texts)
@@ -155,12 +175,15 @@ class Indexer:
                         "vector": vec.tolist(),
                     }
                 )
-            file_metas.append((path_str, size, mtime, file_hash))
+            file_metas.append((path_str, size, mtime, file_hash, old_hash))
 
         if all_chunks:
             self._db.add_chunks(all_chunks)
-        for path_str, size, mtime, file_hash in file_metas:
+        for path_str, size, mtime, file_hash, old_hash in file_metas:
             self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+            # B001: clean up old hash AFTER successful write
+            if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
+                self._db.delete_chunks_by_hash(old_hash)
 
     def _collect_files(self) -> list[tuple[Path, DirConfig]]:
         """Collect (file_path, dir_config) pairs from all configured dirs."""

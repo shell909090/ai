@@ -1,4 +1,4 @@
-"""LanceDB interface: files (metadata) and chunks (vectors) tables."""
+"""LanceDB interface: files (metadata), chunks (vectors), and meta (key-value) tables."""
 
 import logging
 from pathlib import Path
@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 FILES_TABLE = "files"
 CHUNKS_TABLE = "chunks"
+META_TABLE = "meta"
 
 _FILES_SCHEMA = pa.schema(
     [
@@ -16,6 +17,13 @@ _FILES_SCHEMA = pa.schema(
         pa.field("size", pa.int64()),
         pa.field("mtime", pa.float64()),
         pa.field("file_hash", pa.utf8()),
+    ]
+)
+
+_META_SCHEMA = pa.schema(
+    [
+        pa.field("key", pa.utf8()),
+        pa.field("value", pa.utf8()),
     ]
 )
 
@@ -34,7 +42,7 @@ def _chunks_schema(dim: int) -> pa.Schema:
 
 
 class VectorDB:
-    """Manages LanceDB files and chunks tables."""
+    """Manages LanceDB files, chunks, and meta tables."""
 
     def __init__(self, index_path: Path) -> None:
         import lancedb  # deferred: avoid slow import at CLI startup
@@ -44,26 +52,51 @@ class VectorDB:
 
     # ------------------------------------------------------------------ tables
 
+    def _table_names(self) -> set[str]:
+        return set(self._db.list_tables().tables)
+
     def init_tables(self, dim: int) -> None:
-        """Create files and chunks tables if they do not exist."""
-        existing = set(self._db.list_tables().tables)
+        """Create files, chunks, and meta tables if they do not exist."""
+        existing = self._table_names()
         if FILES_TABLE not in existing:
             self._db.create_table(FILES_TABLE, schema=_FILES_SCHEMA)
         if CHUNKS_TABLE not in existing:
             self._db.create_table(CHUNKS_TABLE, schema=_chunks_schema(dim))
+        if META_TABLE not in existing:
+            self._db.create_table(META_TABLE, schema=_META_SCHEMA)
 
     def drop_tables(self) -> None:
-        """Drop both tables (used in tests or force-rebuild)."""
-        existing = set(self._db.list_tables().tables)
-        if FILES_TABLE in existing:
-            self._db.drop_table(FILES_TABLE)
-        if CHUNKS_TABLE in existing:
-            self._db.drop_table(CHUNKS_TABLE)
+        """Drop all tables (used in tests or force-rebuild)."""
+        existing = self._table_names()
+        for name in (FILES_TABLE, CHUNKS_TABLE, META_TABLE):
+            if name in existing:
+                self._db.drop_table(name)
 
     def tables_exist(self) -> bool:
-        """Return True if both files and chunks tables exist."""
-        existing = set(self._db.list_tables().tables)
+        """Return True if the index tables (files and chunks) both exist."""
+        existing = self._table_names()
         return FILES_TABLE in existing and CHUNKS_TABLE in existing
+
+    # ------------------------------------------------------------------ meta
+
+    def get_meta(self, key: str) -> str | None:
+        """Return stored metadata value for key, or None if missing."""
+        if META_TABLE not in self._table_names():
+            return None
+        rows = (
+            self._db.open_table(META_TABLE)
+            .search()
+            .where(f"key = '{_esc(key)}'", prefilter=True)
+            .limit(1)
+            .to_list()
+        )
+        return rows[0]["value"] if rows else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Store or overwrite a metadata key-value pair."""
+        tbl = self._db.open_table(META_TABLE)
+        tbl.delete(f"key = '{_esc(key)}'")
+        tbl.add([{"key": key, "value": value}])
 
     # ------------------------------------------------------------------ files
 

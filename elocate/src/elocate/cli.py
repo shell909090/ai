@@ -39,6 +39,9 @@ def main_search(query: str, top_k: int | None, pattern: str | None, debug: bool)
     except RuntimeError as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
+    except (ImportError, ValueError) as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
 
     for r in results:
         for path in r.paths:
@@ -59,6 +62,10 @@ def main_updatedb(debug: bool) -> None:
     if not config.dirs:
         click.echo("Warning: no dirs configured. Nothing to index.", err=True)
         sys.exit(1)
-    indexer = Indexer(config)
-    added, updated, removed = indexer.run()
+    try:
+        indexer = Indexer(config)
+        added, updated, removed = indexer.run()
+    except (ImportError, ValueError) as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
     click.echo(f"Done: +{added} added, ~{updated} updated, -{removed} removed.")

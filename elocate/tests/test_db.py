@@ -169,3 +169,26 @@ def test_query_top_k_limit(db: VectorDB) -> None:
         )
     results = db.query(_vec(), top_k=3)
     assert len(results) <= 3
+
+
+# ---- meta table (B002) ----
+
+
+def test_set_and_get_meta(db: VectorDB) -> None:
+    db.set_meta("embedding_model", "all-MiniLM-L6-v2")
+    assert db.get_meta("embedding_model") == "all-MiniLM-L6-v2"
+
+
+def test_get_meta_missing_key(db: VectorDB) -> None:
+    assert db.get_meta("nonexistent_key") is None
+
+
+def test_set_meta_overwrites(db: VectorDB) -> None:
+    db.set_meta("key", "old")
+    db.set_meta("key", "new")
+    assert db.get_meta("key") == "new"
+
+
+def test_get_meta_no_table(tmp_path: Path) -> None:
+    d = VectorDB(tmp_path / "fresh")
+    assert d.get_meta("anything") is None

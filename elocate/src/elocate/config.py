@@ -63,7 +63,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         )
 
     index_path_raw = data.get("index_path")
-    index_path = Path(index_path_raw) if index_path_raw else DEFAULT_INDEX_PATH
+    index_path = Path(index_path_raw).expanduser() if index_path_raw else DEFAULT_INDEX_PATH
 
     return Config(
         dirs=dirs,

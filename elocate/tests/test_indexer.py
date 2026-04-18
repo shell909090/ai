@@ -167,3 +167,70 @@ def test_run_dedup_hash(tmp_path: Path) -> None:
     assert db.hash_has_chunks(h)
     paths = db.get_paths_by_hash(h)
     assert len(paths) == 2
+
+
+def test_run_preserves_index_on_extract_failure(tmp_path: Path) -> None:
+    """B001: extraction failure after content change must not destroy the old index."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    doc = notes / "doc.md"
+    doc.write_text("Original content that was indexed successfully.")
+
+    cfg = _make_config(tmp_path, [DirConfig(path=str(notes), extensions=[".md"])])
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        indexer.run()
+
+    db = indexer._db
+    path_str = str(doc)
+    old_meta = db.get_file_meta(path_str)
+    assert old_meta is not None
+    old_hash = old_meta["file_hash"]
+    assert db.hash_has_chunks(old_hash)
+
+    # Change content so the file gets a new hash and triggers re-processing
+    doc.write_text("Updated content that will fail extraction — different size.")
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        with patch.object(indexer, "_extract_text", side_effect=RuntimeError("disk error")):
+            indexer.run()
+
+    # Old index must still be intact
+    meta = db.get_file_meta(path_str)
+    assert meta is not None
+    assert meta["file_hash"] == old_hash
+    assert db.hash_has_chunks(old_hash)
+
+
+def test_run_rebuilds_on_model_change(tmp_path: Path, notes_dir: Path) -> None:
+    """B002: switching embedding_model must force a full index rebuild."""
+    from elocate.config import Config
+
+    cfg_a = Config(
+        dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
+        index_path=tmp_path / "index",
+        embedding_model="model-a",
+        chunk_size=500,
+        chunk_overlap=50,
+    )
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer_a = Indexer(cfg_a)
+        added_a, _, _ = indexer_a.run()
+    assert added_a == 2
+
+    cfg_b = Config(
+        dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
+        index_path=tmp_path / "index",
+        embedding_model="model-b",
+        chunk_size=500,
+        chunk_overlap=50,
+    )
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer_b = Indexer(cfg_b)
+        added_b, updated_b, _ = indexer_b.run()
+
+    # After rebuild all files are new again
+    assert added_b == 2
+    assert updated_b == 0

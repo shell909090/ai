@@ -113,3 +113,28 @@ def test_search_with_regex_filter(tmp_path: Path) -> None:
             result = runner.invoke(main_search, ["hello", "-p", "match"])
     assert result.exit_code == 0
     assert "match.md" in result.output
+
+
+def test_updatedb_value_error(tmp_path: Path) -> None:
+    """B004: ValueError during indexing must produce a friendly error and exit 1."""
+    runner = CliRunner()
+    cfg = _default_config(tmp_path)
+    with patch("elocate.cli.load_config", return_value=cfg):
+        with patch("elocate.indexer.Embedder", side_effect=ValueError("unknown backend: bad")):
+            result = runner.invoke(main_updatedb, [])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+
+
+def test_search_import_error(tmp_path: Path) -> None:
+    """B004: ImportError during search must produce a friendly error and exit 1."""
+    runner = CliRunner()
+    cfg = _default_config(tmp_path)
+    mock_emb = _mock_embedder()
+    with patch("elocate.cli.load_config", return_value=cfg):
+        with patch("elocate.indexer.Embedder", return_value=mock_emb):
+            runner.invoke(main_updatedb, [])
+        with patch("elocate.searcher.Embedder", side_effect=ImportError("openai not installed")):
+            result = runner.invoke(main_search, ["hello"])
+    assert result.exit_code == 1
+    assert "Error:" in result.output

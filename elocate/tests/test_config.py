@@ -110,3 +110,12 @@ def test_load_config_local_backend_default(tmp_path: Path) -> None:
     cfg_file.write_text("top_k: 3\n")
     config = load_config(cfg_file)
     assert config.embedder_backend == "local"
+
+
+def test_load_config_index_path_tilde_expansion(tmp_path: Path) -> None:
+    """B003: index_path with ~ must be expanded to an absolute path."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("index_path: ~/elocate-test-index\n")
+    config = load_config(cfg_file)
+    assert not str(config.index_path).startswith("~")
+    assert config.index_path.is_absolute()
