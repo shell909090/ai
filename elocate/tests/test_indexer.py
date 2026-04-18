@@ -294,3 +294,24 @@ def test_run_rebuilds_on_model_change(tmp_path: Path, notes_dir: Path) -> None:
     # After rebuild all files are new again
     assert added_b == 2
     assert updated_b == 0
+
+
+def test_run_no_infinite_reprocess_for_no_chunk_file(tmp_path: Path) -> None:
+    """Files that produce no chunks must still be recorded in file_meta so they are
+    not re-processed on every subsequent run."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    # Content is ≥ MIN_FILE_BYTES but every line < MIN_CHUNK_CHARS (20) → no chunks
+    (notes / "tiny.md").write_text("hi\n\nok\n\nyes")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(notes), extensions=[".md"])])
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        added1, _, _ = indexer.run()
+        added2, updated2, _ = indexer.run()
+
+    assert added1 == 1
+    # Second run must not re-process the same file
+    assert added2 == 0
+    assert updated2 == 0

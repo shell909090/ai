@@ -160,12 +160,16 @@ class Indexer:
         chunker: Chunker,
     ) -> None:
         """Chunk, embed (single call), and store a batch of files."""
-        # Phase 1: chunk all files
+        # Phase 1: chunk all files; files with no chunks are still tracked in file_meta
+        # so that subsequent runs don't re-process them on every invocation.
         per_file: list[tuple[str, str, int, float, str | None, list]] = []
         for path_str, file_hash, size, mtime, text, old_hash in batch:
             chunks = chunker.chunk(text)
             if not chunks:
-                logger.warning("No chunks produced for %s, skipping", path_str)
+                logger.warning("No chunks produced for %s; recording metadata only.", path_str)
+                self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+                if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
+                    self._db.delete_chunks_by_hash(old_hash)
                 continue
             per_file.append((path_str, file_hash, size, mtime, old_hash, chunks))
 
