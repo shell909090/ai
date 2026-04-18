@@ -1,4 +1,4 @@
-"""Tests for ArchiveExtractor: availability, ZIP extraction, ZIP bomb protection, member failures."""
+"""Tests for ArchiveExtractor: availability, ZIP extraction, ZIP bomb protection, failures."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 
 # Trigger backend registration so PlainTextExtractor is available for text/plain.
 import all2txt.backends as _  # noqa: F401
-
 
 # ===========================================================================
 # ArchiveExtractor – availability

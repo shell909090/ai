@@ -10,7 +10,6 @@ import pytest
 
 from tests.test_backends._helpers import _make_module
 
-
 # ===========================================================================
 # OpenAIWhisperExtractor
 # ===========================================================================

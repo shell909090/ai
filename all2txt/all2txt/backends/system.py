@@ -57,7 +57,7 @@ class ManExtractor(Extractor):
         return col.stdout.decode(errors="replace")
 
 
-@registry.register("text/x-info")
+@registry.register("text/x-info", "application/x-info")
 class InfoExtractor(Extractor):
     """Extract text from GNU Info files via the info CLI."""
 

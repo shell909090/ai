@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 from tests.test_backends._helpers import _make_module
 
-
 # ===========================================================================
 # PyMuPDFExtractor
 # ===========================================================================

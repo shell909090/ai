@@ -245,3 +245,72 @@ def test_extract_injects_mime_into_extractor_config(tmp_path: Path) -> None:
     reg.extract(dummy, mime="text/plain")
 
     assert received.get("_mime") == "text/plain"
+
+
+# ---------------------------------------------------------------------------
+# 10. Three-tier MIME detection
+# ---------------------------------------------------------------------------
+
+
+def test_detect_octet_stream_falls_back_to_mimetypes(tmp_path: Path) -> None:
+    """file returns octet-stream for .info → mimetypes provides application/x-info."""
+    reg = Registry()
+    info_file = tmp_path / "manual.info"
+    info_file.write_text("INFO content")
+
+    with (
+        patch("subprocess.check_output", return_value="application/octet-stream"),
+        patch(
+            "all2txt.core.registry.mimetypes.guess_type", return_value=("application/x-info", None)
+        ),
+    ):
+        mime = reg.detect(info_file)
+
+    assert mime == "application/x-info"
+
+
+def test_detect_octet_stream_falls_back_to_ext_map(tmp_path: Path) -> None:
+    """file returns octet-stream for .1 and mimetypes returns None → _EXT_MAP gives text/troff."""
+    reg = Registry()
+    man_file = tmp_path / "ls.1"
+    man_file.write_text(".TH LS 1")
+
+    with (
+        patch("subprocess.check_output", return_value="application/octet-stream"),
+        patch("all2txt.core.registry.mimetypes.guess_type", return_value=(None, None)),
+    ):
+        mime = reg.detect(man_file)
+
+    assert mime == "text/troff"
+
+
+def test_detect_file_not_found_falls_back_to_mimetypes(tmp_path: Path) -> None:
+    """file command missing → mimetypes provides application/x-info."""
+    reg = Registry()
+    info_file = tmp_path / "manual.info"
+    info_file.write_text("INFO content")
+
+    with (
+        patch("subprocess.check_output", side_effect=FileNotFoundError),
+        patch(
+            "all2txt.core.registry.mimetypes.guess_type", return_value=("application/x-info", None)
+        ),
+    ):
+        mime = reg.detect(info_file)
+
+    assert mime == "application/x-info"
+
+
+def test_detect_file_not_found_and_mimetypes_none_uses_ext_map(tmp_path: Path) -> None:
+    """file command missing and mimetypes returns None for .1 → _EXT_MAP gives text/troff."""
+    reg = Registry()
+    man_file = tmp_path / "ls.1"
+    man_file.write_text(".TH LS 1")
+
+    with (
+        patch("subprocess.check_output", side_effect=FileNotFoundError),
+        patch("all2txt.core.registry.mimetypes.guess_type", return_value=(None, None)),
+    ):
+        mime = reg.detect(man_file)
+
+    assert mime == "text/troff"

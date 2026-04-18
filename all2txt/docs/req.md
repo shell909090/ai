@@ -6,9 +6,13 @@
 
 ## 核心需求
 
-1. **文件类型自动识别**：使用系统 `file --mime-type` 命令检测文件 MIME 类型，无需依赖扩展名。
+1. **文件类型自动识别**：采用三级探测策略：
+   1. 使用系统 `file --mime-type` 命令检测；
+   2. 若 `file` 不可用或返回 `application/octet-stream`，fallback 到 Python `mimetypes` 模块；
+   3. 若 `mimetypes` 也无法识别（返回 None），再按扩展名查内置映射表（覆盖 troff 等 `mimetypes` 盲区）。
+   每次 fallback 需在日志中说明原因。
 
-2. **多后端注册**：每种 MIME 类型可注册多个后端（extractor）。后端通过类装饰器方式注册，新增后端只需新增一个文件。
+2. **多后端注册**：每种 MIME 类型可注册多个后端（extractor）。后端通过类装饰器方式注册，新增后端只需新增一个文件。同一后端可同时注册到多个 MIME 类型，用于处理同一格式有多种 MIME 表示的情况（例如 GNU Info 同时对应 `text/x-info` 和 `application/x-info`）。
 
 3. **优先级与配置**：
    - 后端具有默认优先级（数字越小越优先）。

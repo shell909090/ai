@@ -14,7 +14,6 @@ import pytest
 # Trigger backend registration so PlainTextExtractor is available for text/plain.
 import all2txt.backends as _  # noqa: F401
 
-
 # ===========================================================================
 # ArchiveExtractor – plain TAR extraction
 # ===========================================================================

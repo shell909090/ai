@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=type[Extractor])
 
+_EXT_MAP: dict[str, str] = {
+    **{f".{i}": "text/troff" for i in range(1, 10)},
+    ".1p": "text/troff",
+    ".3pm": "text/troff",
+    ".man": "text/troff",
+}
+
 
 class Registry:
     """Maps MIME types to prioritised chains of Extractor backends."""
@@ -39,16 +46,36 @@ class Registry:
         for mime in self._map:
             self._sort(mime)
 
-    def detect(self, path: Path) -> str:
-        """Return MIME type via file(1) or mimetypes fallback; apply extension override."""
+    def _detect_raw(self, path: Path) -> str:
+        """Return raw MIME type via three-tier cascade: file(1), mimetypes, _EXT_MAP."""
         try:
             mime = subprocess.check_output(
                 ["file", "--mime-type", "-b", str(path)], text=True
             ).strip()
+            if mime == "application/octet-stream":
+                logger.warning(
+                    "'file' returned application/octet-stream for %s, falling back to mimetypes",
+                    path.name,
+                )
+                mime = None
         except FileNotFoundError:
             logger.warning("'file' command not found, falling back to mimetypes for MIME detection")
+            mime = None
+        if mime is None:
             guessed, _ = mimetypes.guess_type(str(path))
-            mime = guessed or "application/octet-stream"
+            if guessed is None:
+                logger.warning(
+                    "mimetypes returned no result for %s, falling back to extension map",
+                    path.name,
+                )
+                mime = _EXT_MAP.get(path.suffix.lower(), "application/octet-stream")
+            else:
+                mime = guessed
+        return mime
+
+    def detect(self, path: Path) -> str:
+        """Return MIME type after cascade detection and optional extension override."""
+        mime = self._detect_raw(path)
         if mime in _GENERIC_MIMES and self._config:
             override = self._config.extensions.get(path.suffix.lower())
             if override:
