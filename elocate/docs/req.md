@@ -48,11 +48,16 @@ elocate-updatedb [--debug]
 | `index_path` | `str` | `~/.local/share/elocate/index` | 索引存储路径 |
 | `file_extensions` | `list[str]` | `[".md",".txt",".rst",".org"]` | 支持的扩展名 |
 | `top_k` | `int` | `10` | 默认召回数量 |
-| `embedding_model` | `str` | `"all-MiniLM-L6-v2"` | sentence-transformers 模型名 |
+| `embedding_model` | `str` | `"all-MiniLM-L6-v2"` | 模型名（local 为 sentence-transformers 名；openai 为 API 模型名） |
+| `embedder_backend` | `str` | `"local"` | 嵌入后端：`"local"`（sentence-transformers 本地推理）或 `"openai"`（OpenAI 兼容 API，支持 ollama 等） |
+| `openai_base_url` | `str` | `""` | OpenAI 兼容 API 的 base URL，例如 `http://localhost:11434/v1`（ollama）或 `https://api.openai.com/v1` |
+| `openai_api_key` | `str` | `""` | API key；ollama 可留空或填任意字符串 |
 
 ## 非功能需求
 
 - 语言：Python 3.11+，使用 uv 管理依赖
 - 向量数据库：LanceDB（本地，无需服务端）
-- 嵌入模型：sentence-transformers（本地推理，无需网络）
+- 嵌入后端：支持两种模式
+  - `local`：sentence-transformers 本地推理（默认，无需网络，适合 CPU/GPU/MPS）
+  - `openai`：OpenAI 兼容 Embeddings API（适合 ollama、OpenAI、任何兼容服务）；需安装 `openai` 可选依赖
 - 仅提供 CLI 接口，无 GUI 或 Web 界面

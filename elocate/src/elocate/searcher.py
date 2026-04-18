@@ -36,7 +36,12 @@ class Searcher:
         if not self._db.tables_exist():
             raise RuntimeError("No index found. Run 'elocate-updatedb' first.")
 
-        embedder = Embedder(self._config.embedding_model)
+        embedder = Embedder(
+            self._config.embedding_model,
+            backend=self._config.embedder_backend,
+            api_base=self._config.openai_base_url,
+            api_key=self._config.openai_api_key,
+        )
         vec = embedder.embed([query])[0].tolist()
         raw = self._db.query(vec, self._config.top_k)
 

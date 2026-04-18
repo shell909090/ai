@@ -37,6 +37,9 @@ class Config:
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     chunk_size: int = 500
     chunk_overlap: int = 50
+    embedder_backend: str = "local"  # "local" | "openai"
+    openai_base_url: str = ""  # OpenAI-compatible API base URL
+    openai_api_key: str = ""  # API key (empty = use "none")
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -69,4 +72,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         embedding_model=data.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
         chunk_size=data.get("chunk_size", 500),
         chunk_overlap=data.get("chunk_overlap", 50),
+        embedder_backend=data.get("embedder_backend", "local"),
+        openai_base_url=data.get("openai_base_url", ""),
+        openai_api_key=data.get("openai_api_key", ""),
     )

@@ -217,6 +217,9 @@ class Config:
     embedding_model: str
     chunk_size: int                         # default 500
     chunk_overlap: int                      # default 50
+    embedder_backend: str = "local"         # "local" | "openai"
+    openai_base_url: str = ""               # OpenAI-compatible API base URL
+    openai_api_key: str = ""                # API key (empty = no auth)
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config: ...
 ```
@@ -240,11 +243,28 @@ class Chunker:
 
 ```python
 class Embedder:
-    def __init__(self, model_name: str) -> None: ...
+    def __init__(
+        self,
+        model_name: str,
+        backend: str = "local",        # "local" | "openai"
+        api_base: str = "",            # OpenAI-compatible base URL
+        api_key: str = "",             # API key
+    ) -> None: ...
     def embed(self, texts: list[str]) -> np.ndarray: ...  # shape (N, dim)
     @property
     def dim(self) -> int: ...
+    # local:  dim from SentenceTransformer.get_sentence_embedding_dimension()
+    # openai: dim probed lazily on first access (one-shot embed of dummy text)
 ```
+
+**后端说明：**
+
+| backend | 依赖 | dim 获取方式 |
+|---------|------|-------------|
+| `"local"` | `sentence-transformers`（已有） | `model.get_sentence_embedding_dimension()` |
+| `"openai"` | `openai>=1.0`（optional） | 首次访问 `dim` 时 embed 一个空串探测 |
+
+`openai` 后端对 `api_base`/`api_key` 不做格式校验，直接透传给 `openai.OpenAI(base_url=..., api_key=...)`，兼容 ollama、LM Studio、OpenAI 等任何实现。`api_key` 为空时传 `"none"`（openai SDK 要求非空字符串）。
 
 ### db.py
 

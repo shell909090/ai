@@ -23,7 +23,12 @@ class Indexer:
 
     def run(self) -> tuple[int, int, int]:
         """Incremental index update. Returns (added, updated, removed) file counts."""
-        embedder = Embedder(self._config.embedding_model)
+        embedder = Embedder(
+            self._config.embedding_model,
+            backend=self._config.embedder_backend,
+            api_base=self._config.openai_base_url,
+            api_key=self._config.openai_api_key,
+        )
         self._db.init_tables(embedder.dim)
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
 

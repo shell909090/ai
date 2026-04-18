@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 all2txt = ["all2txt"]
+openai = ["openai>=1.0"]
 
 [project.scripts]
 elocate = "elocate.cli:main_search"
