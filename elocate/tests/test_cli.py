@@ -138,3 +138,55 @@ def test_search_import_error(tmp_path: Path) -> None:
             result = runner.invoke(main_search, ["hello"])
     assert result.exit_code == 1
     assert "Error:" in result.output
+
+
+def test_updatedb_custom_config(tmp_path: Path) -> None:
+    """B013: --config flag must load from the specified path."""
+    runner = CliRunner()
+    cfg_file = tmp_path / "custom.yaml"
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.md").write_text("Hello custom config test content.")
+    cfg_file.write_text(
+        f"index_path: {tmp_path / 'index'}\ndirs:\n  - path: {docs}\n    extensions: [.md]\n"
+    )
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        result = runner.invoke(main_updatedb, ["--config", str(cfg_file)])
+    assert result.exit_code == 0
+    assert "added" in result.output
+
+
+def test_search_custom_config(tmp_path: Path) -> None:
+    """B013: elocate --config must use the specified config."""
+    runner = CliRunner()
+    cfg_file = tmp_path / "custom.yaml"
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.md").write_text("Hello custom config search test.")
+    index_path = tmp_path / "index"
+    cfg_file.write_text(
+        f"index_path: {index_path}\ndirs:\n  - path: {docs}\n    extensions: [.md]\n"
+    )
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        runner.invoke(main_updatedb, ["--config", str(cfg_file)])
+    with patch("elocate.searcher.Embedder", return_value=mock_emb):
+        result = runner.invoke(main_search, ["hello", "--config", str(cfg_file)])
+    assert result.exit_code == 0
+    assert "note.md" in result.output
+
+
+def test_search_shows_snippet(tmp_path: Path) -> None:
+    """B014: search output must include a snippet line below each result."""
+    runner = CliRunner()
+    cfg = _default_config(tmp_path)
+    mock_emb = _mock_embedder()
+    with patch("elocate.cli.load_config", return_value=cfg):
+        with patch("elocate.indexer.Embedder", return_value=mock_emb):
+            runner.invoke(main_updatedb, [])
+        with patch("elocate.searcher.Embedder", return_value=mock_emb):
+            result = runner.invoke(main_search, ["hello"])
+    assert result.exit_code == 0
+    # The snippet is "Hello semantic search world." which must appear
+    assert "Hello" in result.output

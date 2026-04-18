@@ -33,8 +33,8 @@ def _make_config(tmp_path: Path, dirs: list[DirConfig]) -> Config:
 def notes_dir(tmp_path: Path) -> Path:
     d = tmp_path / "notes"
     d.mkdir()
-    (d / "a.md").write_text("Hello world\n\nSecond paragraph.")
-    (d / "b.txt").write_text("Another document.")
+    (d / "a.md").write_text("First paragraph with real content.\n\nSecond paragraph with real content.")
+    (d / "b.txt").write_text("Another document with sufficient content for indexing.")
     return d
 
 
@@ -60,6 +60,37 @@ def test_collect_files_missing_dir(tmp_path: Path) -> None:
     indexer = Indexer(cfg)
     files = indexer._collect_files()
     assert files == []
+
+
+def test_collect_files_case_insensitive(tmp_path: Path) -> None:
+    """B012: extensions should match case-insensitively."""
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "lower.md").write_text("lower content here for testing.")
+    (d / "UPPER.MD").write_text("upper content here for testing.")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(d), extensions=[".md"])])
+    indexer = Indexer(cfg)
+    files = indexer._collect_files()
+    names = {f.name for f, _ in files}
+    assert "lower.md" in names
+    assert "UPPER.MD" in names
+
+
+def test_collect_files_deduplicates_overlapping_dirs(tmp_path: Path) -> None:
+    """B010: same file matched by two dir_cfg entries should appear only once."""
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "doc.md").write_text("Document content for dedup testing.")
+    cfg = _make_config(
+        tmp_path,
+        [
+            DirConfig(path=str(d), extensions=[".md"]),
+            DirConfig(path=str(d), extensions=[".md"]),
+        ],
+    )
+    indexer = Indexer(cfg)
+    files = indexer._collect_files()
+    assert len(files) == 1
 
 
 def test_file_hash(tmp_path: Path) -> None:
@@ -169,6 +200,37 @@ def test_run_dedup_hash(tmp_path: Path) -> None:
     assert len(paths) == 2
 
 
+def test_run_skips_small_files(tmp_path: Path) -> None:
+    """B006: files smaller than MIN_FILE_BYTES must not be indexed."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "tiny.md").write_bytes(b"ab")  # 2 bytes < MIN_FILE_BYTES
+    (notes / "normal.md").write_text("Normal document with enough content.")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(notes), extensions=[".md"])])
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        added, _, _ = indexer.run()
+    assert added == 1
+    assert indexer._db.get_file_meta(str(notes / "tiny.md")) is None
+    assert indexer._db.get_file_meta(str(notes / "normal.md")) is not None
+
+
+def test_run_batch_single_embed_call(tmp_path: Path) -> None:
+    """B008: _index_batch must call embedder.embed exactly once per batch."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    for i in range(3):
+        (notes / f"doc{i}.md").write_text(f"Document {i} with some content for testing.")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(notes), extensions=[".md"])])
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        indexer.run()
+    # All 3 files fit in one batch; embed should be called once
+    assert mock_emb.embed.call_count == 1
+
+
 def test_run_preserves_index_on_extract_failure(tmp_path: Path) -> None:
     """B001: extraction failure after content change must not destroy the old index."""
     notes = tmp_path / "notes"
@@ -205,8 +267,6 @@ def test_run_preserves_index_on_extract_failure(tmp_path: Path) -> None:
 
 def test_run_rebuilds_on_model_change(tmp_path: Path, notes_dir: Path) -> None:
     """B002: switching embedding_model must force a full index rebuild."""
-    from elocate.config import Config
-
     cfg_a = Config(
         dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
         index_path=tmp_path / "index",

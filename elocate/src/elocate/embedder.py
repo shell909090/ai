@@ -63,7 +63,7 @@ class Embedder:
         """Embedding vector dimension."""
         if self._dim is not None:
             return self._dim
-        # openai backend: probe dimension with a dummy call
-        self.embed([""])
+        # openai backend: empty strings are rejected by many providers, use a real token
+        self.embed(["dim-probe"])
         assert self._dim is not None
         return self._dim

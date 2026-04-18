@@ -16,14 +16,14 @@ class Chunk:
 
 
 class Chunker:
-    """Splits text into chunks: greedy paragraph merge + sliding window for oversized paragraphs."""
+    """Splits text into chunks: greedy line merge + sliding window for oversized paragraphs."""
 
     def __init__(self, chunk_size: int = 500, overlap: int = 50) -> None:
         self._chunk_size = chunk_size
         self._overlap = overlap
 
     def chunk(self, text: str) -> list[Chunk]:
-        """Split text into Chunks; paragraph-aware, size-bounded."""
+        """Split text into Chunks; line-aware, size-bounded."""
         if not text:
             return []
 
@@ -35,15 +35,20 @@ class Chunker:
         ]
 
     def _split_paragraphs(self, text: str) -> list[tuple[str, int, int]]:
-        """Split text on double-newlines, returning (content, start, end) triples."""
+        """Split on newlines, strip each line, filter empty lines.
+
+        Handles LF, CRLF, and multiple blank lines uniformly.
+        start/end are offsets into the original text (including any CR).
+        """
         paragraphs: list[tuple[str, int, int]] = []
         pos = 0
-        for para in text.split("\n\n"):
+        for line in text.split("\n"):
             start = pos
-            end = start + len(para)
-            if para.strip():
-                paragraphs.append((para, start, end))
-            pos = end + 2  # skip the "\n\n" separator
+            end = start + len(line)
+            content = line.strip()
+            if content:
+                paragraphs.append((content, start, end))
+            pos = end + 1  # skip the "\n" separator
         return paragraphs
 
     def _merge_paragraphs(

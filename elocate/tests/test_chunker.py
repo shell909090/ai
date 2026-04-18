@@ -19,7 +19,8 @@ def test_short_text_returns_one_chunk() -> None:
     assert chunks[0].end == len(text)
 
 
-def test_offsets_match_original_text() -> None:
+def test_offsets_span_original_text() -> None:
+    """start/end offsets must be valid positions within the original text."""
     c = Chunker(chunk_size=500)
     text = (
         "First paragraph with some content.\n\n"
@@ -28,6 +29,8 @@ def test_offsets_match_original_text() -> None:
     )
     chunks = c.chunk(text)
     for chunk in chunks:
+        assert 0 <= chunk.start <= chunk.end <= len(text)
+        # content must contain the stripped lines (LF-only source: direct match holds)
         assert text[chunk.start : chunk.end] == chunk.content
 
 
@@ -76,13 +79,34 @@ def test_discard_small_chunks() -> None:
         assert len(chunk.content) >= MIN_CHUNK_CHARS
 
 
-def test_single_char_newline_not_split() -> None:
-    """Single newlines within a paragraph keep it intact."""
+def test_single_newline_lines_merge_into_one_chunk() -> None:
+    """Lines separated by single newlines are treated as separate units but merged if they fit."""
     c = Chunker(chunk_size=500)
     text = "Line one is here\nLine two is here\nLine three is here"
     chunks = c.chunk(text)
     assert len(chunks) == 1
-    assert chunks[0].content == text
+    assert "Line one is here" in chunks[0].content
+    assert "Line three is here" in chunks[0].content
+
+
+def test_crlf_paragraphs_split_correctly() -> None:
+    """CRLF line endings must not prevent paragraph detection."""
+    c = Chunker(chunk_size=500)
+    text = "First paragraph here.\r\n\r\nSecond paragraph here."
+    chunks = c.chunk(text)
+    assert len(chunks) == 1
+    assert "First paragraph" in chunks[0].content
+    assert "Second paragraph" in chunks[0].content
+
+
+def test_multiple_blank_lines_filtered() -> None:
+    """Multiple consecutive blank lines between paragraphs are handled correctly."""
+    c = Chunker(chunk_size=500)
+    text = "Para one with enough content.\n\n\n\nPara two with enough content."
+    chunks = c.chunk(text)
+    assert len(chunks) == 1
+    assert "Para one" in chunks[0].content
+    assert "Para two" in chunks[0].content
 
 
 def test_overlap_in_sliding_window() -> None:

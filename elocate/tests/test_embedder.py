@@ -107,6 +107,20 @@ def test_openai_dim_probed_on_first_access() -> None:
     assert embedder._dim == 48  # type: ignore[attr-defined]
 
 
+def test_openai_dim_probe_uses_nonempty_input() -> None:
+    """B007: dim probe must not send empty string (rejected by many providers)."""
+    embedder = _make_openai_embedder(dim=16)
+    _ = embedder.dim  # type: ignore[attr-defined]
+    call_args = embedder._client.embeddings.create.call_args  # type: ignore[attr-defined]
+    texts_sent = (
+        call_args.kwargs.get("input") or call_args.args[0]
+        if call_args.args
+        else call_args.kwargs.get("input")
+    )
+    # The probe input must be non-empty
+    assert texts_sent and all(t for t in texts_sent)
+
+
 def test_openai_dim_cached_after_first_embed() -> None:
     embedder = _make_openai_embedder(dim=24)
     embedder.embed(["x"])  # type: ignore[attr-defined]

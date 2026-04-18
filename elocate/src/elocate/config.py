@@ -14,6 +14,8 @@ DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "elocate" / "index"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_EXTENSIONS = [".md", ".txt", ".rst", ".org"]
 
+_VALID_BACKENDS = {"local", "openai"}
+
 
 @dataclass
 class DirConfig:
@@ -52,7 +54,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         data = yaml.safe_load(f) or {}
 
     dirs: list[DirConfig] = []
-    for entry in data.get("dirs", []):
+    for i, entry in enumerate(data.get("dirs", [])):
+        if "path" not in entry:
+            raise ValueError(f"dirs[{i}] is missing required field 'path'")
         dirs.append(
             DirConfig(
                 path=entry["path"],
@@ -65,14 +69,33 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     index_path_raw = data.get("index_path")
     index_path = Path(index_path_raw).expanduser() if index_path_raw else DEFAULT_INDEX_PATH
 
+    top_k = data.get("top_k", 10)
+    chunk_size = data.get("chunk_size", 500)
+    chunk_overlap = data.get("chunk_overlap", 50)
+    embedder_backend = data.get("embedder_backend", "local")
+
+    if top_k <= 0:
+        raise ValueError(f"top_k must be > 0, got {top_k}")
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be > 0, got {chunk_size}")
+    if chunk_overlap < 0 or chunk_overlap >= chunk_size:
+        raise ValueError(
+            f"chunk_overlap must be in [0, chunk_size), "
+            f"got overlap={chunk_overlap} size={chunk_size}"
+        )
+    if embedder_backend not in _VALID_BACKENDS:
+        raise ValueError(
+            f"embedder_backend must be one of {sorted(_VALID_BACKENDS)}, got {embedder_backend!r}"
+        )
+
     return Config(
         dirs=dirs,
         index_path=index_path,
-        top_k=data.get("top_k", 10),
+        top_k=top_k,
         embedding_model=data.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
-        chunk_size=data.get("chunk_size", 500),
-        chunk_overlap=data.get("chunk_overlap", 50),
-        embedder_backend=data.get("embedder_backend", "local"),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        embedder_backend=embedder_backend,
         openai_base_url=data.get("openai_base_url", ""),
         openai_api_key=data.get("openai_api_key", ""),
     )

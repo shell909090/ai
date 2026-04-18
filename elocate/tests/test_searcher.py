@@ -35,7 +35,7 @@ def test_search_raises_if_no_index(tmp_path: Path) -> None:
         searcher.search("hello")
 
 
-def _build_index(tmp_path: Path, cfg: Config, content: str = "Hello world") -> None:
+def _build_index(tmp_path: Path, cfg: Config, content: str = "Hello world with enough content to index.") -> None:
     from elocate.indexer import Indexer
 
     docs = tmp_path / "docs"

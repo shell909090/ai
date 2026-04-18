@@ -12,6 +12,7 @@ from elocate.embedder import Embedder
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 64
+MIN_FILE_BYTES = 4  # files smaller than this have no search value (< ~2 CJK chars)
 
 
 class Indexer:
@@ -93,6 +94,9 @@ class Indexer:
                 logger.warning("Cannot stat %s: %s", path_str, exc)
                 continue
 
+            if stat.st_size < MIN_FILE_BYTES:
+                continue  # too small to be meaningful
+
             rec = self._db.get_file_meta(path_str)
             if rec and rec["size"] == stat.st_size and rec["mtime"] == stat.st_mtime:
                 continue  # unchanged
@@ -155,30 +159,46 @@ class Indexer:
         embedder: Embedder,
         chunker: Chunker,
     ) -> None:
-        """Chunk, embed and store a batch of (path, hash, size, mtime, text, old_hash) tuples."""
-        all_chunks: list[dict] = []
-        file_metas: list[tuple[str, int, float, str, str | None]] = []
-
+        """Chunk, embed (single call), and store a batch of files."""
+        # Phase 1: chunk all files
+        per_file: list[tuple[str, str, int, float, str | None, list]] = []
         for path_str, file_hash, size, mtime, text, old_hash in batch:
             chunks = chunker.chunk(text)
-            texts = [c.content for c in chunks] if chunks else [""]
-            vectors = embedder.embed(texts)
+            if not chunks:
+                logger.warning("No chunks produced for %s, skipping", path_str)
+                continue
+            per_file.append((path_str, file_hash, size, mtime, old_hash, chunks))
 
-            for chunk, vec in zip(chunks if chunks else [None], vectors):
-                all_chunks.append(
+        if not per_file:
+            return
+
+        # Phase 2: single embed call across all chunks in this batch
+        all_texts = [c.content for _, _, _, _, _, chunks in per_file for c in chunks]
+        all_vectors = embedder.embed(all_texts)
+
+        # Phase 3: distribute vectors and write
+        all_chunk_records: list[dict] = []
+        file_metas: list[tuple[str, int, float, str, str | None]] = []
+        offset = 0
+        for path_str, file_hash, size, mtime, old_hash, chunks in per_file:
+            n = len(chunks)
+            file_vectors = all_vectors[offset : offset + n]
+            offset += n
+            for chunk, vec in zip(chunks, file_vectors):
+                all_chunk_records.append(
                     {
                         "file_hash": file_hash,
-                        "chunk_index": chunk.chunk_index if chunk else 0,
-                        "start": chunk.start if chunk else 0,
-                        "end": chunk.end if chunk else 0,
-                        "content": chunk.content if chunk else "",
+                        "chunk_index": chunk.chunk_index,
+                        "start": chunk.start,
+                        "end": chunk.end,
+                        "content": chunk.content,
                         "vector": vec.tolist(),
                     }
                 )
             file_metas.append((path_str, size, mtime, file_hash, old_hash))
 
-        if all_chunks:
-            self._db.add_chunks(all_chunks)
+        if all_chunk_records:
+            self._db.add_chunks(all_chunk_records)
         for path_str, size, mtime, file_hash, old_hash in file_metas:
             self._db.upsert_file_meta(path_str, size, mtime, file_hash)
             # B001: clean up old hash AFTER successful write
@@ -186,16 +206,20 @@ class Indexer:
                 self._db.delete_chunks_by_hash(old_hash)
 
     def _collect_files(self) -> list[tuple[Path, DirConfig]]:
-        """Collect (file_path, dir_config) pairs from all configured dirs."""
+        """Collect (file_path, dir_config) pairs; deduped, case-insensitive extension matching."""
         result: list[tuple[Path, DirConfig]] = []
+        seen: set[str] = set()
         for dir_cfg in self._config.dirs:
             base = Path(dir_cfg.path).expanduser()
             if not base.is_dir():
                 logger.warning("Directory does not exist, skipping: %s", base)
                 continue
-            for ext in dir_cfg.extensions:
-                for fp in base.rglob(f"*{ext}"):
-                    if fp.is_file():
+            exts_lower = {e.lower() for e in dir_cfg.extensions}
+            for fp in base.rglob("*"):
+                if fp.is_file() and fp.suffix.lower() in exts_lower:
+                    path_str = str(fp)
+                    if path_str not in seen:
+                        seen.add(path_str)
                         result.append((fp, dir_cfg))
         return result
 

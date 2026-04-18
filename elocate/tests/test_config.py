@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from elocate.config import (
     DEFAULT_EXTENSIONS,
     Config,
@@ -119,3 +121,48 @@ def test_load_config_index_path_tilde_expansion(tmp_path: Path) -> None:
     config = load_config(cfg_file)
     assert not str(config.index_path).startswith("~")
     assert config.index_path.is_absolute()
+
+
+# ---- B009: config validation ----
+
+
+def test_load_config_invalid_top_k(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("top_k: 0\n")
+    with pytest.raises(ValueError, match="top_k"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_chunk_size(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("chunk_size: -1\n")
+    with pytest.raises(ValueError, match="chunk_size"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_chunk_overlap_negative(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("chunk_overlap: -1\n")
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_chunk_overlap_gte_size(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("chunk_size: 100\nchunk_overlap: 100\n")
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_embedder_backend(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("embedder_backend: bad_backend\n")
+    with pytest.raises(ValueError, match="embedder_backend"):
+        load_config(cfg_file)
+
+
+def test_load_config_missing_dir_path(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("dirs:\n  - extensions: [.md]\n")
+    with pytest.raises(ValueError, match="dirs\\[0\\]"):
+        load_config(cfg_file)

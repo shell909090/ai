@@ -192,3 +192,22 @@ def test_set_meta_overwrites(db: VectorDB) -> None:
 def test_get_meta_no_table(tmp_path: Path) -> None:
     d = VectorDB(tmp_path / "fresh")
     assert d.get_meta("anything") is None
+
+
+# ---- B011: paths with special characters ----
+
+
+def test_file_meta_path_with_single_quote(db: VectorDB) -> None:
+    """Paths containing single quotes must be stored and retrieved correctly."""
+    path = "/home/user/it's a file.md"
+    db.upsert_file_meta(path, 10, 1.0, "abc123")
+    meta = db.get_file_meta(path)
+    assert meta is not None
+    assert meta["path"] == path
+
+
+def test_delete_file_meta_with_single_quote(db: VectorDB) -> None:
+    path = "/tmp/o'reilly.md"
+    db.upsert_file_meta(path, 5, 2.0, "def456")
+    db.delete_file_meta(path)
+    assert db.get_file_meta(path) is None
