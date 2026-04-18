@@ -34,6 +34,7 @@ class OpenAIVisionExtractor(Extractor):
 
     name = "openai_vision"
     priority = 50
+    install_hint = "uv add openai  (set OPENAI_API_KEY env var)"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)

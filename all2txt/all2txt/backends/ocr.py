@@ -25,6 +25,7 @@ class TesseractExtractor(Extractor):
 
     name = "tesseract"
     priority = 40
+    install_hint = "apt install tesseract-ocr && uv add pytesseract"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -59,6 +60,7 @@ class EasyOCRExtractor(Extractor):
 
     name = "easyocr"
     priority = 45
+    install_hint = "uv add easyocr"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -91,6 +93,7 @@ class PaddleOCRExtractor(Extractor):
 
     name = "paddleocr"
     priority = 46
+    install_hint = "uv add paddleocr"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)

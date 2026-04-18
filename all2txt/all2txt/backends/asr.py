@@ -36,6 +36,7 @@ class OpenAIWhisperExtractor(Extractor):
 
     name = "openai_whisper"
     priority = 30
+    install_hint = "uv add openai  (set OPENAI_API_KEY env var)"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -92,6 +93,7 @@ class FasterWhisperExtractor(Extractor):
 
     name = "faster_whisper"
     priority = 33
+    install_hint = "uv add faster-whisper"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -141,6 +143,7 @@ class WhisperLocalExtractor(Extractor):
 
     name = "whisper_local"
     priority = 35
+    install_hint = "uv add openai-whisper"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)

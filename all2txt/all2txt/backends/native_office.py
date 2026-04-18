@@ -10,7 +10,7 @@ class NativeDocxExtractor(Extractor):
 
     name = "python_docx"
     priority = 18
-    install_hint = "uv sync --extra native-office  (installs python-docx)"
+    install_hint = "uv add python-docx"
 
     def available(self) -> bool:
         """Check that python-docx is installed."""
@@ -47,7 +47,7 @@ class NativeXlsxExtractor(Extractor):
 
     name = "openpyxl"
     priority = 18
-    install_hint = "uv sync --extra native-office  (installs openpyxl)"
+    install_hint = "uv add openpyxl"
 
     def available(self) -> bool:
         """Check that openpyxl is installed."""
@@ -80,7 +80,7 @@ class NativePptxExtractor(Extractor):
 
     name = "python_pptx"
     priority = 18
-    install_hint = "uv sync --extra native-office  (installs python-pptx)"
+    install_hint = "uv add python-pptx"
 
     def available(self) -> bool:
         """Check that python-pptx is installed."""
