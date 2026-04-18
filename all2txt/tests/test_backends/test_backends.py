@@ -367,7 +367,7 @@ class TestLibreOfficeExtractor:
                 "/usr/bin/libreoffice",
                 "--headless",
                 "--convert-to",
-                "txt:Text",
+                "txt:Text (encoded):UTF8,LF,,,,0",
                 "--outdir",
                 real_tmpdir,
                 str(input_path),
@@ -1015,11 +1015,8 @@ class TestOpenAIWhisperExtractor:
         fake_openai = _make_module("openai")
         fake_openai.OpenAI = MagicMock(return_value=mock_client)
 
-        with (
-            patch.dict(sys.modules, {"openai": fake_openai}),
-            patch("all2txt.backends.asr._is_video", return_value=False),
-        ):
-            extractor = OpenAIWhisperExtractor()
+        with patch.dict(sys.modules, {"openai": fake_openai}):
+            extractor = OpenAIWhisperExtractor(config={"_mime": "audio/mpeg"})
             result = extractor.extract(fake_path)
 
         assert result == "transcribed text"
@@ -1046,13 +1043,12 @@ class TestOpenAIWhisperExtractor:
 
         with (
             patch.dict(sys.modules, {"openai": fake_openai}),
-            patch("all2txt.backends.asr._is_video", return_value=True),
             patch(
                 "all2txt.backends.asr.extract_audio", return_value=fake_audio_path
             ) as mock_extract,
             patch("os.unlink") as mock_unlink,
         ):
-            extractor = OpenAIWhisperExtractor()
+            extractor = OpenAIWhisperExtractor(config={"_mime": "video/mp4"})
             result = extractor.extract(fake_path)
 
         mock_extract.assert_called_once_with(fake_path)
@@ -1073,11 +1069,8 @@ class TestOpenAIWhisperExtractor:
         fake_openai = _make_module("openai")
         fake_openai.OpenAI = MagicMock(return_value=mock_client)
 
-        with (
-            patch.dict(sys.modules, {"openai": fake_openai}),
-            patch("all2txt.backends.asr._is_video", return_value=False),
-        ):
-            extractor = OpenAIWhisperExtractor(config={"language": "zh"})
+        with patch.dict(sys.modules, {"openai": fake_openai}):
+            extractor = OpenAIWhisperExtractor(config={"_mime": "audio/mpeg", "language": "zh"})
             extractor.extract(fake_path)
 
         call_kwargs = mock_client.audio.transcriptions.create.call_args[1]
@@ -1116,11 +1109,10 @@ class TestFasterWhisperExtractor:
         fake_fw = _make_module("faster_whisper")
         fake_fw.WhisperModel = MagicMock(return_value=mock_model)
 
-        with (
-            patch.dict(sys.modules, {"faster_whisper": fake_fw}),
-            patch("all2txt.backends.asr._is_video", return_value=False),
-        ):
-            extractor = FasterWhisperExtractor(config={"model": "small", "device": "cuda"})
+        with patch.dict(sys.modules, {"faster_whisper": fake_fw}):
+            extractor = FasterWhisperExtractor(
+                config={"_mime": "audio/x-wav", "model": "small", "device": "cuda"}
+            )
             result = extractor.extract(fake_path)
 
         fake_fw.WhisperModel.assert_called_once_with("small", device="cuda")
@@ -1142,13 +1134,12 @@ class TestFasterWhisperExtractor:
 
         with (
             patch.dict(sys.modules, {"faster_whisper": fake_fw}),
-            patch("all2txt.backends.asr._is_video", return_value=True),
             patch(
                 "all2txt.backends.asr.extract_audio", return_value=fake_audio_path
             ) as mock_extract,
             patch("os.unlink") as mock_unlink,
         ):
-            extractor = FasterWhisperExtractor()
+            extractor = FasterWhisperExtractor(config={"_mime": "video/x-matroska"})
             extractor.extract(fake_path)
 
         mock_extract.assert_called_once_with(fake_path)
@@ -1194,11 +1185,8 @@ class TestWhisperLocalExtractor:
         fake_whisper = _make_module("whisper")
         fake_whisper.load_model = MagicMock(return_value=mock_model)
 
-        with (
-            patch.dict(sys.modules, {"whisper": fake_whisper}),
-            patch("all2txt.backends.asr._is_video", return_value=False),
-        ):
-            extractor = WhisperLocalExtractor(config={"model": "small"})
+        with patch.dict(sys.modules, {"whisper": fake_whisper}):
+            extractor = WhisperLocalExtractor(config={"_mime": "audio/flac", "model": "small"})
             result = extractor.extract(fake_path)
 
         fake_whisper.load_model.assert_called_once_with("small")
@@ -1221,13 +1209,12 @@ class TestWhisperLocalExtractor:
 
         with (
             patch.dict(sys.modules, {"whisper": fake_whisper}),
-            patch("all2txt.backends.asr._is_video", return_value=True),
             patch(
                 "all2txt.backends.asr.extract_audio", return_value=fake_audio_path
             ) as mock_extract,
             patch("os.unlink") as mock_unlink,
         ):
-            extractor = WhisperLocalExtractor()
+            extractor = WhisperLocalExtractor(config={"_mime": "video/mp4"})
             result = extractor.extract(fake_path)
 
         mock_extract.assert_called_once_with(fake_path)
@@ -1247,11 +1234,8 @@ class TestWhisperLocalExtractor:
         fake_whisper = _make_module("whisper")
         fake_whisper.load_model = MagicMock(return_value=mock_model)
 
-        with (
-            patch.dict(sys.modules, {"whisper": fake_whisper}),
-            patch("all2txt.backends.asr._is_video", return_value=False),
-        ):
-            extractor = WhisperLocalExtractor(config={"language": "fr"})
+        with patch.dict(sys.modules, {"whisper": fake_whisper}):
+            extractor = WhisperLocalExtractor(config={"_mime": "audio/x-wav", "language": "fr"})
             extractor.extract(fake_path)
 
         mock_model.transcribe.assert_called_once_with(str(fake_path), language="fr")
@@ -1319,3 +1303,86 @@ class TestExtractAudio:
                 extract_audio(fake_video)
 
         mock_unlink.assert_called_once_with(fake_tmp_wav)
+
+
+# ===========================================================================
+# _util._VIDEO_MIMES completeness (R010)
+# ===========================================================================
+
+
+class TestVideoMimesCompleteness:
+    def test_video_mimes_includes_mpeg_and_ogg(self) -> None:
+        from all2txt.backends._util import _VIDEO_MIMES
+
+        assert "video/mpeg" in _VIDEO_MIMES
+        assert "video/ogg" in _VIDEO_MIMES
+
+    def test_asr_uses_util_video_mimes_not_own_tuple(self) -> None:
+        from all2txt.backends import asr
+        from all2txt.backends._util import _VIDEO_MIMES
+
+        # _VIDEO_MIME_TUPLE in asr.py must be derived from _VIDEO_MIMES
+        assert set(asr._VIDEO_MIME_TUPLE) == _VIDEO_MIMES
+
+
+# ===========================================================================
+# OpenAIVision uses injected _mime (R007)
+# ===========================================================================
+
+
+class TestOpenAIVisionUsesInjectedMime:
+    def test_extract_uses_cfg_mime_not_extension(self, tmp_path: Path) -> None:
+        from all2txt.backends.openai_vision import OpenAIVisionExtractor
+
+        fake_path = tmp_path / "photo.tif"  # .tif extension but override to jpeg
+        fake_path.write_bytes(b"data")
+
+        mock_message = MagicMock()
+        mock_message.content = "ok"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+
+        fake_openai = _make_module("openai")
+        fake_openai.OpenAI = MagicMock(return_value=mock_client)
+
+        with patch.dict(sys.modules, {"openai": fake_openai}):
+            extractor = OpenAIVisionExtractor(config={"_mime": "image/jpeg"})
+            extractor.extract(fake_path)
+
+        create_call = mock_client.chat.completions.create.call_args
+        image_url = create_call[1]["messages"][0]["content"][1]["image_url"]["url"]
+        assert "image/jpeg" in image_url
+        assert "image/tiff" not in image_url
+
+
+# ===========================================================================
+# NativeXlsxExtractor closes workbook on exception (R009)
+# ===========================================================================
+
+
+class TestNativeXlsxExtractorClosesOnException:
+    def test_workbook_closed_even_when_extract_raises(self, tmp_path: Path) -> None:
+        from all2txt.backends.native_office import NativeXlsxExtractor
+
+        fake_path = tmp_path / "bad.xlsx"
+        fake_path.touch()
+
+        wb_mock = MagicMock()
+        ws_mock = MagicMock()
+        ws_mock.iter_rows.side_effect = RuntimeError("corrupt xlsx")
+        wb_mock.worksheets = [ws_mock]
+
+        fake_openpyxl = _make_module("openpyxl")
+        fake_openpyxl.load_workbook = MagicMock(return_value=wb_mock)
+
+        with patch.dict(sys.modules, {"openpyxl": fake_openpyxl}):
+            extractor = NativeXlsxExtractor()
+            with pytest.raises(RuntimeError, match="corrupt xlsx"):
+                extractor.extract(fake_path)
+
+        wb_mock.close.assert_called_once()

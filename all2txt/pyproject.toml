@@ -33,4 +33,4 @@ max-complexity = 10
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=all2txt --cov-report=term-missing"
+addopts = "--cov=all2txt --cov-report=term-missing --cov-fail-under=75"

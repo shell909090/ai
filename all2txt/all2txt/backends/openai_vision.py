@@ -59,18 +59,7 @@ class OpenAIVisionExtractor(Extractor):
         import openai
 
         image_data = base64.standard_b64encode(path.read_bytes()).decode()
-        suffix = path.suffix.lower()
-        mime_map = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-            ".bmp": "image/bmp",
-            ".tiff": "image/tiff",
-            ".tif": "image/tiff",
-        }
-        img_mime = mime_map.get(suffix, "image/png")
+        img_mime = self._cfg.get("_mime", "image/png")
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model=self._model,

@@ -38,11 +38,11 @@ class LibreOfficeExtractor(Extractor):
         tmpdir = tempfile.mkdtemp()
         try:
             subprocess.run(
-                [binary, "--headless", "--convert-to", "txt:Text", "--outdir", tmpdir, str(path)],
+                [binary, "--headless", "--convert-to", "txt:Text (encoded):UTF8,LF,,,,0", "--outdir", tmpdir, str(path)],
                 capture_output=True,
                 check=True,
             )
             out_path = Path(tmpdir) / (Path(path).stem + ".txt")
-            return out_path.read_text(errors="replace")
+            return out_path.read_text(encoding="utf-8", errors="replace")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

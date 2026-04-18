@@ -39,7 +39,7 @@ def load_config(path: Path | None = None) -> Config:
         path = Path("all2txt.yaml")
     if not path.exists():
         return Config()
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     backends = {mime: v.get("backends", []) for mime, v in data.get("mime", {}).items()}
     extractors: dict[str, dict[str, Any]] = data.get("extractor", {})

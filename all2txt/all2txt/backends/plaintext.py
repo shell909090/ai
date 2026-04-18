@@ -20,4 +20,4 @@ class PlainTextExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Read file content as UTF-8, replacing undecodable bytes."""
-        return path.read_text(errors="replace")
+        return path.read_text(encoding="utf-8", errors="replace")

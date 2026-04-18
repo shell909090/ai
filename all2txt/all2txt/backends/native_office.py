@@ -60,14 +60,16 @@ class NativeXlsxExtractor(Extractor):
         import openpyxl
 
         wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
-        sheets: list[str] = []
-        for ws in wb.worksheets:
-            rows = []
-            for row in ws.iter_rows(values_only=True):
-                rows.append("\t".join("" if v is None else str(v) for v in row))
-            sheets.append("\n".join(rows))
-        wb.close()
-        return "\n\n".join(sheets)
+        try:
+            sheets: list[str] = []
+            for ws in wb.worksheets:
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    rows.append("\t".join("" if v is None else str(v) for v in row))
+                sheets.append("\n".join(rows))
+            return "\n\n".join(sheets)
+        finally:
+            wb.close()
 
 
 @registry.register("application/vnd.openxmlformats-officedocument.presentationml.presentation")

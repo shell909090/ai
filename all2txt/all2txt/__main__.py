@@ -7,8 +7,6 @@ from . import backends as _backends_module  # noqa: F401 — triggers registrati
 from .core.config import load_config
 from .core.registry import registry
 
-_ = _backends_module  # silence linter unused-import warning
-
 
 def main() -> None:
     """CLI entry point: extract plain text from one or more files."""

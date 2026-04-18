@@ -10,6 +10,8 @@ _VIDEO_MIMES = frozenset(
         "video/quicktime",
         "video/x-msvideo",
         "video/webm",
+        "video/mpeg",
+        "video/ogg",
     }
 )
 

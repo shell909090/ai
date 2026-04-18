@@ -19,24 +19,7 @@ _AUDIO_MIMES = (
     "audio/webm",
 )
 
-_VIDEO_MIME_TUPLE = (
-    "video/mp4",  # .mp4
-    "video/x-matroska",  # .mkv
-    "video/quicktime",  # .mov
-    "video/x-msvideo",  # .avi
-    "video/webm",
-)
-
-
-def _is_video(path: Path) -> bool:
-    """Detect whether path is a video file by checking MIME via file command."""
-    import subprocess
-
-    try:
-        mime = subprocess.check_output(["file", "--mime-type", "-b", str(path)], text=True).strip()
-        return mime in _VIDEO_MIMES
-    except Exception:
-        return False
+_VIDEO_MIME_TUPLE = tuple(_VIDEO_MIMES)
 
 
 @registry.register(*_AUDIO_MIMES, *_VIDEO_MIME_TUPLE)
@@ -75,7 +58,7 @@ class OpenAIWhisperExtractor(Extractor):
         tmp: Path | None = None
         audio_path = path
         try:
-            if _is_video(path):
+            if self._cfg.get("_mime") in _VIDEO_MIMES:
                 tmp = extract_audio(path)
                 audio_path = tmp
             client = openai.OpenAI()
@@ -131,7 +114,7 @@ class FasterWhisperExtractor(Extractor):
         tmp: Path | None = None
         audio_path = path
         try:
-            if _is_video(path):
+            if self._cfg.get("_mime") in _VIDEO_MIMES:
                 tmp = extract_audio(path)
                 audio_path = tmp
             model = WhisperModel(self._model, device=self._device)
@@ -179,7 +162,7 @@ class WhisperLocalExtractor(Extractor):
         tmp: Path | None = None
         audio_path = path
         try:
-            if _is_video(path):
+            if self._cfg.get("_mime") in _VIDEO_MIMES:
                 tmp = extract_audio(path)
                 audio_path = tmp
             model = whisper.load_model(self._model)
