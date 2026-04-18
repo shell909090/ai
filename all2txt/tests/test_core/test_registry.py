@@ -1,4 +1,5 @@
 """Unit tests for all2txt.core.registry.Registry."""
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -140,9 +141,7 @@ def test_detect_extension_override(tmp_path: Path) -> None:
     with patch("subprocess.check_output", return_value="text/plain") as mock_sub:
         mime = reg.detect(rst_file)
 
-    mock_sub.assert_called_once_with(
-        ["file", "--mime-type", "-b", str(rst_file)], text=True
-    )
+    mock_sub.assert_called_once_with(["file", "--mime-type", "-b", str(rst_file)], text=True)
     assert mime == "text/x-rst"
 
 

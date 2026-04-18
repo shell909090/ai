@@ -1,4 +1,5 @@
 """Unit tests for all2txt.core.config.load_config()."""
+
 from pathlib import Path
 
 from all2txt.core.config import Config, load_config
