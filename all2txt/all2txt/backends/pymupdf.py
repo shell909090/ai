@@ -21,4 +21,9 @@ class PyMuPDFExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Open PDF with pymupdf, extract text page by page joined with double newlines."""
-        raise NotImplementedError
+        import pymupdf
+
+        doc = pymupdf.open(str(path))
+        pages = [page.get_text() for page in doc]
+        doc.close()
+        return "\n\n".join(pages)

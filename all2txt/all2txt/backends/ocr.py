@@ -41,7 +41,12 @@ class TesseractExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run pytesseract.image_to_string with configured lang and psm."""
-        raise NotImplementedError
+        import pytesseract
+        from PIL import Image
+
+        img = Image.open(str(path))
+        config = f"--psm {self._psm}"
+        return pytesseract.image_to_string(img, lang=self._lang, config=config)
 
 
 @registry.register(*_IMAGE_MIMES)
@@ -69,7 +74,11 @@ class EasyOCRExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run easyocr.Reader.readtext and join detected strings."""
-        raise NotImplementedError
+        import easyocr
+
+        reader = easyocr.Reader(self._langs)
+        results = reader.readtext(str(path), detail=0)
+        return "\n".join(results)
 
 
 @registry.register(*_IMAGE_MIMES)
@@ -97,4 +106,14 @@ class PaddleOCRExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run PaddleOCR().ocr and join detected text lines."""
-        raise NotImplementedError
+        from paddleocr import PaddleOCR
+
+        ocr = PaddleOCR(use_angle_cls=True, lang=self._lang)
+        result = ocr.ocr(str(path), cls=True)
+        lines: list[str] = []
+        for page in result:
+            if page:
+                for line in page:
+                    text = line[1][0]
+                    lines.append(text)
+        return "\n".join(lines)

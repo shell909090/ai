@@ -5,7 +5,12 @@ from ..core.registry import registry
 
 
 @registry.register(
-    "text/plain", "text/csv", "text/markdown", "text/x-python", "text/x-script.python"
+    "text/plain",
+    "text/csv",
+    "text/markdown",
+    "text/tab-separated-values",
+    "text/x-python",
+    "text/x-script.python",
 )
 class PlainTextExtractor(Extractor):
     """Read plain text files directly."""

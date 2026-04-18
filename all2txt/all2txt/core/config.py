@@ -6,13 +6,15 @@ import yaml
 
 # MIME types for which file(1) output is too generic to be useful.
 # When detect() gets one of these, it falls back to the extensions map.
-_GENERIC_MIMES = frozenset({
-    "text/plain",
-    "application/octet-stream",
-    "application/xml",
-    "text/xml",
-    "application/json",
-})
+_GENERIC_MIMES = frozenset(
+    {
+        "text/plain",
+        "application/octet-stream",
+        "application/xml",
+        "text/xml",
+        "application/json",
+    }
+)
 
 
 @dataclass
@@ -39,10 +41,7 @@ def load_config(path: Path | None = None) -> Config:
         return Config()
     with open(path) as f:
         data = yaml.safe_load(f) or {}
-    backends = {
-        mime: v.get("backends", [])
-        for mime, v in data.get("mime", {}).items()
-    }
+    backends = {mime: v.get("backends", []) for mime, v in data.get("mime", {}).items()}
     extractors: dict[str, dict[str, Any]] = data.get("extractor", {})
     extensions: dict[str, str] = data.get("extensions", {})
     return Config(backends=backends, extractors=extractors, extensions=extensions)

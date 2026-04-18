@@ -45,4 +45,12 @@ class PandocExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run pandoc -t plain --wrap=none and return stdout."""
-        raise NotImplementedError
+        import subprocess
+
+        result = subprocess.run(
+            ["pandoc", "-t", "plain", "--wrap=none", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout

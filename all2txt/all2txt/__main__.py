@@ -17,12 +17,15 @@ def main() -> None:
         description="Extract plain text from any file format.",
     )
     parser.add_argument("files", nargs="+", type=Path, metavar="FILE")
-    parser.add_argument("--config", type=Path, default=None, metavar="FILE",
-                        help="Path to all2txt.toml (default: ./all2txt.toml)")
-    parser.add_argument("--mime", metavar="MIME",
-                        help="Override MIME type detection")
-    parser.add_argument("--debug", action="store_true",
-                        help="Enable debug logging")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Path to all2txt.toml (default: ./all2txt.toml)",
+    )
+    parser.add_argument("--mime", metavar="MIME", help="Override MIME type detection")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
     logging.basicConfig(

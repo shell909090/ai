@@ -31,4 +31,7 @@ class UnstructuredExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Partition file with unstructured and join all text elements."""
-        raise NotImplementedError
+        from unstructured.partition.auto import partition
+
+        elements = partition(filename=str(path))
+        return "\n".join(str(el) for el in elements)

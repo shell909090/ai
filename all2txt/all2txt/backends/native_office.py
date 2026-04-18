@@ -21,7 +21,23 @@ class NativeDocxExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Yield all paragraph and table-cell text joined by newlines."""
-        raise NotImplementedError
+        import docx
+        from docx.oxml.ns import qn
+
+        doc = docx.Document(str(path))
+        lines: list[str] = []
+        for block in doc.element.body:
+            tag = block.tag.split("}")[-1]
+            if tag == "p":
+                lines.append("".join(r.text for r in block.findall(f".//{qn('w:t')}") if r.text))
+            elif tag == "tbl":
+                for row in block.findall(f".//{qn('w:tr')}"):
+                    cells = [
+                        "".join(t.text for t in row_cell.findall(f".//{qn('w:t')}") if t.text)
+                        for row_cell in row.findall(f".//{qn('w:tc')}")
+                    ]
+                    lines.append("\t".join(cells))
+        return "\n".join(lines)
 
 
 @registry.register("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -41,12 +57,20 @@ class NativeXlsxExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Tab-separate cells, newline-separate rows, blank-line-separate sheets."""
-        raise NotImplementedError
+        import openpyxl
+
+        wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+        sheets: list[str] = []
+        for ws in wb.worksheets:
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                rows.append("\t".join("" if v is None else str(v) for v in row))
+            sheets.append("\n".join(rows))
+        wb.close()
+        return "\n\n".join(sheets)
 
 
-@registry.register(
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-)
+@registry.register("application/vnd.openxmlformats-officedocument.presentationml.presentation")
 class NativePptxExtractor(Extractor):
     """Extract text from .pptx via python-pptx (all slides, all text frames)."""
 
@@ -63,4 +87,15 @@ class NativePptxExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Collect text from every shape on every slide, joined by newlines."""
-        raise NotImplementedError
+        from pptx import Presentation
+
+        prs = Presentation(str(path))
+        lines: list[str] = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = "".join(run.text for run in para.runs)
+                        if text:
+                            lines.append(text)
+        return "\n".join(lines)

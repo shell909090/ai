@@ -17,9 +17,7 @@ _DEFAULT_EXTRACT_PROMPT = (
     "Extract all text visible in this image verbatim. "
     "Output only the extracted text, no commentary."
 )
-_DEFAULT_DESCRIBE_PROMPT = (
-    "Describe the content of this image in detail."
-)
+_DEFAULT_DESCRIBE_PROMPT = "Describe the content of this image in detail."
 
 
 @registry.register(*_IMAGE_MIMES)
@@ -56,4 +54,37 @@ class OpenAIVisionExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Base64-encode image, send to OpenAI Vision API, return text response."""
-        raise NotImplementedError
+        import base64
+
+        import openai
+
+        image_data = base64.standard_b64encode(path.read_bytes()).decode()
+        suffix = path.suffix.lower()
+        mime_map = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".tif": "image/tiff",
+        }
+        img_mime = mime_map.get(suffix, "image/png")
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": self._prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{img_mime};base64,{image_data}"},
+                        },
+                    ],
+                }
+            ],
+        )
+        return response.choices[0].message.content or ""

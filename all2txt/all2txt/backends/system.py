@@ -18,7 +18,20 @@ class ManExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run groff -Tascii -man then col -bx to strip formatting."""
-        raise NotImplementedError
+        import subprocess
+
+        groff = subprocess.run(
+            ["groff", "-Tascii", "-man", str(path)],
+            capture_output=True,
+            check=True,
+        )
+        col = subprocess.run(
+            ["col", "-bx"],
+            input=groff.stdout,
+            capture_output=True,
+            check=True,
+        )
+        return col.stdout.decode(errors="replace")
 
 
 @registry.register("text/x-info")
@@ -34,4 +47,12 @@ class InfoExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run info --subnodes --output=- --file=<path>."""
-        raise NotImplementedError
+        import subprocess
+
+        result = subprocess.run(
+            ["info", "--subnodes", "--output=-", f"--file={path}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout

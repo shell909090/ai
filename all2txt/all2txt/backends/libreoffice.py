@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from ..core.base import Extractor
@@ -32,4 +34,15 @@ class LibreOfficeExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Run libreoffice --headless --convert-to txt, read result, then clean up."""
-        raise NotImplementedError
+        binary = shutil.which("libreoffice") or shutil.which("soffice") or "libreoffice"
+        tmpdir = tempfile.mkdtemp()
+        try:
+            subprocess.run(
+                [binary, "--headless", "--convert-to", "txt:Text", "--outdir", tmpdir, str(path)],
+                capture_output=True,
+                check=True,
+            )
+            out_path = Path(tmpdir) / (Path(path).stem + ".txt")
+            return out_path.read_text(errors="replace")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

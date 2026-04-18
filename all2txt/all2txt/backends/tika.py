@@ -36,4 +36,8 @@ class TikaExtractor(Extractor):
 
     def extract(self, path: Path) -> str:
         """Call tika.parser.from_file and return stripped content field."""
-        raise NotImplementedError
+        from tika import parser as tika_parser
+
+        parsed = tika_parser.from_file(str(path))
+        content = parsed.get("content") or ""
+        return content.strip()

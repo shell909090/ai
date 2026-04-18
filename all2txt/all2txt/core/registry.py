@@ -40,9 +40,7 @@ class Registry:
 
     def detect(self, path: Path) -> str:
         """Return MIME type via file(1); apply extension override for generic results."""
-        mime = subprocess.check_output(
-            ["file", "--mime-type", "-b", str(path)], text=True
-        ).strip()
+        mime = subprocess.check_output(["file", "--mime-type", "-b", str(path)], text=True).strip()
         if mime in _GENERIC_MIMES and self._config:
             override = self._config.extensions.get(path.suffix.lower())
             if override:
@@ -71,9 +69,7 @@ class Registry:
             except Exception as exc:
                 logger.debug("%s failed: %s", cls.__name__, exc)
                 errors.append(f"{cls.__name__}: {exc}")
-        raise RuntimeError(
-            f"No backend succeeded for {mime} ({path}). Errors: {errors}"
-        )
+        raise RuntimeError(f"No backend succeeded for {mime} ({path}). Errors: {errors}")
 
     def _sort(self, mime: str) -> None:
         order = self._config.backends.get(mime, []) if self._config else []
