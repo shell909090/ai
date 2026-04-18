@@ -1,0 +1,40 @@
+[project]
+name = "all2txt"
+version = "0.1.0"
+description = "Extract plain text from any file format for vector search pipelines"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+tika = ["tika>=2.6"]
+pymupdf = ["pymupdf>=1.24"]
+unstructured = ["unstructured[all-docs]>=0.14"]
+7zip = ["py7zr>=0.20"]
+rar = ["rarfile>=4.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+all2txt = "all2txt.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=all2txt --cov-report=term-missing --cov-fail-under=75"
