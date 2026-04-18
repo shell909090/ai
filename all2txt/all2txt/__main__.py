@@ -23,13 +23,16 @@ def main() -> None:
         help="Path to all2txt.yaml (default: ./all2txt.yaml)",
     )
     parser.add_argument("--mime", metavar="MIME", help="Override MIME type detection")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable info logging")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    level = logging.WARNING
+    if args.debug:
+        level = logging.DEBUG
+    elif args.verbose:
+        level = logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
 
     config = load_config(args.config)
     registry.configure(config)

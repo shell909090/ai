@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import subprocess
 from collections import defaultdict
 from collections.abc import Callable
@@ -39,14 +40,19 @@ class Registry:
             self._sort(mime)
 
     def detect(self, path: Path) -> str:
-        """Return MIME type via file(1); apply extension override for generic results."""
-        mime = subprocess.check_output(["file", "--mime-type", "-b", str(path)], text=True).strip()
+        """Return MIME type via file(1) or mimetypes fallback; apply extension override for generic results."""
+        try:
+            mime = subprocess.check_output(["file", "--mime-type", "-b", str(path)], text=True).strip()
+        except FileNotFoundError:
+            logger.warning("'file' command not found, falling back to mimetypes for MIME detection")
+            guessed, _ = mimetypes.guess_type(str(path))
+            mime = guessed or "application/octet-stream"
         if mime in _GENERIC_MIMES and self._config:
             override = self._config.extensions.get(path.suffix.lower())
             if override:
                 logger.debug("extension override %s → %s", mime, override)
                 mime = override
-        logger.debug("detected %s → %s", path, mime)
+        logger.info("%s: mime type: %s", path.name, mime)
         return mime
 
     def extract(self, path: Path, mime: str | None = None) -> str:
@@ -55,17 +61,23 @@ class Registry:
             mime = self.detect(path)
         candidates = self._map.get(mime, [])
         errors: list[str] = []
+        instances = []
         for cls in candidates:
             extractor_cfg: dict[str, Any] = dict(
                 self._config.extractors.get(cls.name, {}) if self._config else {}
             )
             extractor_cfg["_mime"] = mime
-            inst = cls(config=extractor_cfg)
+            instances.append((cls, cls(config=extractor_cfg)))
+        available_names = [cls.name for cls, inst in instances if inst.available()]
+        all_names = [cls.name for cls, _ in instances]
+        logger.info("%s: %d registered backends: %s", path.name, len(candidates), ", ".join(all_names) or "none")
+        logger.info("%s: %d available backends: %s", path.name, len(available_names), ", ".join(available_names) or "none")
+        for cls, inst in instances:
             if not inst.available():
                 logger.debug("skipping %s (unavailable)", cls.__name__)
                 continue
             try:
-                logger.debug("trying %s for %s", cls.__name__, path)
+                logger.info("using %s for %s", cls.name, path.name)
                 return inst.extract(path)
             except Exception as exc:
                 logger.debug("%s failed: %s", cls.__name__, exc)

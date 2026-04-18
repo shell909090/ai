@@ -9,7 +9,7 @@ class PyMuPDFExtractor(Extractor):
     """Extract text from PDF via PyMuPDF (fast, no JVM required)."""
 
     name = "pymupdf"
-    priority = 15
+    priority = 25
 
     def available(self) -> bool:
         """Check that pymupdf is installed."""

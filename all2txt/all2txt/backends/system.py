@@ -1,8 +1,30 @@
 import shutil
+import subprocess
 from pathlib import Path
 
 from ..core.base import Extractor
 from ..core.registry import registry
+
+
+@registry.register("application/pdf")
+class PdfToTextExtractor(Extractor):
+    """Extract text from PDF via pdftotext (Poppler)."""
+
+    name = "pdftotext"
+    priority = 20
+
+    def available(self) -> bool:
+        """Check that pdftotext is installed."""
+        return shutil.which("pdftotext") is not None
+
+    def extract(self, path: Path) -> str:
+        """Run pdftotext -layout and return stdout."""
+        result = subprocess.run(
+            ["pdftotext", "-layout", str(path), "-"],
+            capture_output=True,
+            check=True,
+        )
+        return result.stdout.decode(errors="replace")
 
 
 @registry.register("text/troff")
