@@ -3,63 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
-
-# ------------------------------------------------------------------ local backend
-
-
-def _make_local_embedder(dim: int = 64) -> "object":
-    from elocate.embedder import Embedder
-
-    mock_model = MagicMock()
-    mock_model.get_sentence_embedding_dimension.return_value = dim
-    mock_model.encode.side_effect = lambda texts, **_: np.ones((len(texts), dim), dtype=np.float32)
-
-    embedder = Embedder.__new__(Embedder)
-    embedder._backend = "local"
-    embedder._model_name = "mock"
-    embedder._model = mock_model
-    embedder._dim = dim
-    return embedder
-
-
-def test_local_embed_returns_correct_shape() -> None:
-    embedder = _make_local_embedder(dim=64)
-    result = embedder.embed(["hello", "world", "foo"])  # type: ignore[attr-defined]
-    assert result.shape == (3, 64)
-
-
-def test_local_embed_returns_float32() -> None:
-    embedder = _make_local_embedder(dim=32)
-    result = embedder.embed(["test"])  # type: ignore[attr-defined]
-    assert result.dtype == np.float32
-
-
-def test_local_dim_property() -> None:
-    embedder = _make_local_embedder(dim=128)
-    assert embedder.dim == 128  # type: ignore[attr-defined]
-
-
-def test_local_embed_single_text() -> None:
-    embedder = _make_local_embedder(dim=16)
-    result = embedder.embed(["single"])  # type: ignore[attr-defined]
-    assert result.shape == (1, 16)
-
-
-def test_local_embedder_loads_model_on_init() -> None:
-    from elocate.embedder import Embedder
-
-    mock_st = MagicMock()
-    mock_instance = MagicMock()
-    mock_instance.get_sentence_embedding_dimension.return_value = 8
-    mock_st.return_value = mock_instance
-
-    with patch.dict(
-        "sys.modules", {"sentence_transformers": MagicMock(SentenceTransformer=mock_st)}
-    ):
-        Embedder("my-model", backend="local")
-    mock_st.assert_called_once_with("my-model")
-
 
 # ------------------------------------------------------------------ openai backend
 
@@ -131,14 +74,6 @@ def test_openai_dim_cached_after_first_embed() -> None:
     assert embedder._client.embeddings.create.call_count == call_count_before  # type: ignore[attr-defined]
 
 
-def test_openai_backend_init_missing_package() -> None:
-    from elocate.embedder import Embedder
-
-    with patch.dict("sys.modules", {"openai": None}):
-        with pytest.raises(ImportError, match="elocate\\[openai\\]"):
-            Embedder("nomic-embed-text", backend="openai")
-
-
 def test_openai_backend_empty_api_key_uses_none() -> None:
     """Empty api_key should be replaced with 'none' for the OpenAI SDK."""
     from elocate.embedder import Embedder
@@ -148,20 +83,22 @@ def test_openai_backend_empty_api_key_uses_none() -> None:
 
     # OpenAI is imported inside __init__, so patch via sys.modules only
     with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai_cls)}):
-        Embedder("model", backend="openai", api_base="http://localhost:11434/v1", api_key="")
+        Embedder("model", api_base="http://localhost:11434/v1", api_key="")
 
     _, kwargs = mock_openai_cls.call_args
     assert kwargs.get("api_key") == "none"
 
 
-# ------------------------------------------------------------------ unknown backend
-
-
-def test_unknown_backend_raises() -> None:
+def test_embedder_init_creates_openai_client() -> None:
+    """Embedder.__init__ should create an OpenAI client with given base_url and api_key."""
     from elocate.embedder import Embedder
 
-    with pytest.raises(ValueError, match="Unknown embedder backend"):
-        Embedder.__new__(Embedder)
-        # instantiate directly to avoid hitting real imports
-        e = object.__new__(Embedder)
-        e.__init__("model", backend="invalid")  # type: ignore[attr-defined]
+    mock_openai_cls = MagicMock()
+    mock_openai_cls.return_value = MagicMock()
+
+    with patch.dict("sys.modules", {"openai": MagicMock(OpenAI=mock_openai_cls)}):
+        Embedder("nomic-embed-text", api_base="http://localhost:11434/v1", api_key="ollama")
+
+    _, kwargs = mock_openai_cls.call_args
+    assert kwargs.get("base_url") == "http://localhost:11434/v1"
+    assert kwargs.get("api_key") == "ollama"

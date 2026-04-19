@@ -2,16 +2,24 @@
 
 A local semantic document search tool using vector embeddings, similar to `mlocate` but with semantic matching.
 
+elocate does not bundle any inference weights. Embedding is delegated entirely to an external OpenAI-compatible service (ollama, OpenAI, LM Studio, etc.).
+
 [中文说明](README.cn.md)
 
 ## Installation
 
 ```bash
 pip install elocate
-# Optional: for non-plaintext file support (PDF, DOCX, images)
+# Optional: for non-plaintext file support (PDF, DOCX, images, etc.)
 pip install elocate[all2txt]
-# Optional: for OpenAI-compatible embedding API (ollama, OpenAI, LM Studio)
-pip install elocate[openai]
+```
+
+An OpenAI-compatible embedding service must be running before indexing or searching.
+For local CPU inference, [ollama](https://ollama.com) is recommended:
+
+```bash
+ollama pull qwen3-embedding:4b
+ollama serve
 ```
 
 ## Usage
@@ -38,8 +46,9 @@ Create `~/.config/elocate/config.yaml`:
 
 ```yaml
 index_path: ~/.local/share/elocate/index
-embedding_model: all-MiniLM-L6-v2
-embedder_backend: local    # "local" (CPU/GPU) or "openai" (API)
+embedding_model: qwen3-embedding:4b
+openai_base_url: http://localhost:11434/v1
+openai_api_key: ""
 top_k: 10
 chunk_size: 500
 chunk_overlap: 50
@@ -54,21 +63,9 @@ dirs:
     extractor: all2txt
 ```
 
-### Using OpenAI-compatible embedding API
-
-For ollama (local GPU inference):
+### Using OpenAI API
 
 ```yaml
-embedder_backend: openai
-embedding_model: nomic-embed-text
-openai_base_url: http://localhost:11434/v1
-openai_api_key: ""
-```
-
-For OpenAI:
-
-```yaml
-embedder_backend: openai
 embedding_model: text-embedding-3-small
 openai_base_url: https://api.openai.com/v1
 openai_api_key: sk-...

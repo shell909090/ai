@@ -85,33 +85,17 @@ def test_load_config_index_path(tmp_path: Path) -> None:
     assert config.index_path == Path("/tmp/myindex")
 
 
-def test_default_embedder_backend() -> None:
-    config = Config()
-    assert config.embedder_backend == "local"
-    assert config.openai_base_url == ""
-    assert config.openai_api_key == ""
-
-
-def test_load_config_openai_backend(tmp_path: Path) -> None:
+def test_load_config_openai_fields(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
-        "embedder_backend: openai\n"
         "embedding_model: nomic-embed-text\n"
         "openai_base_url: http://localhost:11434/v1\n"
         "openai_api_key: ollama\n"
     )
     config = load_config(cfg_file)
-    assert config.embedder_backend == "openai"
     assert config.embedding_model == "nomic-embed-text"
     assert config.openai_base_url == "http://localhost:11434/v1"
     assert config.openai_api_key == "ollama"
-
-
-def test_load_config_local_backend_default(tmp_path: Path) -> None:
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text("top_k: 3\n")
-    config = load_config(cfg_file)
-    assert config.embedder_backend == "local"
 
 
 def test_load_config_index_path_tilde_expansion(tmp_path: Path) -> None:
@@ -154,10 +138,10 @@ def test_load_config_invalid_chunk_overlap_gte_size(tmp_path: Path) -> None:
         load_config(cfg_file)
 
 
-def test_load_config_invalid_embedder_backend(tmp_path: Path) -> None:
+def test_load_config_local_backend_raises(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text("embedder_backend: bad_backend\n")
-    with pytest.raises(ValueError, match="embedder_backend"):
+    cfg_file.write_text("embedder_backend: local\n")
+    with pytest.raises(ValueError, match="local"):
         load_config(cfg_file)
 
 

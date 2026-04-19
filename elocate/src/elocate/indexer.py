@@ -11,6 +11,8 @@ from elocate.embedder import Embedder
 
 logger = logging.getLogger(__name__)
 
+_OPENAI_BACKEND = "openai"
+
 BATCH_SIZE = 64
 MIN_FILE_BYTES = 4  # files smaller than this have no search value (< ~2 CJK chars)
 
@@ -26,7 +28,6 @@ class Indexer:
         """Incremental index update. Returns (added, updated, removed) file counts."""
         embedder = Embedder(
             self._config.embedding_model,
-            backend=self._config.embedder_backend,
             api_base=self._config.openai_base_url,
             api_key=self._config.openai_api_key,
         )
@@ -35,22 +36,19 @@ class Indexer:
         if self._db.tables_exist():
             stored_model = self._db.get_meta("embedding_model")
             stored_backend = self._db.get_meta("embedder_backend")
-            if (
-                stored_model != self._config.embedding_model
-                or stored_backend != self._config.embedder_backend
-            ):
+            if stored_model != self._config.embedding_model or stored_backend != _OPENAI_BACKEND:
                 logger.info(
                     "Embedding config changed (%s/%s → %s/%s); rebuilding index.",
                     stored_backend,
                     stored_model,
-                    self._config.embedder_backend,
+                    _OPENAI_BACKEND,
                     self._config.embedding_model,
                 )
                 self._db.drop_tables()
 
         self._db.init_tables(embedder.dim)
         self._db.set_meta("embedding_model", self._config.embedding_model)
-        self._db.set_meta("embedder_backend", self._config.embedder_backend)
+        self._db.set_meta("embedder_backend", _OPENAI_BACKEND)
 
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
 

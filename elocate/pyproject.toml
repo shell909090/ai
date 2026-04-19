@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "lancedb>=0.5",
-    "sentence-transformers>=2.0",
+    "openai>=1.0",
     "click>=8.0",
     "pyarrow>=12.0",
     "pyyaml>=6.0",
@@ -14,7 +14,6 @@ dependencies = [
 
 [project.optional-dependencies]
 all2txt = ["all2txt"]
-openai = ["openai>=1.0"]
 
 [project.scripts]
 elocate = "elocate.cli:main_search"
@@ -47,9 +46,6 @@ max-complexity = 10
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=elocate --cov-report=term-missing"
-
-[tool.uv]
-torch-backend = "cpu"
 
 [tool.uv.sources]
 all2txt = { path = "/home/shell/src/github.com/shell909090/ai/all2txt" }

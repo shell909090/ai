@@ -11,10 +11,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "elocate" / "config.yaml"
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "elocate" / "index"
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_EXTENSIONS = [".md", ".txt", ".rst", ".org"]
-
-_VALID_BACKENDS = {"local", "openai"}
 
 
 @dataclass
@@ -39,7 +37,6 @@ class Config:
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     chunk_size: int = 500
     chunk_overlap: int = 50
-    embedder_backend: str = "local"  # "local" | "openai"
     openai_base_url: str = ""  # OpenAI-compatible API base URL
     openai_api_key: str = ""  # API key (empty = use "none")
 
@@ -52,6 +49,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
 
     with path.open() as f:
         data = yaml.safe_load(f) or {}
+
+    if data.get("embedder_backend") == "local":
+        raise ValueError(
+            "The 'local' embedder backend has been removed. "
+            "Use an OpenAI-compatible service (ollama, OpenAI, etc.) and set openai_base_url."
+        )
 
     dirs: list[DirConfig] = []
     for i, entry in enumerate(data.get("dirs", [])):
@@ -72,7 +75,6 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     top_k = data.get("top_k", 10)
     chunk_size = data.get("chunk_size", 500)
     chunk_overlap = data.get("chunk_overlap", 50)
-    embedder_backend = data.get("embedder_backend", "local")
 
     if top_k <= 0:
         raise ValueError(f"top_k must be > 0, got {top_k}")
@@ -83,10 +85,6 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             f"chunk_overlap must be in [0, chunk_size), "
             f"got overlap={chunk_overlap} size={chunk_size}"
         )
-    if embedder_backend not in _VALID_BACKENDS:
-        raise ValueError(
-            f"embedder_backend must be one of {sorted(_VALID_BACKENDS)}, got {embedder_backend!r}"
-        )
 
     return Config(
         dirs=dirs,
@@ -95,7 +93,6 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         embedding_model=data.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        embedder_backend=embedder_backend,
         openai_base_url=data.get("openai_base_url", ""),
         openai_api_key=data.get("openai_api_key", ""),
     )

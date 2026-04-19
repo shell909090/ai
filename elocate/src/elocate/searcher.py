@@ -38,7 +38,6 @@ class Searcher:
 
         embedder = Embedder(
             self._config.embedding_model,
-            backend=self._config.embedder_backend,
             api_base=self._config.openai_base_url,
             api_key=self._config.openai_api_key,
         )

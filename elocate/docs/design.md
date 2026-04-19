@@ -6,14 +6,20 @@
 CLI (cli.py)
   ├── elocate-updatedb → Indexer
   │                         ├── Chunker    (文档切分)
-  │                         ├── Embedder   (sentence-transformers)
+  │                         ├── Embedder   (OpenAI 兼容 API 客户端)
   │                         └── VectorDB   (LanceDB: files + chunks 两张表)
   └── elocate          → Searcher
                               ├── Embedder
                               └── VectorDB
                          ↑
                     Config (load_config)  ← ~/.config/elocate/config.yaml
+
+外部服务（用户自行运行）：
+  ollama / OpenAI / 任何 OpenAI 兼容 embedding 服务
 ```
+
+**架构原则**：elocate 不内含推理权重，embedding 推理完全委托给外部 OpenAI 兼容服务，
+职责边界清晰（索引+搜索 vs 推理）。
 
 ## 模块职责
 
@@ -21,7 +27,7 @@ CLI (cli.py)
 |------|------|
 | `config.py` | 加载 YAML 配置，提供 `Config` / `DirConfig` dataclass |
 | `chunker.py` | 段落优先 + 固定上限将文档切分为带偏移的 Chunk 列表 |
-| `embedder.py` | 封装 sentence-transformers，文本批量转向量 |
+| `embedder.py` | 封装 OpenAI 兼容 embeddings API，文本批量转向量 |
 | `db.py` | 管理 LanceDB `files`（元数据）和 `chunks`（向量）两张表 |
 | `indexer.py` | 增量扫描：文件一致性判断 → 引用计数 → 切分 → embed → 写 DB |
 | `searcher.py` | embed query → cosine ANN → 可选 regex 过滤 → 返回结果 |
