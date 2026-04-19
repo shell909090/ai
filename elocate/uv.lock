@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "all2txt"
 version = "0.1.0"
-source = { directory = "../../src/github.com/shell909090/ai/all2txt" }
+source = { directory = "../all2txt" }
 dependencies = [
     { name = "pyyaml" },
 ]
@@ -227,7 +227,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "all2txt", marker = "extra == 'all2txt'", directory = "../../src/github.com/shell909090/ai/all2txt" },
+    { name = "all2txt", marker = "extra == 'all2txt'", directory = "../all2txt" },
     { name = "click", specifier = ">=8.0" },
     { name = "lancedb", specifier = ">=0.5" },
     { name = "openai", specifier = ">=1.0" },
