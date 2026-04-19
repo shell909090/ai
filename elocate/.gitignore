@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# uv / virtualenv
+.venv/
+venv/
+
+# Tools
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Project-specific (not in git per AGENTS.md)
+.env
+docs/tasks.md
+docs/review.md
+docs/log.md
+.codex
