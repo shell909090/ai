@@ -242,21 +242,17 @@ class Indexer:
 
         if dir_cfg.extractor == "all2txt":
             try:
-                import all2txt  # type: ignore[import-untyped]
+                import all2txt.backends  # noqa: F401 — triggers backend registration
+                from all2txt import registry
+                from all2txt.core.config import Config as All2txtConfig
             except ImportError as exc:
                 raise ImportError(
                     "all2txt is not installed. Install it with: pip install elocate[all2txt]"
                 ) from exc
 
-            registry = all2txt.registry
-            old_config = registry.get_config() if hasattr(registry, "get_config") else None
-            try:
-                if dir_cfg.extractor_config:
-                    cfg = all2txt.Config(**dir_cfg.extractor_config)
-                    registry.configure(cfg)
-                return registry.extract(path)
-            finally:
-                if old_config is not None:
-                    registry.configure(old_config)
+            if dir_cfg.extractor_config:
+                cfg = All2txtConfig(**dir_cfg.extractor_config)
+                registry.configure(cfg)
+            return registry.extract(path)
 
         raise ValueError(f"Unknown extractor: {dir_cfg.extractor!r}")

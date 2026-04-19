@@ -4,12 +4,25 @@ requires-python = ">=3.11"
 
 [[package]]
 name = "all2txt"
-version = "0.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/27/66/c2bbb883cd002aa273853346c6666b9646aec61266174da8ac36a7db2bf2/all2txt-0.1.2.tar.gz", hash = "sha256:267d61be98577797ed31d085f55d99e88dafd7b4113d901c69338c19c61dfa8c", size = 32699, upload-time = "2026-03-23T16:23:59.766Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/13/5ef340da19b0579c5e99735b02122d37ba0bbb935e955463ea4573cc1320/all2txt-0.1.2-py3-none-any.whl", hash = "sha256:76e277494bb545e7055b54c175f1090e0c5cfbbcfc5964c60b29bcce3cd3661d", size = 27562, upload-time = "2026-03-23T16:23:58.184Z" },
+version = "0.1.0"
+source = { directory = "../../src/github.com/shell909090/ai/all2txt" }
+dependencies = [
+    { name = "pyyaml" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "py7zr", marker = "extra == '7zip'", specifier = ">=0.20" },
+    { name = "pymupdf", marker = "extra == 'pymupdf'", specifier = ">=1.24" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rarfile", marker = "extra == 'rar'", specifier = ">=4.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "tika", marker = "extra == 'tika'", specifier = ">=2.6" },
+    { name = "unstructured", extras = ["all-docs"], marker = "extra == 'unstructured'", specifier = ">=0.14" },
+]
+provides-extras = ["tika", "pymupdf", "unstructured", "7zip", "rar", "dev"]
 
 [[package]]
 name = "annotated-doc"
@@ -297,7 +310,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "all2txt", marker = "extra == 'all2txt'" },
+    { name = "all2txt", marker = "extra == 'all2txt'", directory = "../../src/github.com/shell909090/ai/all2txt" },
     { name = "click", specifier = ">=8.0" },
     { name = "lancedb", specifier = ">=0.5" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },

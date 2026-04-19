@@ -50,3 +50,6 @@ addopts = "--cov=elocate --cov-report=term-missing"
 
 [tool.uv]
 torch-backend = "cpu"
+
+[tool.uv.sources]
+all2txt = { path = "/home/shell/src/github.com/shell909090/ai/all2txt" }

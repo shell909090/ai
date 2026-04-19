@@ -317,3 +317,51 @@ def test_run_no_infinite_reprocess_for_no_chunk_file(tmp_path: Path) -> None:
     # Second run must not re-process the same file
     assert added2 == 0
     assert updated2 == 0
+
+
+def test_extract_text_all2txt_success(tmp_path: Path) -> None:
+    from all2txt import registry as _all2txt_registry
+
+    f = tmp_path / "doc.pdf"
+    f.write_text("dummy")
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt", extractor_config={})
+    with (
+        patch.object(_all2txt_registry, "extract", return_value="mocked text") as mock_extract,
+        patch.object(_all2txt_registry, "configure") as mock_configure,
+    ):
+        result = indexer._extract_text(f, dir_cfg)
+    assert result == "mocked text"
+    mock_extract.assert_called_once_with(f)
+    mock_configure.assert_not_called()
+
+
+def test_extract_text_all2txt_with_config(tmp_path: Path) -> None:
+    from all2txt import registry as _all2txt_registry
+
+    f = tmp_path / "doc.pdf"
+    f.write_text("dummy")
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    extractor_config = {"backends": {}, "extractors": {}, "extensions": {}}
+    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt", extractor_config=extractor_config)
+    with (
+        patch.object(_all2txt_registry, "extract", return_value="configured text") as mock_extract,
+        patch.object(_all2txt_registry, "configure") as mock_configure,
+    ):
+        result = indexer._extract_text(f, dir_cfg)
+    assert result == "configured text"
+    mock_configure.assert_called_once()
+    mock_extract.assert_called_once_with(f)
+
+
+def test_extract_text_all2txt_import_error(tmp_path: Path) -> None:
+    f = tmp_path / "doc.pdf"
+    f.write_text("dummy")
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt")
+    with patch.dict("sys.modules", {"all2txt.backends": None}):
+        with pytest.raises(ImportError):
+            indexer._extract_text(f, dir_cfg)
