@@ -30,6 +30,28 @@ class TestOpenAIWhisperExtractor:
         with patch.dict(sys.modules, {"openai": fake_openai}):
             assert OpenAIWhisperExtractor().available() is True
 
+    def test_available_returns_false_for_video_when_ffmpeg_missing(self) -> None:
+        from all2txt.backends.asr import OpenAIWhisperExtractor
+
+        fake_openai = _make_module("openai")
+        fake_openai.OpenAI = MagicMock()
+        with (
+            patch.dict(sys.modules, {"openai": fake_openai}),
+            patch("all2txt.backends.asr.shutil.which", return_value=None),
+        ):
+            assert OpenAIWhisperExtractor(config={"_mime": "video/mp4"}).available() is False
+
+    def test_available_returns_true_for_video_when_ffmpeg_present(self) -> None:
+        from all2txt.backends.asr import OpenAIWhisperExtractor
+
+        fake_openai = _make_module("openai")
+        fake_openai.OpenAI = MagicMock()
+        with (
+            patch.dict(sys.modules, {"openai": fake_openai}),
+            patch("all2txt.backends.asr.shutil.which", return_value="/usr/bin/ffmpeg"),
+        ):
+            assert OpenAIWhisperExtractor(config={"_mime": "video/mp4"}).available() is True
+
     def test_extract_audio_file_calls_api(self, tmp_path: Path) -> None:
         from all2txt.backends.asr import OpenAIWhisperExtractor
 
@@ -126,6 +148,28 @@ class TestFasterWhisperExtractor:
         fake_fw.WhisperModel = MagicMock()
         with patch.dict(sys.modules, {"faster_whisper": fake_fw}):
             assert FasterWhisperExtractor().available() is True
+
+    def test_available_returns_false_for_video_when_ffmpeg_missing(self) -> None:
+        from all2txt.backends.asr import FasterWhisperExtractor
+
+        fake_fw = _make_module("faster_whisper")
+        fake_fw.WhisperModel = MagicMock()
+        with (
+            patch.dict(sys.modules, {"faster_whisper": fake_fw}),
+            patch("all2txt.backends.asr.shutil.which", return_value=None),
+        ):
+            assert FasterWhisperExtractor(config={"_mime": "video/mp4"}).available() is False
+
+    def test_available_returns_true_for_video_when_ffmpeg_present(self) -> None:
+        from all2txt.backends.asr import FasterWhisperExtractor
+
+        fake_fw = _make_module("faster_whisper")
+        fake_fw.WhisperModel = MagicMock()
+        with (
+            patch.dict(sys.modules, {"faster_whisper": fake_fw}),
+            patch("all2txt.backends.asr.shutil.which", return_value="/usr/bin/ffmpeg"),
+        ):
+            assert FasterWhisperExtractor(config={"_mime": "video/mp4"}).available() is True
 
     def test_extract_audio_joins_segments(self, tmp_path: Path) -> None:
         from all2txt.backends.asr import FasterWhisperExtractor

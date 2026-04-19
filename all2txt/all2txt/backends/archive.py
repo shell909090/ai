@@ -51,9 +51,7 @@ class ArchiveExtractor(Extractor):
         self._max_bytes: int = int(self._cfg.get("max_bytes", _DEFAULT_MAX_BYTES))
 
     def available(self) -> bool:
-        """Return True for single-file compression always; multi-file requires explicit enable."""
-        if self._cfg.get("_mime", "") in _SINGLE_FILE_MIMES:
-            return True
+        """Return True only when explicitly enabled via config or --allow-archive."""
         return bool(self._cfg.get("enabled", False))
 
     def extract(self, path: Path) -> str:

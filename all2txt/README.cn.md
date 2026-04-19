@@ -28,7 +28,7 @@
 | 图片（OCR） | `.png`、`.jpg`、`.tiff`、`.bmp`、`.webp`、`.gif` | `tesseract`、`easyocr`、`paddleocr`、`unstructured`、`openai_vision` |
 | 音频 / 视频 | `.mp3`、`.wav`、`.mp4`、`.mkv`、`.mov` 等 | `openai_whisper`、`faster_whisper`、`whisper_local` |
 | 压缩包 | `.zip`、`.tar`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.7z`、`.rar` | `archive_recurse`、`7zip_recurse`、`rar_recurse` |
-| 单文件压缩 | `.gz`、`.bz2`、`.xz`、`.lzma` | `archive_recurse`（默认启用） |
+| 单文件压缩 | `.gz`、`.bz2`、`.xz`、`.lzma` | `archive_recurse`（默认禁用，需 `--allow-archive`） |
 
 ## 安装
 

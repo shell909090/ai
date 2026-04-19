@@ -37,6 +37,19 @@ class TestArchiveExtractorAvailable:
         extractor = ArchiveExtractor(config={"enabled": True})
         assert extractor.available() is True
 
+    def test_available_false_for_single_compressed_without_enabled(self) -> None:
+        """Single-file compression MIMEs also require explicit enable."""
+        from all2txt.backends.archive import ArchiveExtractor
+
+        for mime in (
+            "application/gzip",
+            "application/x-bzip2",
+            "application/x-xz",
+            "application/x-lzma",
+        ):
+            extractor = ArchiveExtractor(config={"_mime": mime})
+            assert extractor.available() is False, f"expected False for {mime} without enabled"
+
 
 # ===========================================================================
 # ArchiveExtractor – ZIP extraction

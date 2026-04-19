@@ -45,10 +45,12 @@ class OpenAIWhisperExtractor(Extractor):
         self._response_format: str = self._cfg.get("response_format", "text")
 
     def available(self) -> bool:
-        """Check that openai package and ffmpeg (for video) are installed."""
+        """Check openai package and ffmpeg (for video input) are installed."""
         try:
             import openai  # noqa: F401
         except ImportError:
+            return False
+        if self._cfg.get("_mime") in _VIDEO_MIMES and not shutil.which("ffmpeg"):
             return False
         return True
 
@@ -102,10 +104,12 @@ class FasterWhisperExtractor(Extractor):
         self._device: str = self._cfg.get("device", "cpu")
 
     def available(self) -> bool:
-        """Check that faster-whisper is installed."""
+        """Check faster-whisper package and ffmpeg (for video input) are installed."""
         try:
             from faster_whisper import WhisperModel  # noqa: F401
         except ImportError:
+            return False
+        if self._cfg.get("_mime") in _VIDEO_MIMES and not shutil.which("ffmpeg"):
             return False
         return True
 

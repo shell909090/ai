@@ -28,7 +28,7 @@ Extract plain text from any file format, designed for RAG (Retrieval-Augmented G
 | Images (OCR) | `.png`, `.jpg`, `.tiff`, `.bmp`, `.webp`, `.gif` | `tesseract`, `easyocr`, `paddleocr`, `unstructured`, `openai_vision` |
 | Audio / Video | `.mp3`, `.wav`, `.mp4`, `.mkv`, `.mov`, … | `openai_whisper`, `faster_whisper`, `whisper_local` |
 | Archives | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.7z`, `.rar` | `archive_recurse`, `7zip_recurse`, `rar_recurse` |
-| Single-file compressed | `.gz`, `.bz2`, `.xz`, `.lzma` | `archive_recurse` (enabled by default) |
+| Single-file compressed | `.gz`, `.bz2`, `.xz`, `.lzma` | `archive_recurse` (disabled by default, use `--allow-archive`) |
 
 ## Installation
 

@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ class TesseractExtractor(Extractor):
             import pytesseract  # noqa: F401
         except ImportError:
             return False
-        return True
+        return shutil.which("tesseract") is not None
 
     def extract(self, path: Path) -> str:
         """Run pytesseract.image_to_string with configured lang and psm."""

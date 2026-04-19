@@ -25,8 +25,21 @@ class TestTesseractExtractor:
         from all2txt.backends.ocr import TesseractExtractor
 
         fake_pt = _make_module("pytesseract")
-        with patch.dict(sys.modules, {"pytesseract": fake_pt}):
+        with (
+            patch.dict(sys.modules, {"pytesseract": fake_pt}),
+            patch("all2txt.backends.ocr.shutil.which", return_value="/usr/bin/tesseract"),
+        ):
             assert TesseractExtractor().available() is True
+
+    def test_available_returns_false_when_tesseract_cli_missing(self) -> None:
+        from all2txt.backends.ocr import TesseractExtractor
+
+        fake_pt = _make_module("pytesseract")
+        with (
+            patch.dict(sys.modules, {"pytesseract": fake_pt}),
+            patch("all2txt.backends.ocr.shutil.which", return_value=None),
+        ):
+            assert TesseractExtractor().available() is False
 
     def test_extract_uses_config_lang_and_psm(self, tmp_path: Path) -> None:
         from all2txt.backends.ocr import TesseractExtractor
