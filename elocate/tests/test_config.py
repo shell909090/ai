@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from elocate.config import (
+    DEFAULT_EMBED_BATCH_CHARS,
+    DEFAULT_EMBED_BATCH_FILES,
     DEFAULT_EXTENSIONS,
     Config,
     DirConfig,
@@ -18,6 +20,8 @@ def test_default_config_values() -> None:
     assert config.top_k == 10
     assert config.chunk_size == 500
     assert config.chunk_overlap == 50
+    assert config.embed_batch_files == DEFAULT_EMBED_BATCH_FILES
+    assert config.embed_batch_chars == DEFAULT_EMBED_BATCH_CHARS
     assert config.dirs == []
 
 
@@ -48,12 +52,21 @@ def test_load_config_missing_file(tmp_path: Path) -> None:
 
 def test_load_config_global_fields(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text("top_k: 5\nembedding_model: my-model\nchunk_size: 300\nchunk_overlap: 30\n")
+    cfg_file.write_text(
+        "top_k: 5\n"
+        "embedding_model: my-model\n"
+        "chunk_size: 300\n"
+        "chunk_overlap: 30\n"
+        "embed_batch_files: 4\n"
+        "embed_batch_chars: 2048\n"
+    )
     config = load_config(cfg_file)
     assert config.top_k == 5
     assert config.embedding_model == "my-model"
     assert config.chunk_size == 300
     assert config.chunk_overlap == 30
+    assert config.embed_batch_files == 4
+    assert config.embed_batch_chars == 2048
 
 
 def test_load_config_dirs(tmp_path: Path) -> None:
@@ -148,6 +161,20 @@ def test_load_config_invalid_chunk_overlap_gte_size(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text("chunk_size: 100\nchunk_overlap: 100\n")
     with pytest.raises(ValueError, match="chunk_overlap"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_embed_batch_files(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("embed_batch_files: 0\n")
+    with pytest.raises(ValueError, match="embed_batch_files"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_embed_batch_chars(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("embed_batch_chars: -1\n")
+    with pytest.raises(ValueError, match="embed_batch_chars"):
         load_config(cfg_file)
 
 

@@ -29,7 +29,7 @@ CLI (cli.py)
 | `chunker.py` | 段落优先 + 固定上限将文档切分为带偏移的 Chunk 列表 |
 | `embedder.py` | 封装 OpenAI 兼容 embeddings API，文本批量转向量 |
 | `db.py` | 管理 LanceDB `files`（元数据）和 `chunks`（向量）两张表 |
-| `indexer.py` | 增量扫描：规则匹配筛选 → 文件一致性判断 → 引用计数 → 切分 → embed → 写 DB |
+| `indexer.py` | 增量扫描：规则匹配筛选 → 文件一致性判断 → 抽取累积 → 阈值 flush → 切分 → embed → 写 DB |
 | `searcher.py` | embed query → cosine ANN → 可选 regex 过滤 → 返回结果 |
 | `cli.py` | Click 命令入口，组装上述模块 |
 
@@ -105,6 +105,69 @@ files 表中存在但磁盘上消失的 path：
 新 path 扫描时 hash 已在 chunks → 只写 files，不重算。
 旧 path 删除时因 hash 仍有引用 → chunks 保留。
 **无需任何额外移动检测逻辑。**
+
+---
+
+## 批量调度与性能计数
+
+### 调度目标
+
+索引流程不再先把全部待嵌入文本累积到内存再统一 embedding，而是：
+
+1. 先完成全量扫描，仅识别“需要处理”的文件集合。
+2. 再对待处理文件逐个抽取文本，并累积到当前 batch。
+3. 当累计文件数或累计字符数达到阈值时，立即对当前 batch 执行切分、embedding 与写库。
+4. 扫描结束后若仍有未 flush 的 batch，再执行最后一次 flush。
+
+### 配置项
+
+新增两个配置项，放在 `~/.config/elocate/config.yaml` 顶层：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `embed_batch_files` | `int` | `64` | 单批待嵌入文件上限 |
+| `embed_batch_chars` | `int` | `65536` | 单批待嵌入文本字符总量上限 |
+
+### flush 规则
+
+1. 对待处理文件完成文本抽取后，将 `(path, hash, size, mtime, text, old_hash)` 加入当前 batch。
+2. 同时累加当前 batch 的文件数和 `len(text)` 字符数。
+3. 当 `batch_file_count >= embed_batch_files` 或 `batch_char_count >= embed_batch_chars` 时，立即 flush。
+4. 若某个单文件自身文本字符数已超过 `embed_batch_chars`，则允许其单独成批 flush。
+5. flush 阶段仍保持“单次 embed 调用覆盖当前 batch 全部 chunks”的行为，以维持模型吞吐效率。
+
+### 失败语义
+
+1. 文件抽取失败时，仅记录 warning 并跳过该文件。
+2. 已成功 flush 的批次视为已落库，后续文件失败不回滚此前批次。
+3. 中断运行时，已完成写库的批次保留；未 flush 或处于当前 flush 中的批次允许在下次运行时重新收敛。
+
+### debug 级性能计数
+
+`--debug` 开启后，Indexer 需要输出两级指标：
+
+1. **批次级指标**
+   - `batch_index`
+   - `files`
+   - `chars`
+   - `chunks`
+   - `extract_seconds`
+   - `chunk_seconds`
+   - `embed_seconds`
+   - `db_write_seconds`
+   - `chars_per_second`
+   - `chunks_per_second`
+2. **全局汇总指标**
+   - `files_scanned`
+   - `files_skipped_unchanged`
+   - `files_pending`
+   - `files_extract_failed`
+   - `files_flushed`
+   - `chunks_embedded`
+   - `chars_embedded`
+   - `extract_seconds_total`
+   - `embed_seconds_total`
+   - `db_write_seconds_total`
 
 ---
 
@@ -199,6 +262,8 @@ embedding_model: all-MiniLM-L6-v2
 top_k: 10
 chunk_size: 500
 chunk_overlap: 50
+embed_batch_files: 64
+embed_batch_chars: 65536
 
 dirs:
   # 纯文本笔记也统一通过 all2txt 抽取
@@ -247,6 +312,8 @@ class Config:
     embedding_model: str
     chunk_size: int                         # default 500
     chunk_overlap: int                      # default 50
+    embed_batch_files: int = 64
+    embed_batch_chars: int = 65536
     embedder_backend: str = "local"         # "local" | "openai"
     openai_base_url: str = ""               # OpenAI-compatible API base URL
     openai_api_key: str = ""                # API key (empty = no auth)
@@ -334,6 +401,8 @@ class Indexer:
     def __init__(self, config: Config) -> None: ...
     def run(self) -> tuple[int, int, int]: ...  # (added, updated, removed) file counts
     def _collect_files(self) -> list[tuple[Path, DirConfig]]: ...
+    def _scan_disk_files(self, disk_files: list[tuple[Path, DirConfig]]) -> tuple[list[tuple[Path, DirConfig, object, dict | None, str]], int, int]: ...
+    def _flush_pending_batch(self, pending: list[tuple[str, str, int, float, str, str | None]], ...) -> None: ...
     def _match_extension_rule(self, path: Path, rule: str) -> bool: ...
     def _matches_extensions(self, path: Path, rules: list[str]) -> bool: ...
     def _file_hash(self, path: Path) -> str: ...

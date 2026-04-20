@@ -26,6 +26,7 @@ Build the index:
 
 ```bash
 elocate-updatedb
+elocate-updatedb --debug   # show batch-level extract/embed timing
 ```
 
 Search documents:
@@ -50,6 +51,8 @@ openai_api_key: ""
 top_k: 10
 chunk_size: 500
 chunk_overlap: 50
+embed_batch_files: 64
+embed_batch_chars: 65536
 
 dirs:
   - path: ~/notes
@@ -93,6 +96,13 @@ for names such as `.tar.gz` or `.user.js`.
 
 `all2txt` is now a required dependency and the only extraction path. Legacy
 `extractor:` config values are ignored for compatibility.
+
+### Indexing Batch Controls
+
+- `embed_batch_files` limits how many extracted files may wait in memory before a flush
+- `embed_batch_chars` limits the total extracted character count before a flush
+- `elocate-updatedb --debug` prints per-batch and overall timing so you can see whether
+  extraction, chunking, embedding, or DB writes are the bottleneck
 
 ### Using OpenAI API
 

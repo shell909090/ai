@@ -13,6 +13,8 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "elocate" / "config.yaml"
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "elocate" / "index"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_EXTENSIONS = [".md", ".txt", ".rst", ".org"]
+DEFAULT_EMBED_BATCH_FILES = 64
+DEFAULT_EMBED_BATCH_CHARS = 65536
 _EXTENSION_RULE_PREFIXES = frozenset({"suffix", "glob"})
 
 
@@ -37,6 +39,8 @@ class Config:
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     chunk_size: int = 500
     chunk_overlap: int = 50
+    embed_batch_files: int = DEFAULT_EMBED_BATCH_FILES
+    embed_batch_chars: int = DEFAULT_EMBED_BATCH_CHARS
     openai_base_url: str = ""  # OpenAI-compatible API base URL
     openai_api_key: str = ""  # API key (empty = use "none")
 
@@ -102,6 +106,8 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     top_k = data.get("top_k", 10)
     chunk_size = data.get("chunk_size", 500)
     chunk_overlap = data.get("chunk_overlap", 50)
+    embed_batch_files = data.get("embed_batch_files", DEFAULT_EMBED_BATCH_FILES)
+    embed_batch_chars = data.get("embed_batch_chars", DEFAULT_EMBED_BATCH_CHARS)
 
     if top_k <= 0:
         raise ValueError(f"top_k must be > 0, got {top_k}")
@@ -112,6 +118,10 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             f"chunk_overlap must be in [0, chunk_size), "
             f"got overlap={chunk_overlap} size={chunk_size}"
         )
+    if embed_batch_files <= 0:
+        raise ValueError(f"embed_batch_files must be > 0, got {embed_batch_files}")
+    if embed_batch_chars <= 0:
+        raise ValueError(f"embed_batch_chars must be > 0, got {embed_batch_chars}")
 
     return Config(
         dirs=dirs,
@@ -120,6 +130,8 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         embedding_model=data.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
+        embed_batch_files=embed_batch_files,
+        embed_batch_chars=embed_batch_chars,
         openai_base_url=data.get("openai_base_url", ""),
         openai_api_key=data.get("openai_api_key", ""),
     )

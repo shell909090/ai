@@ -3,6 +3,9 @@
 import fnmatch
 import hashlib
 import logging
+import os
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from elocate.chunker import Chunker
@@ -13,9 +16,67 @@ from elocate.embedder import Embedder
 logger = logging.getLogger(__name__)
 
 _OPENAI_BACKEND = "openai"
-
-BATCH_SIZE = 64
 MIN_FILE_BYTES = 4  # files smaller than this have no search value (< ~2 CJK chars)
+
+
+@dataclass
+class PendingFile:
+    """A file that still needs text extraction before embedding."""
+
+    path: str
+    file_hash: str
+    size: int
+    mtime: float
+    dir_cfg: DirConfig
+    old_hash: str | None
+
+
+@dataclass
+class BatchItem:
+    """A file whose extracted text is waiting to be embedded."""
+
+    path: str
+    file_hash: str
+    size: int
+    mtime: float
+    text: str
+    old_hash: str | None
+
+
+@dataclass
+class PerfStats:
+    """Accumulates debug-level indexing performance counters."""
+
+    files_scanned: int = 0
+    files_skipped_unchanged: int = 0
+    files_pending: int = 0
+    files_extract_failed: int = 0
+    files_flushed: int = 0
+    chunks_embedded: int = 0
+    chars_embedded: int = 0
+    extract_seconds_total: float = 0.0
+    chunk_seconds_total: float = 0.0
+    embed_seconds_total: float = 0.0
+    db_write_seconds_total: float = 0.0
+    batch_extract_seconds: float = 0.0
+    batch_index: int = 0
+
+    def reset_batch_extract(self) -> None:
+        """Reset the extraction timer for the next flush window."""
+        self.batch_extract_seconds = 0.0
+
+
+@dataclass
+class ChunkedFile:
+    """A file with prepared chunks waiting for embedding/write."""
+
+    path: str
+    file_hash: str
+    size: int
+    mtime: float
+    old_hash: str | None
+    action: str
+    chunks: list
 
 
 class Indexer:
@@ -52,16 +113,20 @@ class Indexer:
         self._db.set_meta("embedder_backend", _OPENAI_BACKEND)
 
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
+        perf = PerfStats()
 
         disk_files = self._collect_files()
         disk_paths = {str(p) for p, _ in disk_files}
         indexed_paths = set(self._db.list_indexed_paths())
 
         removed = self._remove_deleted(indexed_paths - disk_paths)
-        to_embed, added, updated = self._scan_disk_files(disk_files)
-
-        for i in range(0, len(to_embed), BATCH_SIZE):
-            self._index_batch(to_embed[i : i + BATCH_SIZE], embedder, chunker)
+        pending_files, added, updated = self._scan_disk_files(disk_files, perf)
+        flushed_added, flushed_updated = self._flush_pending_files(
+            pending_files, embedder, chunker, perf
+        )
+        added += flushed_added
+        updated += flushed_updated
+        self._log_perf_summary(perf)
 
         return added, updated, removed
 
@@ -79,13 +144,16 @@ class Indexer:
         return removed
 
     def _scan_disk_files(
-        self, disk_files: list[tuple[Path, DirConfig]]
-    ) -> tuple[list[tuple[str, str, int, float, str, str | None]], int, int]:
-        """Scan disk files; return (to_embed list, added count, updated count)."""
-        to_embed: list[tuple[str, str, int, float, str, str | None]] = []
+        self,
+        disk_files: list[tuple[Path, DirConfig]],
+        perf: PerfStats,
+    ) -> tuple[list[PendingFile], int, int]:
+        """Scan disk files; return pending files plus added/updated counts."""
+        pending_files: list[PendingFile] = []
         added = updated = 0
 
         for path, dir_cfg in disk_files:
+            perf.files_scanned += 1
             path_str = str(path)
             try:
                 stat = path.stat()
@@ -98,6 +166,7 @@ class Indexer:
 
             rec = self._db.get_file_meta(path_str)
             if rec and rec["size"] == stat.st_size and rec["mtime"] == stat.st_mtime:
+                perf.files_skipped_unchanged += 1
                 continue  # unchanged
 
             try:
@@ -106,91 +175,238 @@ class Indexer:
                 logger.warning("Cannot hash %s: %s", path_str, exc)
                 continue
 
-            action = self._handle_file(path_str, stat, file_hash, dir_cfg, rec, to_embed)
-            if action == "added":
+            action, pending = self._plan_file(path_str, stat, file_hash, dir_cfg, rec)
+            if pending is not None:
+                pending_files.append(pending)
+                perf.files_pending += 1
+            elif action == "added":
                 added += 1
             elif action == "updated":
                 updated += 1
 
-        return to_embed, added, updated
+        return pending_files, added, updated
 
-    def _handle_file(
+    def _plan_file(
         self,
         path_str: str,
-        stat: object,
+        stat: os.stat_result,
         file_hash: str,
         dir_cfg: DirConfig,
         rec: dict | None,
-        to_embed: list,
-    ) -> str | None:
-        """Process a single changed/new file; mutate to_embed as needed. Returns action or None."""
-        size = stat.st_size  # type: ignore[union-attr]
-        mtime = stat.st_mtime  # type: ignore[union-attr]
+    ) -> tuple[str | None, PendingFile | None]:
+        """Plan how a changed/new file should be processed."""
+        size = stat.st_size
+        mtime = stat.st_mtime
 
         old_hash: str | None = rec["file_hash"] if rec else None
 
         if rec and file_hash == old_hash:
             # Metadata drift (size/mtime) but content identical — just refresh metadata
             self._db.upsert_file_meta(path_str, size, mtime, file_hash)
-            return "updated"
+            return "updated", None
 
         # Content changed or new file.
         # B001: extract text BEFORE touching existing index so failures leave old data intact.
         if not self._db.hash_has_chunks(file_hash):
-            try:
-                text = self._extract_text(Path(path_str), dir_cfg)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Cannot extract text from %s: %s", path_str, exc)
-                return None  # old index preserved
-
-            to_embed.append((path_str, file_hash, size, mtime, text, old_hash))
-            return "updated" if rec else "added"
+            return (
+                "updated" if rec else "added",
+                PendingFile(
+                    path=path_str,
+                    file_hash=file_hash,
+                    size=size,
+                    mtime=mtime,
+                    dir_cfg=dir_cfg,
+                    old_hash=old_hash,
+                ),
+            )
 
         # New hash already indexed — update metadata and clean up old hash if unreferenced
         self._db.upsert_file_meta(path_str, size, mtime, file_hash)
         if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
             self._db.delete_chunks_by_hash(old_hash)
-        return "updated" if rec else "added"
+        return "updated" if rec else "added", None
+
+    def _flush_pending_files(
+        self,
+        pending_files: list[PendingFile],
+        embedder: Embedder,
+        chunker: Chunker,
+        perf: PerfStats,
+    ) -> tuple[int, int]:
+        """Extract pending files, flush them in batches, and return added/updated counts."""
+        batch: list[BatchItem] = []
+        batch_chars = 0
+        added = 0
+        updated = 0
+
+        for pending in pending_files:
+            extract_started = time.perf_counter()
+            try:
+                text = self._extract_text(Path(pending.path), pending.dir_cfg)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Cannot extract text from %s: %s", pending.path, exc)
+                perf.files_extract_failed += 1
+                continue
+
+            extract_seconds = time.perf_counter() - extract_started
+            perf.extract_seconds_total += extract_seconds
+            perf.batch_extract_seconds += extract_seconds
+
+            batch.append(
+                BatchItem(
+                    path=pending.path,
+                    file_hash=pending.file_hash,
+                    size=pending.size,
+                    mtime=pending.mtime,
+                    text=text,
+                    old_hash=pending.old_hash,
+                )
+            )
+            batch_chars += len(text)
+
+            if self._should_flush_batch(batch, batch_chars):
+                batch_added, batch_updated = self._index_batch(
+                    batch, embedder, chunker, perf, batch_chars
+                )
+                added += batch_added
+                updated += batch_updated
+                batch = []
+                batch_chars = 0
+
+        if batch:
+            batch_added, batch_updated = self._index_batch(
+                batch, embedder, chunker, perf, batch_chars
+            )
+            added += batch_added
+            updated += batch_updated
+
+        return added, updated
+
+    def _should_flush_batch(self, batch: list[BatchItem], batch_chars: int) -> bool:
+        """Return True when the current extracted batch should be flushed."""
+        return (
+            len(batch) >= self._config.embed_batch_files
+            or batch_chars >= self._config.embed_batch_chars
+        )
 
     def _index_batch(
         self,
-        batch: list[tuple[str, str, int, float, str, str | None]],
+        batch: list[BatchItem],
         embedder: Embedder,
         chunker: Chunker,
-    ) -> None:
+        perf: PerfStats,
+        batch_chars: int,
+    ) -> tuple[int, int]:
         """Chunk, embed (single call), and store a batch of files."""
-        # Phase 1: chunk all files; files with no chunks are still tracked in file_meta
-        # so that subsequent runs don't re-process them on every invocation.
-        per_file: list[tuple[str, str, int, float, str | None, list]] = []
-        for path_str, file_hash, size, mtime, text, old_hash in batch:
-            chunks = chunker.chunk(text)
-            if not chunks:
-                logger.warning("No chunks produced for %s; recording metadata only.", path_str)
-                self._db.upsert_file_meta(path_str, size, mtime, file_hash)
-                if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
-                    self._db.delete_chunks_by_hash(old_hash)
-                continue
-            per_file.append((path_str, file_hash, size, mtime, old_hash, chunks))
+        perf.batch_index += 1
+        chunk_started = time.perf_counter()
+        added, updated, per_file = self._prepare_batch_chunks(batch, chunker)
+        chunk_seconds = time.perf_counter() - chunk_started
+        perf.chunk_seconds_total += chunk_seconds
 
         if not per_file:
-            return
+            self._log_batch_metrics(
+                perf=perf,
+                files=len(batch),
+                chars=batch_chars,
+                chunks=0,
+                chunk_seconds=chunk_seconds,
+                embed_seconds=0.0,
+                db_write_seconds=0.0,
+            )
+            perf.files_flushed += len(batch)
+            perf.chars_embedded += batch_chars
+            perf.reset_batch_extract()
+            return added, updated
 
         # Phase 2: single embed call across all chunks in this batch
-        all_texts = [c.content for _, _, _, _, _, chunks in per_file for c in chunks]
+        all_texts = [c.content for item in per_file for c in item.chunks]
+        embed_started = time.perf_counter()
         all_vectors = embedder.embed(all_texts)
+        embed_seconds = time.perf_counter() - embed_started
+        perf.embed_seconds_total += embed_seconds
 
         # Phase 3: distribute vectors and write
+        db_write_started = time.perf_counter()
+        added_delta, updated_delta, all_chunk_records = self._write_index_batch(
+            per_file, all_vectors
+        )
+        added += added_delta
+        updated += updated_delta
+
+        db_write_seconds = time.perf_counter() - db_write_started
+        perf.db_write_seconds_total += db_write_seconds
+        perf.files_flushed += len(batch)
+        perf.chars_embedded += batch_chars
+        perf.chunks_embedded += len(all_chunk_records)
+        self._log_batch_metrics(
+            perf=perf,
+            files=len(batch),
+            chars=batch_chars,
+            chunks=len(all_chunk_records),
+            chunk_seconds=chunk_seconds,
+            embed_seconds=embed_seconds,
+            db_write_seconds=db_write_seconds,
+        )
+        perf.reset_batch_extract()
+        return added, updated
+
+    def _prepare_batch_chunks(
+        self,
+        batch: list[BatchItem],
+        chunker: Chunker,
+    ) -> tuple[int, int, list[ChunkedFile]]:
+        """Chunk files and persist metadata for texts that produce no chunks."""
+        added = 0
+        updated = 0
+        per_file: list[ChunkedFile] = []
+
+        for item in batch:
+            chunks = chunker.chunk(item.text)
+            if not chunks:
+                logger.warning("No chunks produced for %s; recording metadata only.", item.path)
+                self._db.upsert_file_meta(item.path, item.size, item.mtime, item.file_hash)
+                if item.old_hash is not None and not self._db.get_paths_by_hash(item.old_hash):
+                    self._db.delete_chunks_by_hash(item.old_hash)
+                if item.old_hash is None:
+                    added += 1
+                else:
+                    updated += 1
+                continue
+
+            per_file.append(
+                ChunkedFile(
+                    path=item.path,
+                    file_hash=item.file_hash,
+                    size=item.size,
+                    mtime=item.mtime,
+                    old_hash=item.old_hash,
+                    action="added" if item.old_hash is None else "updated",
+                    chunks=chunks,
+                )
+            )
+
+        return added, updated, per_file
+
+    def _write_index_batch(
+        self,
+        per_file: list[ChunkedFile],
+        all_vectors: list,
+    ) -> tuple[int, int, list[dict]]:
+        """Write chunk vectors and file metadata for one prepared batch."""
+        added = 0
+        updated = 0
         all_chunk_records: list[dict] = []
-        file_metas: list[tuple[str, int, float, str, str | None]] = []
         offset = 0
-        for path_str, file_hash, size, mtime, old_hash, chunks in per_file:
-            n = len(chunks)
+
+        for item in per_file:
+            n = len(item.chunks)
             file_vectors = all_vectors[offset : offset + n]
             offset += n
-            for chunk, vec in zip(chunks, file_vectors):
+            for chunk, vec in zip(item.chunks, file_vectors):
                 all_chunk_records.append(
                     {
-                        "file_hash": file_hash,
+                        "file_hash": item.file_hash,
                         "chunk_index": chunk.chunk_index,
                         "start": chunk.start,
                         "end": chunk.end,
@@ -198,15 +414,75 @@ class Indexer:
                         "vector": vec.tolist(),
                     }
                 )
-            file_metas.append((path_str, size, mtime, file_hash, old_hash))
 
         if all_chunk_records:
             self._db.add_chunks(all_chunk_records)
-        for path_str, size, mtime, file_hash, old_hash in file_metas:
-            self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+
+        for item in per_file:
+            self._db.upsert_file_meta(item.path, item.size, item.mtime, item.file_hash)
             # B001: clean up old hash AFTER successful write
-            if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
-                self._db.delete_chunks_by_hash(old_hash)
+            if item.old_hash is not None and not self._db.get_paths_by_hash(item.old_hash):
+                self._db.delete_chunks_by_hash(item.old_hash)
+            if item.action == "added":
+                added += 1
+            else:
+                updated += 1
+
+        return added, updated, all_chunk_records
+
+    def _log_batch_metrics(
+        self,
+        perf: PerfStats,
+        files: int,
+        chars: int,
+        chunks: int,
+        chunk_seconds: float,
+        embed_seconds: float,
+        db_write_seconds: float,
+    ) -> None:
+        """Emit debug metrics for one flushed batch."""
+        total_seconds = (
+            perf.batch_extract_seconds + chunk_seconds + embed_seconds + db_write_seconds
+        )
+        chars_per_second = chars / total_seconds if total_seconds > 0 else 0.0
+        chunks_per_second = chunks / total_seconds if total_seconds > 0 else 0.0
+        logger.debug(
+            "Batch %d: files=%d chars=%d chunks=%d "
+            "extract_seconds=%.3f chunk_seconds=%.3f "
+            "embed_seconds=%.3f db_write_seconds=%.3f "
+            "chars_per_second=%.1f chunks_per_second=%.1f",
+            perf.batch_index,
+            files,
+            chars,
+            chunks,
+            perf.batch_extract_seconds,
+            chunk_seconds,
+            embed_seconds,
+            db_write_seconds,
+            chars_per_second,
+            chunks_per_second,
+        )
+
+    def _log_perf_summary(self, perf: PerfStats) -> None:
+        """Emit final debug counters for the whole indexing run."""
+        logger.debug(
+            "Index perf: files_scanned=%d files_skipped_unchanged=%d "
+            "files_pending=%d files_extract_failed=%d files_flushed=%d "
+            "chars_embedded=%d chunks_embedded=%d "
+            "extract_seconds_total=%.3f chunk_seconds_total=%.3f "
+            "embed_seconds_total=%.3f db_write_seconds_total=%.3f",
+            perf.files_scanned,
+            perf.files_skipped_unchanged,
+            perf.files_pending,
+            perf.files_extract_failed,
+            perf.files_flushed,
+            perf.chars_embedded,
+            perf.chunks_embedded,
+            perf.extract_seconds_total,
+            perf.chunk_seconds_total,
+            perf.embed_seconds_total,
+            perf.db_write_seconds_total,
+        )
 
     def _collect_files(self) -> list[tuple[Path, DirConfig]]:
         """Collect (file_path, dir_config) pairs matching any configured rule."""

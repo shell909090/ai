@@ -26,6 +26,7 @@ ollama serve
 
 ```bash
 elocate-updatedb
+elocate-updatedb --debug   # 查看分批抽取/嵌入耗时
 ```
 
 语义搜索：
@@ -50,6 +51,8 @@ openai_api_key: ""
 top_k: 10
 chunk_size: 500
 chunk_overlap: 50
+embed_batch_files: 64
+embed_batch_chars: 65536
 
 dirs:
   # 纯文本笔记
@@ -95,6 +98,13 @@ dirs:
 
 `all2txt` 现在是必选依赖，也是唯一的文本抽取路径。旧配置中的 `extractor:`
 字段会被兼容忽略。
+
+### 索引批处理控制
+
+- `embed_batch_files`：限制单批在内存中等待嵌入的文件数量
+- `embed_batch_chars`：限制单批在内存中等待嵌入的文本字符总量
+- `elocate-updatedb --debug` 会输出批次级和全局级性能计数，方便判断瓶颈是在
+  抽取、切分、embedding 还是写库
 
 ### 使用 OpenAI 官方 API
 

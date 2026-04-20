@@ -1,5 +1,6 @@
 """Tests for the Indexer module."""
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,13 +20,21 @@ def _mock_embedder(dim: int = DIM) -> MagicMock:
     return emb
 
 
-def _make_config(tmp_path: Path, dirs: list[DirConfig]) -> Config:
+def _make_config(
+    tmp_path: Path,
+    dirs: list[DirConfig],
+    *,
+    embed_batch_files: int = 64,
+    embed_batch_chars: int = 65536,
+) -> Config:
     return Config(
         dirs=dirs,
         index_path=tmp_path / "index",
         embedding_model="mock",
         chunk_size=500,
         chunk_overlap=50,
+        embed_batch_files=embed_batch_files,
+        embed_batch_chars=embed_batch_chars,
     )
 
 
@@ -276,6 +285,142 @@ def test_run_batch_single_embed_call(tmp_path: Path) -> None:
         indexer.run()
     # All 3 files fit in one batch; embed should be called once
     assert mock_emb.embed.call_count == 1
+
+
+def test_run_flushes_on_embed_batch_files_threshold(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    for i in range(3):
+        (notes / f"doc{i}.md").write_text(f"Document {i} placeholder.")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=2,
+        embed_batch_chars=10_000,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(
+            indexer,
+            "_extract_text",
+            side_effect=["A" * 40, "B" * 40, "C" * 40],
+        ):
+            added, updated, removed = indexer.run()
+
+    assert added == 3
+    assert updated == 0
+    assert removed == 0
+    assert mock_emb.embed.call_count == 2
+
+
+def test_run_flushes_on_embed_batch_chars_threshold(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    for i in range(3):
+        (notes / f"doc{i}.md").write_text(f"Document {i} placeholder.")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=10,
+        embed_batch_chars=50,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(
+            indexer,
+            "_extract_text",
+            side_effect=["A" * 30, "B" * 30, "C" * 30],
+        ):
+            indexer.run()
+
+    assert mock_emb.embed.call_count == 2
+
+
+def test_run_single_large_file_flushes_immediately(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "big.md").write_text("big placeholder")
+    (notes / "small.md").write_text("small placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=10,
+        embed_batch_chars=25,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(indexer, "_extract_text", side_effect=["A" * 30, "B" * 30]):
+            added, updated, removed = indexer.run()
+
+    assert added == 2
+    assert updated == 0
+    assert removed == 0
+    assert mock_emb.embed.call_count == 2
+
+
+def test_run_keeps_flushed_batches_after_later_extract_failure(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    docs = [notes / f"doc{i}.md" for i in range(3)]
+    for doc in docs:
+        doc.write_text(f"{doc.stem} placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=1,
+        embed_batch_chars=10_000,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(
+            indexer,
+            "_extract_text",
+            side_effect=["A" * 40, RuntimeError("extract failed"), "C" * 40],
+        ):
+            added, updated, removed = indexer.run()
+
+    assert added == 2
+    assert updated == 0
+    assert removed == 0
+    assert indexer._db.get_file_meta(str(docs[0])) is not None
+    assert indexer._db.get_file_meta(str(docs[1])) is None
+    assert indexer._db.get_file_meta(str(docs[2])) is not None
+
+
+def test_run_logs_debug_perf_counters(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "doc.md").write_text("placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=1,
+        embed_batch_chars=10_000,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(indexer, "_extract_text", return_value="A" * 40):
+            with caplog.at_level(logging.DEBUG):
+                indexer.run()
+
+    assert "Batch 1:" in caplog.text
+    assert "chars_per_second=" in caplog.text
+    assert "Index perf:" in caplog.text
 
 
 def test_run_preserves_index_on_extract_failure(tmp_path: Path) -> None:
