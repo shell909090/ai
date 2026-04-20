@@ -62,6 +62,15 @@ elocate-updatedb [--debug]
 3. 用户不应被迫为同一类文件手工枚举大量扩展名变体；应能用少量规则覆盖一组相关扩展名。
 4. 具体模糊匹配语法在设计阶段确定，但必须保持配置可读、可维护，并与现有 `extensions` 配置兼容。
 
+### 文本抽取依赖
+
+当前将 `all2txt` 作为可选依赖会导致配置可用但运行时报缺依赖，不符合“开箱可用”的目标，需要调整为必选能力：
+
+1. `all2txt` 必须作为 elocate 的默认安装依赖随项目一起安装。
+2. 文本抽取必须统一通过 `all2txt` 执行，不再保留独立的 `plaintext` 抽取路径。
+3. 配置层不得要求用户在常规使用场景下区分 `plaintext` 与 `all2txt` 两套 extractor。
+4. 旧配置若显式写了 `extractor` 字段，系统应兼容读取并忽略该字段，不影响运行。
+
 ## 非功能需求
 
 - 语言：Python 3.11+，使用 uv 管理依赖
@@ -69,4 +78,5 @@ elocate-updatedb [--debug]
 - 嵌入后端：支持两种模式
   - `local`：sentence-transformers 本地推理（默认，无需网络，适合 CPU/GPU/MPS）
   - `openai`：OpenAI 兼容 Embeddings API（适合 ollama、OpenAI、任何兼容服务）；需安装 `openai` 可选依赖
+- 文本抽取依赖：`all2txt` 为必选依赖，默认安装必须可用
 - 仅提供 CLI 接口，无 GUI 或 Web 界面

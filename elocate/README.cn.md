@@ -10,8 +10,6 @@ elocate 不内含任何推理权重，embedding 推理完全委托给外部 Open
 
 ```bash
 pip install elocate
-# 可选：支持 PDF、DOCX、图片等非纯文本格式
-pip install elocate[all2txt]
 ```
 
 索引和搜索前需要先启动 OpenAI 兼容的 embedding 服务。
@@ -57,15 +55,13 @@ dirs:
   # 纯文本笔记
   - path: ~/notes
     extensions: [.md, .org, .txt]
-    extractor: plaintext
 
-  # PDF/Word 文档（需安装 all2txt）
+  # PDF/Word 文档
   - path: ~/Documents
     extensions:
       - .pdf
       - .docx
       - suffix:.tar.gz
-    extractor: all2txt
 ```
 
 ### 扩展名规则
@@ -83,7 +79,6 @@ dirs:
   - path: ~/mixed-data
     extensions:
       - glob:*.*
-    extractor: all2txt
     extractor_config:
       extractors:
         archive_recurse:
@@ -97,6 +92,9 @@ dirs:
 当你希望把绝大多数“带点文件名”都交给 `all2txt` 自动做 MIME 判断时，可以用
 `glob:*.*`。当你需要精确覆盖 `.tar.gz`、`.user.js` 这类复合后缀时，用 `suffix:`
 更合适。
+
+`all2txt` 现在是必选依赖，也是唯一的文本抽取路径。旧配置中的 `extractor:`
+字段会被兼容忽略。
 
 ### 使用 OpenAI 官方 API
 

@@ -154,19 +154,24 @@ files 表中存在但磁盘上消失的 path：
 
 ## 文本抽取（Extractor 集成）
 
-### 两种模式
+### 单一路径
 
-| `extractor` 值 | 行为 |
-|----------------|------|
-| `"plaintext"` | 直接 `path.read_text(errors="replace")`，无外部依赖 |
-| `"all2txt"` | 调用 `all2txt.registry.extract(path)`，all2txt 为可选依赖 |
+elocate 的文本抽取统一委托给 `all2txt.registry.extract(path)`。
+`all2txt` 升级为 **required dependency**，默认安装后即应可导入和使用。
 
-all2txt 是 **optional dependency**，未安装时使用 `"all2txt"` extractor 会在启动时报错。
+`plaintext` 不再作为独立 extractor 存在；纯文本文件也通过 all2txt 的 MIME 检测与后端链处理。
+
+### 配置兼容策略
+
+1. `DirConfig` 保留 `extractor_config`，继续作为 all2txt 的透传配置入口。
+2. `DirConfig` 中的 `extractor` 字段从配置层移除，不再要求用户填写。
+3. 兼容期内若用户配置中显式写 `extractor` 字段，加载时统一接受并忽略，不再影响行为。
+4. 文档与示例不再推荐填写 `extractor` 字段。
 
 ### extractor_config 透传
 
-当 `extractor = "all2txt"` 时，`extractor_config` 字典按 `all2txt.core.config.Config`
-字段结构透传给 `all2txt.registry.configure()`：
+`extractor_config` 字典按 `all2txt.core.config.Config` 字段结构透传给
+`all2txt.registry.configure()`：
 
 ```yaml
 # all2txt Config 字段
@@ -179,8 +184,8 @@ extensions:
   ".md": "text/markdown"        # file(1) 返回 generic MIME 时的扩展名覆盖
 ```
 
-Indexer 为每个 `DirConfig` 构造一个独立的 all2txt `Config` 实例并调用 `registry.configure()`，
-处理完该目录后恢复原状态（避免目录间互相干扰）。
+Indexer 为每个 `DirConfig` 构造一个独立的 all2txt `Config` 实例并调用
+`registry.configure()`，处理完该目录后恢复原状态（避免目录间互相干扰）。
 
 ---
 
@@ -196,10 +201,9 @@ chunk_size: 500
 chunk_overlap: 50
 
 dirs:
-  # 纯文本笔记，内置 plaintext 抽取器
+  # 纯文本笔记也统一通过 all2txt 抽取
   - path: ~/notes
     extensions: [.md, .org, .txt]
-    extractor: plaintext
 
   # 文档目录：常规扩展名 + 复合后缀
   - path: ~/Documents
@@ -207,13 +211,11 @@ dirs:
       - .pdf
       - .docx
       - suffix:.tar.gz
-    extractor: all2txt
 
   # 宽松模式：放行所有带点文件名，由 all2txt 自动判定 MIME 与 backend
   - path: ~/mixed-data
     extensions:
       - glob:*.*
-    extractor: all2txt
     extractor_config:
       extractors:
         archive_recurse:
@@ -235,8 +237,7 @@ dirs:
 class DirConfig:
     path: str
     extensions: list[str]                   # e.g. [".md", "suffix:.tar.gz", "glob:*.*"]
-    extractor: str = "plaintext"            # "plaintext" | "all2txt"
-    extractor_config: dict = field(...)     # forwarded to all2txt.Config (当 extractor="all2txt")
+    extractor_config: dict = field(...)     # forwarded to all2txt.Config
 
 @dataclass
 class Config:
@@ -337,9 +338,8 @@ class Indexer:
     def _matches_extensions(self, path: Path, rules: list[str]) -> bool: ...
     def _file_hash(self, path: Path) -> str: ...
     def _extract_text(self, path: Path, dir_cfg: DirConfig) -> str:
-        # extractor="plaintext": path.read_text(errors="replace")
-        # extractor="all2txt":   configure registry with dir_cfg.extractor_config,
-        #                        call registry.extract(path), restore registry state
+        # always configure all2txt with dir_cfg.extractor_config,
+        # call registry.extract(path), restore registry state
         ...
 ```
 
@@ -383,6 +383,6 @@ elocate-updatedb [--debug]
 | `dirs` 为空 | CLI warning + exit(1) |
 | 目录不存在 | warning 跳过 |
 | 文件读取/抽取失败 | warning 跳过该文件 |
-| `all2txt` 未安装但配置中使用 | 启动时 ImportError → CLI 友好提示 + exit(1) |
+| `all2txt` 未安装 | 启动即视为环境错误；CLI 友好提示并退出 |
 | 索引不存在（搜索时） | RuntimeError → CLI 友好提示 + exit(1) |
 | 非法正则 | re.error → CLI 友好提示 + exit(1) |

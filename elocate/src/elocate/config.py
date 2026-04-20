@@ -22,9 +22,8 @@ class DirConfig:
 
     path: str
     extensions: list[str] = field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
-    extractor: str = "plaintext"  # "plaintext" | "all2txt"
     extractor_config: dict[str, Any] = field(default_factory=dict)
-    # extractor_config is forwarded to all2txt.Config when extractor="all2txt";
+    # extractor_config is forwarded to all2txt.Config;
     # supported top-level keys are: backends / extractors / extensions.
 
 
@@ -93,7 +92,6 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             DirConfig(
                 path=entry["path"],
                 extensions=extensions,
-                extractor=entry.get("extractor", "plaintext"),
                 extractor_config=entry.get("extractor_config", {}),
             )
         )

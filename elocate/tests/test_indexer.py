@@ -163,23 +163,17 @@ def test_file_hash_consistent(tmp_path: Path) -> None:
     assert indexer._file_hash(f) == indexer._file_hash(f)
 
 
-def test_extract_text_plaintext(tmp_path: Path) -> None:
+def test_extract_text_uses_all2txt_for_plaintext_files(tmp_path: Path) -> None:
+    from all2txt import registry as _all2txt_registry
+
     f = tmp_path / "doc.md"
     f.write_text("Hello!")
     cfg = _make_config(tmp_path, [])
     indexer = Indexer(cfg)
-    dir_cfg = DirConfig(path=str(tmp_path), extractor="plaintext")
-    assert indexer._extract_text(f, dir_cfg) == "Hello!"
-
-
-def test_extract_text_unknown_extractor(tmp_path: Path) -> None:
-    f = tmp_path / "doc.md"
-    f.write_text("x")
-    cfg = _make_config(tmp_path, [])
-    indexer = Indexer(cfg)
-    dir_cfg = DirConfig(path=str(tmp_path), extractor="unknown")
-    with pytest.raises(ValueError):
-        indexer._extract_text(f, dir_cfg)
+    dir_cfg = DirConfig(path=str(tmp_path))
+    with patch.object(_all2txt_registry, "extract", return_value="Hello!") as mock_extract:
+        assert indexer._extract_text(f, dir_cfg) == "Hello!"
+    mock_extract.assert_called_once_with(f)
 
 
 def test_run_adds_new_files(tmp_path: Path, notes_dir: Path) -> None:
@@ -371,13 +365,13 @@ def test_run_no_infinite_reprocess_for_no_chunk_file(tmp_path: Path) -> None:
 
 
 def test_extract_text_all2txt_success(tmp_path: Path) -> None:
-    _all2txt_registry = pytest.importorskip("all2txt").registry
+    from all2txt import registry as _all2txt_registry
 
     f = tmp_path / "doc.pdf"
     f.write_text("dummy")
     cfg = _make_config(tmp_path, [])
     indexer = Indexer(cfg)
-    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt", extractor_config={})
+    dir_cfg = DirConfig(path=str(tmp_path), extractor_config={})
     with (
         patch.object(_all2txt_registry, "extract", return_value="mocked text") as mock_extract,
         patch.object(_all2txt_registry, "configure") as mock_configure,
@@ -389,14 +383,14 @@ def test_extract_text_all2txt_success(tmp_path: Path) -> None:
 
 
 def test_extract_text_all2txt_with_config(tmp_path: Path) -> None:
-    _all2txt_registry = pytest.importorskip("all2txt").registry
+    from all2txt import registry as _all2txt_registry
 
     f = tmp_path / "doc.pdf"
     f.write_text("dummy")
     cfg = _make_config(tmp_path, [])
     indexer = Indexer(cfg)
     extractor_config = {"backends": {}, "extractors": {}, "extensions": {}}
-    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt", extractor_config=extractor_config)
+    dir_cfg = DirConfig(path=str(tmp_path), extractor_config=extractor_config)
     with (
         patch.object(_all2txt_registry, "extract", return_value="configured text") as mock_extract,
         patch.object(_all2txt_registry, "configure") as mock_configure,
@@ -412,7 +406,7 @@ def test_extract_text_all2txt_import_error(tmp_path: Path) -> None:
     f.write_text("dummy")
     cfg = _make_config(tmp_path, [])
     indexer = Indexer(cfg)
-    dir_cfg = DirConfig(path=str(tmp_path), extractor="all2txt")
+    dir_cfg = DirConfig(path=str(tmp_path))
     with patch.dict("sys.modules", {"all2txt.backends": None}):
         with pytest.raises(ImportError):
             indexer._extract_text(f, dir_cfg)

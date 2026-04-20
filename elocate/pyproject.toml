@@ -5,15 +5,13 @@ description = "Vector-based local document search tool"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "all2txt",
     "lancedb>=0.5",
     "openai>=1.0",
     "click>=8.0",
     "pyarrow>=12.0",
     "pyyaml>=6.0",
 ]
-
-[project.optional-dependencies]
-all2txt = ["all2txt"]
 
 [project.scripts]
 elocate = "elocate.cli:main_search"

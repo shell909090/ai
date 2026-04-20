@@ -10,8 +10,6 @@ elocate does not bundle any inference weights. Embedding is delegated entirely t
 
 ```bash
 pip install elocate
-# Optional: for non-plaintext file support (PDF, DOCX, images, etc.)
-pip install elocate[all2txt]
 ```
 
 An OpenAI-compatible embedding service must be running before indexing or searching.
@@ -56,14 +54,12 @@ chunk_overlap: 50
 dirs:
   - path: ~/notes
     extensions: [.md, .org, .txt]
-    extractor: plaintext
 
   - path: ~/Documents
     extensions:
       - .pdf
       - .docx
       - suffix:.tar.gz
-    extractor: all2txt
 ```
 
 ### Extension Rules
@@ -81,7 +77,6 @@ dirs:
   - path: ~/mixed-data
     extensions:
       - glob:*.*
-    extractor: all2txt
     extractor_config:
       extractors:
         archive_recurse:
@@ -95,6 +90,9 @@ dirs:
 Use `glob:*.*` when you want elocate to pass nearly all dotted filenames to `all2txt`
 and let MIME detection choose the backend. Use `suffix:` when you need precise control
 for names such as `.tar.gz` or `.user.js`.
+
+`all2txt` is now a required dependency and the only extraction path. Legacy
+`extractor:` config values are ignored for compatibility.
 
 ### Using OpenAI API
 
