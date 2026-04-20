@@ -65,7 +65,7 @@ def test_collect_files_missing_dir(tmp_path: Path) -> None:
 
 
 def test_collect_files_case_insensitive(tmp_path: Path) -> None:
-    """B012: extensions should match case-insensitively."""
+    """Legacy extension rules should match case-insensitively."""
     d = tmp_path / "docs"
     d.mkdir()
     (d / "lower.md").write_text("lower content here for testing.")
@@ -76,6 +76,57 @@ def test_collect_files_case_insensitive(tmp_path: Path) -> None:
     names = {f.name for f, _ in files}
     assert "lower.md" in names
     assert "UPPER.MD" in names
+
+
+def test_match_extension_rule_suffix(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    assert indexer._match_extension_rule(Path("/tmp/archive.TAR.GZ"), "suffix:.tar.gz")
+    assert not indexer._match_extension_rule(Path("/tmp/archive.gz"), "suffix:.tar.gz")
+
+
+def test_match_extension_rule_glob(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    assert indexer._match_extension_rule(Path("/tmp/Report.PDF"), "glob:*.pdf")
+    assert not indexer._match_extension_rule(Path("/tmp/README"), "glob:*.*")
+
+
+def test_collect_files_suffix_rule_matches_full_suffix(tmp_path: Path) -> None:
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "archive.tar.gz").write_text("archive payload with enough content.")
+    (d / "single.gz").write_text("single payload with enough content.")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(d), extensions=["suffix:.tar.gz"])])
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"archive.tar.gz"}
+
+
+def test_collect_files_glob_rule_matches_name(tmp_path: Path) -> None:
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "report.pdf").write_text("pdf payload with enough content.")
+    (d / "README").write_text("readme payload with enough content.")
+    cfg = _make_config(tmp_path, [DirConfig(path=str(d), extensions=["glob:*.*"])])
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"report.pdf"}
+
+
+def test_collect_files_mixed_rules_are_ored(tmp_path: Path) -> None:
+    d = tmp_path / "docs"
+    d.mkdir()
+    (d / "note.md").write_text("markdown payload with enough content.")
+    (d / "bundle.tar.gz").write_text("archive payload with enough content.")
+    (d / "README").write_text("readme payload with enough content.")
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(d), extensions=[".md", "suffix:.tar.gz", "glob:read*"])],
+    )
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"README", "bundle.tar.gz", "note.md"}
 
 
 def test_collect_files_deduplicates_overlapping_dirs(tmp_path: Path) -> None:
@@ -320,7 +371,7 @@ def test_run_no_infinite_reprocess_for_no_chunk_file(tmp_path: Path) -> None:
 
 
 def test_extract_text_all2txt_success(tmp_path: Path) -> None:
-    from all2txt import registry as _all2txt_registry
+    _all2txt_registry = pytest.importorskip("all2txt").registry
 
     f = tmp_path / "doc.pdf"
     f.write_text("dummy")
@@ -338,7 +389,7 @@ def test_extract_text_all2txt_success(tmp_path: Path) -> None:
 
 
 def test_extract_text_all2txt_with_config(tmp_path: Path) -> None:
-    from all2txt import registry as _all2txt_registry
+    _all2txt_registry = pytest.importorskip("all2txt").registry
 
     f = tmp_path / "doc.pdf"
     f.write_text("dummy")

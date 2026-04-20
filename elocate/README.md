@@ -59,9 +59,42 @@ dirs:
     extractor: plaintext
 
   - path: ~/Documents
-    extensions: [.pdf, .docx, .md]
+    extensions:
+      - .pdf
+      - .docx
+      - suffix:.tar.gz
     extractor: all2txt
 ```
+
+### Extension Rules
+
+`dirs[].extensions` supports three rule forms:
+
+- `.md` — exact match on the last extension segment
+- `suffix:.tar.gz` — full filename suffix match for compound extensions
+- `glob:*.*` — shell-style glob match on `Path.name`
+
+Examples:
+
+```yaml
+dirs:
+  - path: ~/mixed-data
+    extensions:
+      - glob:*.*
+    extractor: all2txt
+    extractor_config:
+      extractors:
+        archive_recurse:
+          enabled: true
+        7zip_recurse:
+          enabled: true
+        rar_recurse:
+          enabled: true
+```
+
+Use `glob:*.*` when you want elocate to pass nearly all dotted filenames to `all2txt`
+and let MIME detection choose the backend. Use `suffix:` when you need precise control
+for names such as `.tar.gz` or `.user.js`.
 
 ### Using OpenAI API
 

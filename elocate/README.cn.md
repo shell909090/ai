@@ -61,9 +61,42 @@ dirs:
 
   # PDF/Word 文档（需安装 all2txt）
   - path: ~/Documents
-    extensions: [.pdf, .docx, .md]
+    extensions:
+      - .pdf
+      - .docx
+      - suffix:.tar.gz
     extractor: all2txt
 ```
+
+### 扩展名规则
+
+`dirs[].extensions` 现在支持三种规则：
+
+- `.md`：按最后一段扩展名精确匹配
+- `suffix:.tar.gz`：按完整文件名后缀匹配，适合复合扩展名
+- `glob:*.*`：按 `Path.name` 做 shell 风格 glob 匹配
+
+示例：
+
+```yaml
+dirs:
+  - path: ~/mixed-data
+    extensions:
+      - glob:*.*
+    extractor: all2txt
+    extractor_config:
+      extractors:
+        archive_recurse:
+          enabled: true
+        7zip_recurse:
+          enabled: true
+        rar_recurse:
+          enabled: true
+```
+
+当你希望把绝大多数“带点文件名”都交给 `all2txt` 自动做 MIME 判断时，可以用
+`glob:*.*`。当你需要精确覆盖 `.tar.gz`、`.user.js` 这类复合后缀时，用 `suffix:`
+更合适。
 
 ### 使用 OpenAI 官方 API
 

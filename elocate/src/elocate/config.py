@@ -13,6 +13,7 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "elocate" / "config.yaml"
 DEFAULT_INDEX_PATH = Path.home() / ".local" / "share" / "elocate" / "index"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_EXTENSIONS = [".md", ".txt", ".rst", ".org"]
+_EXTENSION_RULE_PREFIXES = frozenset({"suffix", "glob"})
 
 
 @dataclass
@@ -24,7 +25,7 @@ class DirConfig:
     extractor: str = "plaintext"  # "plaintext" | "all2txt"
     extractor_config: dict[str, Any] = field(default_factory=dict)
     # extractor_config is forwarded to all2txt.Config when extractor="all2txt";
-    # keys mirror all2txt's YAML format: mime / extractor / extensions.
+    # supported top-level keys are: backends / extractors / extensions.
 
 
 @dataclass
@@ -39,6 +40,30 @@ class Config:
     chunk_overlap: int = 50
     openai_base_url: str = ""  # OpenAI-compatible API base URL
     openai_api_key: str = ""  # API key (empty = use "none")
+
+
+def validate_extension_rule(rule: str) -> str:
+    """Validate one extension rule and return its normalized form."""
+    if not isinstance(rule, str):
+        raise ValueError(f"extension rule must be a string, got {type(rule).__name__}")
+
+    normalized = rule.strip().lower()
+    if not normalized:
+        raise ValueError("extension rule must not be empty")
+
+    prefix, sep, value = normalized.partition(":")
+    if sep:
+        if prefix not in _EXTENSION_RULE_PREFIXES:
+            raise ValueError(f"unknown extension rule prefix: {prefix}")
+        if not value:
+            raise ValueError(f"{prefix}: rule must not be empty")
+        if prefix == "suffix" and not value.startswith("."):
+            raise ValueError("suffix: rules must start with '.'")
+        return f"{prefix}:{value}"
+
+    if not normalized.startswith("."):
+        raise ValueError("extension rules without a prefix must start with '.'")
+    return normalized
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -60,10 +85,14 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     for i, entry in enumerate(data.get("dirs", [])):
         if "path" not in entry:
             raise ValueError(f"dirs[{i}] is missing required field 'path'")
+        extensions = [
+            validate_extension_rule(rule)
+            for rule in entry.get("extensions", list(DEFAULT_EXTENSIONS))
+        ]
         dirs.append(
             DirConfig(
                 path=entry["path"],
-                extensions=entry.get("extensions", list(DEFAULT_EXTENSIONS)),
+                extensions=extensions,
                 extractor=entry.get("extractor", "plaintext"),
                 extractor_config=entry.get("extractor_config", {}),
             )

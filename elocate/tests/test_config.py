@@ -9,6 +9,7 @@ from elocate.config import (
     Config,
     DirConfig,
     load_config,
+    validate_extension_rule,
 )
 
 
@@ -25,6 +26,18 @@ def test_default_dir_config() -> None:
     assert d.extensions == list(DEFAULT_EXTENSIONS)
     assert d.extractor == "plaintext"
     assert d.extractor_config == {}
+
+
+def test_validate_extension_rule_legacy_extension() -> None:
+    assert validate_extension_rule(".MD") == ".md"
+
+
+def test_validate_extension_rule_suffix() -> None:
+    assert validate_extension_rule("suffix:.Tar.Gz") == "suffix:.tar.gz"
+
+
+def test_validate_extension_rule_glob() -> None:
+    assert validate_extension_rule("glob:*.*") == "glob:*.*"
 
 
 def test_load_config_missing_file(tmp_path: Path) -> None:
@@ -47,12 +60,15 @@ def test_load_config_global_fields(tmp_path: Path) -> None:
 def test_load_config_dirs(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
-        "dirs:\n  - path: /docs\n    extensions: [.md, .txt]\n    extractor: plaintext\n"
+        "dirs:\n"
+        "  - path: /docs\n"
+        "    extensions: [.md, suffix:.tar.gz, glob:*.*]\n"
+        "    extractor: plaintext\n"
     )
     config = load_config(cfg_file)
     assert len(config.dirs) == 1
     assert config.dirs[0].path == "/docs"
-    assert config.dirs[0].extensions == [".md", ".txt"]
+    assert config.dirs[0].extensions == [".md", "suffix:.tar.gz", "glob:*.*"]
     assert config.dirs[0].extractor == "plaintext"
 
 
@@ -149,4 +165,25 @@ def test_load_config_missing_dir_path(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text("dirs:\n  - extensions: [.md]\n")
     with pytest.raises(ValueError, match="dirs\\[0\\]"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_extension_prefix(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("dirs:\n  - path: /docs\n    extensions: [magic:.md]\n")
+    with pytest.raises(ValueError, match="unknown extension rule prefix"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_suffix_rule(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("dirs:\n  - path: /docs\n    extensions: [suffix:tar.gz]\n")
+    with pytest.raises(ValueError, match="suffix"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_glob_rule(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text('dirs:\n  - path: /docs\n    extensions: ["glob:"]\n')
+    with pytest.raises(ValueError, match="glob"):
         load_config(cfg_file)

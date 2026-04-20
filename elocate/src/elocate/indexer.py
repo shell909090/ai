@@ -1,5 +1,6 @@
 """Index builder: incremental scanning with file-hash reference counting."""
 
+import fnmatch
 import hashlib
 import logging
 from pathlib import Path
@@ -208,7 +209,7 @@ class Indexer:
                 self._db.delete_chunks_by_hash(old_hash)
 
     def _collect_files(self) -> list[tuple[Path, DirConfig]]:
-        """Collect (file_path, dir_config) pairs; deduped, case-insensitive extension matching."""
+        """Collect (file_path, dir_config) pairs matching any configured rule."""
         result: list[tuple[Path, DirConfig]] = []
         seen: set[str] = set()
         for dir_cfg in self._config.dirs:
@@ -216,14 +217,30 @@ class Indexer:
             if not base.is_dir():
                 logger.warning("Directory does not exist, skipping: %s", base)
                 continue
-            exts_lower = {e.lower() for e in dir_cfg.extensions}
             for fp in base.rglob("*"):
-                if fp.is_file() and fp.suffix.lower() in exts_lower:
+                if fp.is_file() and self._matches_extensions(fp, dir_cfg.extensions):
                     path_str = str(fp)
                     if path_str not in seen:
                         seen.add(path_str)
                         result.append((fp, dir_cfg))
         return result
+
+    def _match_extension_rule(self, path: Path, rule: str) -> bool:
+        """Check whether a file path matches one configured extension rule."""
+        path_name = path.name.lower()
+        suffix = path.suffix.lower()
+
+        if rule.startswith("suffix:"):
+            return path_name.endswith(rule.removeprefix("suffix:"))
+
+        if rule.startswith("glob:"):
+            return fnmatch.fnmatchcase(path_name, rule.removeprefix("glob:"))
+
+        return suffix == rule
+
+    def _matches_extensions(self, path: Path, rules: list[str]) -> bool:
+        """Return True when path matches any configured extension rule."""
+        return any(self._match_extension_rule(path, rule) for rule in rules)
 
     def _file_hash(self, path: Path) -> str:
         """Compute SHA-256 hex digest of file content."""
