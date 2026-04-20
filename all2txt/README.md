@@ -6,10 +6,11 @@ Extract plain text from any file format, designed for RAG (Retrieval-Augmented G
 
 ## Features
 
-- **Auto MIME detection** via `file --mime-type` — no extension guessing
+- **Three-tier MIME detection** — `file --mime-type`, then `mimetypes`, then an internal extension map
 - **Multi-backend fallback** — backends are tried in priority order; missing tools are skipped automatically
 - **Fully configurable** — override backend order and pass per-backend settings via `all2txt.yaml`
 - **Glue-mode design** — wraps external CLI tools; no mandatory heavy dependencies
+- **HTML encoding normalization for pandoc** — HTML/XHTML is decoded from BOM / `<meta charset>` / `http-equiv` before pandoc sees it
 - **Extensible** — add a new backend in a single file with one decorator
 
 ## Supported Formats
@@ -48,6 +49,12 @@ pip install "all2txt[tika]"
 pip install "all2txt[unstructured]"
 ```
 
+For legacy HTML/XHTML encodings handled by the `pandoc` backend, also install `chardet`:
+
+```bash
+uv pip install chardet
+```
+
 Using [uv](https://github.com/astral-sh/uv):
 
 ```bash
@@ -80,6 +87,11 @@ all2txt --allow-archive archive.zip
 ```
 
 Output is written to stdout; errors go to stderr with exit code 1.
+
+Notes:
+
+- For `text/html` and `application/xhtml+xml`, the `pandoc` backend normalizes the source to UTF-8 before invoking pandoc.
+- Header-declared encodings (`<meta charset>` / `http-equiv`) take precedence; `chardet` is only used as a fallback.
 
 ## Configuration (`all2txt.yaml`)
 

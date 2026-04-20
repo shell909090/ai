@@ -36,6 +36,16 @@
    - 可配置最大解压字节数上限（默认 100 MB），超限时报错而非继续解压。
    - 内部文件的提取路径信息由该后端负责在输出文本中体现，调用方无需额外处理。
 
+8. **HTML/XHTML 编码归一**：`PandocExtractor` 处理 `text/html` 和
+   `application/xhtml+xml` 时，必须先在 Python 侧完成输入编码探测与转码，再调用
+   pandoc。
+   - 优先从文档 header 中获取编码，包括 BOM、`<meta charset=...>`、以及
+     `<meta http-equiv="Content-Type" content="...; charset=...">`；
+   - 若 header 无法给出有效编码，再 fallback 到 `chardet` 推断；
+   - `gb2312`、`gbk` 等中文旧编码按 `gb18030` 兼容解码；
+   - 送入 pandoc 前必须统一转成 UTF-8，避免依赖 `file`、pandoc 或其他外部工具
+     对原始 HTML 字节流的猜测而产生乱码。
+
 ## 非目标
 
 - 不做格式转换，只输出纯文本。

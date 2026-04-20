@@ -170,6 +170,26 @@ all2txt [--config FILE] [--mime MIME] [--verbose] [--debug] [--allow-archive] FI
 PandocExtractor 通过 `pandoc -t plain --wrap=none` 统一处理以下格式。
 对于 file 命令无法区分的格式（如 .rst → text/plain），应在 `[extensions]` 中配置覆盖。
 
+#### HTML/XHTML 编码处理
+
+对 `text/html` 与 `application/xhtml+xml`，PandocExtractor 不再直接把文件路径交给
+pandoc，而是在 Python 侧先完成编码归一：
+
+1. 读取原始 bytes。
+2. 按以下顺序探测编码：
+   - UTF BOM；
+   - `<meta charset="...">`；
+   - `<meta http-equiv="Content-Type" content="...; charset=...">`；
+   - `chardet.detect(...)`。
+3. 对探测结果做别名归一：
+   - `gb2312`、`gbk`、`gb_2312-80` 统一映射为 `gb18030`；
+   - 其他编码通过 Python codec 名称直接解码。
+4. 若 header 指定的编码无法成功解码，输出 WARNING 后回退到 `chardet`。
+5. 解码得到 Unicode 文本后，以 UTF-8 通过 stdin 喂给
+   `pandoc -f html -t plain --wrap=none -`。
+
+这样可避免 `file` 或 pandoc 对原始 HTML 字节流做错误猜测而产生乱码。
+
 | MIME 类型 | 典型扩展名 | pandoc 读取格式 |
 |---|---|---|
 | text/x-tex | .tex | latex |
@@ -191,7 +211,11 @@ PandocExtractor 通过 `pandoc -t plain --wrap=none` 统一处理以下格式。
 
 | 后端 | name | priority | 外部依赖 |
 |---|---|---|---|
-| PandocExtractor | `pandoc` | 10 | `pandoc` CLI |
+| PandocExtractor | `pandoc` | 10 | `pandoc` CLI；处理 HTML/XHTML 编码回退时需 `chardet` 包 |
+
+**PandocExtractor 安装提示**：
+- `install_hint` 需明确提示同时安装 `pandoc` 与 `chardet`，推荐文案：
+  `apt install pandoc && uv pip install chardet`
 
 ### 4.3 Man / GNU Info（系统命令）
 

@@ -55,6 +55,12 @@ class TestPandocExtractor:
         with patch("shutil.which", return_value="/usr/bin/pandoc"):
             assert PandocExtractor().available() is True
 
+    def test_install_hint_mentions_pandoc_and_chardet(self) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        assert "pandoc" in PandocExtractor.install_hint
+        assert "chardet" in PandocExtractor.install_hint
+
     def test_extract_calls_correct_command_and_returns_stdout(self, tmp_path: Path) -> None:
         from all2txt.backends.pandoc import PandocExtractor
 
@@ -100,3 +106,67 @@ class TestPandocExtractor:
 
         cmd = mock_run.call_args[0][0]
         assert "-f" not in cmd
+
+    def test_extract_decodes_html_from_header_and_streams_utf8(self, tmp_path: Path) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        html = (
+            '<html><head><meta http-equiv="Content-Type" '
+            'content="text/html; charset=gb2312" />'
+            "<title>浦发银行</title></head><body>年度报告</body></html>"
+        )
+        f = tmp_path / "report.html"
+        f.write_bytes(html.encode("gb18030"))
+
+        fake_result = MagicMock()
+        fake_result.stdout = "decoded html\n"
+
+        with patch(
+            "all2txt.backends.pandoc._detect_with_chardet",
+            side_effect=AssertionError("no fallback"),
+        ):
+            with patch(
+                "all2txt.backends.pandoc.subprocess.run", return_value=fake_result
+            ) as mock_run:
+                extractor = PandocExtractor(config={"_mime": "text/html"})
+                result = extractor.extract(f)
+
+        mock_run.assert_called_once_with(
+            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "-"],
+            input=html,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        assert result == "decoded html\n"
+
+    def test_extract_falls_back_to_chardet_when_header_missing(self, tmp_path: Path) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        html = "<html><head><title>浦发银行</title></head><body>年度报告</body></html>"
+        f = tmp_path / "report.html"
+        raw = html.encode("gb18030")
+        f.write_bytes(raw)
+
+        fake_result = MagicMock()
+        fake_result.stdout = "decoded html\n"
+        with patch(
+            "all2txt.backends.pandoc._detect_with_chardet",
+            return_value="gb18030",
+        ) as mock_detect:
+            with patch(
+                "all2txt.backends.pandoc.subprocess.run", return_value=fake_result
+            ) as mock_run:
+                extractor = PandocExtractor(config={"_mime": "text/html"})
+                extractor.extract(f)
+
+        mock_detect.assert_called_once_with(raw)
+        mock_run.assert_called_once_with(
+            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "-"],
+            input=html,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )

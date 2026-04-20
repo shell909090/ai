@@ -6,10 +6,11 @@
 
 ## 特性
 
-- **自动 MIME 检测**：通过 `file --mime-type` 识别文件类型，无需依赖扩展名
+- **三级 MIME 检测**：依次使用 `file --mime-type`、`mimetypes` 和内置扩展名映射
 - **多后端自动 fallback**：按优先级逐个尝试后端，缺失工具自动跳过
 - **完全可配置**：通过 `all2txt.yaml` 覆盖后端顺序，并为每个后端传入配置
 - **胶水模式设计**：封装外部 CLI 工具，无强制重依赖
+- **Pandoc HTML 编码归一**：HTML/XHTML 会先按 BOM / `<meta charset>` / `http-equiv` 解码后再交给 pandoc
 - **易于扩展**：新增后端只需新建一个文件加一行装饰器
 
 ## 支持格式
@@ -48,6 +49,12 @@ pip install "all2txt[tika]"
 pip install "all2txt[unstructured]"
 ```
 
+若需更稳妥地处理旧编码 HTML/XHTML（由 `pandoc` 后端使用），再安装 `chardet`：
+
+```bash
+uv pip install chardet
+```
+
 使用 [uv](https://github.com/astral-sh/uv)：
 
 ```bash
@@ -80,6 +87,11 @@ all2txt --allow-archive 归档.zip
 ```
 
 输出写入 stdout；错误信息写入 stderr，退出码为 1。
+
+说明：
+
+- 对 `text/html` 和 `application/xhtml+xml`，`pandoc` 后端会先将输入归一为 UTF-8，再调用 pandoc。
+- 文档 header 中声明的编码（`<meta charset>` / `http-equiv`）优先，只有缺失时才 fallback 到 `chardet`。
 
 ## 配置文件（all2txt.yaml）
 
