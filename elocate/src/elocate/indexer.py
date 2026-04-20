@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from elocate.chunker import Chunker
 from elocate.config import Config, DirConfig
@@ -493,13 +493,53 @@ class Indexer:
             if not base.is_dir():
                 logger.warning("Directory does not exist, skipping: %s", base)
                 continue
-            for fp in base.rglob("*"):
-                if fp.is_file() and self._matches_extensions(fp, dir_cfg.extensions):
-                    path_str = str(fp)
-                    if path_str not in seen:
-                        seen.add(path_str)
-                        result.append((fp, dir_cfg))
+            for root, dirnames, filenames in os.walk(base):
+                root_path = Path(root)
+                rel_root = "" if root_path == base else root_path.relative_to(base).as_posix()
+
+                dirnames[:] = [
+                    name
+                    for name in dirnames
+                    if not self._matches_exclude(
+                        self._join_rel_path(rel_root, name),
+                        dir_cfg.exclude,
+                    )
+                ]
+
+                for name in filenames:
+                    rel_path = self._join_rel_path(rel_root, name)
+                    if self._matches_exclude(rel_path, dir_cfg.exclude):
+                        continue
+                    fp = root_path / name
+                    if self._matches_extensions(fp, dir_cfg.extensions):
+                        path_str = str(fp)
+                        if path_str not in seen:
+                            seen.add(path_str)
+                            result.append((fp, dir_cfg))
         return result
+
+    def _matches_exclude(self, rel_path: str, rules: list[str]) -> bool:
+        """Return True when a relative path matches any exclude rule."""
+        rel_path = rel_path.lower()
+        parts = PurePosixPath(rel_path).parts
+        for rule in rules:
+            if self._is_name_exclude_rule(rule):
+                if rule in parts:
+                    return True
+                continue
+            if fnmatch.fnmatchcase(rel_path, rule):
+                return True
+        return False
+
+    def _is_name_exclude_rule(self, rule: str) -> bool:
+        """Return True when an exclude rule is a plain path-segment name."""
+        return "/" not in rule and not any(ch in rule for ch in "*?[")
+
+    def _join_rel_path(self, rel_root: str, name: str) -> str:
+        """Join one relative root plus child name into a normalized POSIX path."""
+        if not rel_root:
+            return name.lower()
+        return f"{rel_root}/{name}".lower()
 
     def _match_extension_rule(self, path: Path, rule: str) -> bool:
         """Check whether a file path matches one configured extension rule."""

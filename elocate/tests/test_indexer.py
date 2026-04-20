@@ -73,6 +73,52 @@ def test_collect_files_missing_dir(tmp_path: Path) -> None:
     assert files == []
 
 
+def test_collect_files_excludes_named_directories(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "keep.md").write_text("keep this markdown content.")
+    venv = notes / ".venv"
+    venv.mkdir()
+    (venv / "skip.md").write_text("this file should be excluded.")
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"], exclude=[".venv"])],
+    )
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"keep.md"}
+
+
+def test_collect_files_excludes_globbed_relative_paths(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    claude = notes / ".claude"
+    claude.mkdir()
+    (claude / "settings.local.json").write_text('{"k":"v"}')
+    (notes / "keep.json").write_text('{"ok":true}')
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=["glob:*.*"], exclude=[".claude/*"])],
+    )
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"keep.json"}
+
+
+def test_collect_files_exclude_beats_extensions(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "keep.md").write_text("keep this markdown content.")
+    (notes / "skip.md").write_text("skip this markdown content.")
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"], exclude=["skip.md"])],
+    )
+    indexer = Indexer(cfg)
+    names = {f.name for f, _ in indexer._collect_files()}
+    assert names == {"keep.md"}
+
+
 def test_collect_files_case_insensitive(tmp_path: Path) -> None:
     """Legacy extension rules should match case-insensitively."""
     d = tmp_path / "docs"
@@ -153,6 +199,13 @@ def test_collect_files_deduplicates_overlapping_dirs(tmp_path: Path) -> None:
     indexer = Indexer(cfg)
     files = indexer._collect_files()
     assert len(files) == 1
+
+
+def test_matches_exclude_name_rule_on_nested_path(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    assert indexer._matches_exclude(".venv/bin/python", [".venv"])
+    assert not indexer._matches_exclude("docs/report.md", [".venv"])
 
 
 def test_file_hash(tmp_path: Path) -> None:

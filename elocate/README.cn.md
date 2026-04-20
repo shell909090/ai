@@ -58,6 +58,7 @@ dirs:
   # 纯文本笔记
   - path: ~/notes
     extensions: [.md, .org, .txt]
+    exclude: [.venv, .git, __pycache__]
 
   # PDF/Word 文档
   - path: ~/Documents
@@ -65,6 +66,9 @@ dirs:
       - .pdf
       - .docx
       - suffix:.tar.gz
+    exclude:
+      - .claude/*
+      - "*.pyc"
 ```
 
 ### 扩展名规则
@@ -95,6 +99,17 @@ dirs:
 当你希望把绝大多数“带点文件名”都交给 `all2txt` 自动做 MIME 判断时，可以用
 `glob:*.*`。当你需要精确覆盖 `.tar.gz`、`.user.js` 这类复合后缀时，用 `suffix:`
 更合适。
+
+### 排除规则
+
+`dirs[].exclude` 是可选项，并且优先级高于 `extensions`：
+
+- `.venv`：排除任意路径段名称为 `.venv` 的目录或文件；命中目录时会直接停止向下扫描
+- `.claude/*`：按相对于当前 `path` 的路径做 glob 排除
+- `*.pyc`：排除匹配到的相对路径文件
+
+像 `.venv`、`.git`、`__pycache__` 这类噪音目录，推荐直接写名称规则；只想排除局部
+路径时，再用相对路径 glob。
 
 `all2txt` 现在是必选依赖，也是唯一的文本抽取路径。旧配置中的 `extractor:`
 字段会被兼容忽略。

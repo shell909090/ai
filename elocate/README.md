@@ -57,12 +57,16 @@ embed_batch_chars: 65536
 dirs:
   - path: ~/notes
     extensions: [.md, .org, .txt]
+    exclude: [.venv, .git, __pycache__]
 
   - path: ~/Documents
     extensions:
       - .pdf
       - .docx
       - suffix:.tar.gz
+    exclude:
+      - .claude/*
+      - "*.pyc"
 ```
 
 ### Extension Rules
@@ -93,6 +97,17 @@ dirs:
 Use `glob:*.*` when you want elocate to pass nearly all dotted filenames to `all2txt`
 and let MIME detection choose the backend. Use `suffix:` when you need precise control
 for names such as `.tar.gz` or `.user.js`.
+
+### Exclude Rules
+
+`dirs[].exclude` is optional and is evaluated before `extensions`:
+
+- `.venv` — exclude any path segment with this exact name and prune that subtree
+- `.claude/*` — exclude paths relative to the configured base directory
+- `*.pyc` — exclude matching relative file paths
+
+Use name rules for noisy directories such as `.venv`, `.git`, and `__pycache__`.
+Use relative globs when you only want to skip part of a tree.
 
 `all2txt` is now a required dependency and the only extraction path. Legacy
 `extractor:` config values are ignored for compatibility.

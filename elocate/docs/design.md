@@ -213,6 +213,24 @@ files 表中存在但磁盘上消失的 path：
 3. 含有前缀但前缀不在 `suffix` / `glob` 白名单内时，直接报 `ValueError`。
 4. 不含前缀且以 `.` 开头的字符串，视为合法的向后兼容精确扩展名规则。
 
+### exclude 规则
+
+`DirConfig` 新增 `exclude: list[str]`，默认空列表。每条规则允许两种语义：
+
+| 规则形式 | 示例 | 语义 |
+|----------|------|------|
+| 名称快捷排除 | `.venv`、`.git`、`__pycache__` | 若规则不含 `/` 且不含 glob 特殊字符，则匹配扫描树中任意路径段的名称；命中目录时直接剪枝整个子树 |
+| 相对路径 glob | `.claude/*`、`*.pyc`、`cache/*.json` | 对相对于 `DirConfig.path` 的 POSIX 风格路径做 `fnmatch` 匹配；可排除单文件或局部子树 |
+
+### exclude 匹配策略
+
+1. `exclude` 作用域仅限当前 `DirConfig.path` 对应的扫描树。
+2. 目录扫描改为基于 `os.walk()`，以便在发现被排除目录后直接从 `dirnames` 中删除，避免继续进入其子目录。
+3. 对任意候选路径，先做 `exclude` 判断，再做 `extensions` 判断；即 `exclude` 优先级高于 `extensions`。
+4. 名称快捷排除用于高频噪音目录/文件，如 `.venv`、`.git`、`__pycache__`；相对路径 glob 用于更精细的局部排除。
+5. 路径匹配基于相对于 base 目录的 `as_posix()` 结果，不包含 base 本身；例如 `notes/.venv/bin/python` 在规则判断中看到的是 `.venv/bin/python`。
+6. 未配置 `exclude` 时，扫描行为与当前版本保持一致。
+
 ---
 
 ## 文本抽取（Extractor 集成）
@@ -302,6 +320,7 @@ dirs:
 class DirConfig:
     path: str
     extensions: list[str]                   # e.g. [".md", "suffix:.tar.gz", "glob:*.*"]
+    exclude: list[str] = field(default_factory=list)
     extractor_config: dict = field(...)     # forwarded to all2txt.Config
 
 @dataclass
@@ -401,6 +420,7 @@ class Indexer:
     def __init__(self, config: Config) -> None: ...
     def run(self) -> tuple[int, int, int]: ...  # (added, updated, removed) file counts
     def _collect_files(self) -> list[tuple[Path, DirConfig]]: ...
+    def _matches_exclude(self, rel_path: str, parts: tuple[str, ...], rules: list[str]) -> bool: ...
     def _scan_disk_files(self, disk_files: list[tuple[Path, DirConfig]]) -> tuple[list[tuple[Path, DirConfig, object, dict | None, str]], int, int]: ...
     def _flush_pending_batch(self, pending: list[tuple[str, str, int, float, str, str | None]], ...) -> None: ...
     def _match_extension_rule(self, path: Path, rule: str) -> bool: ...

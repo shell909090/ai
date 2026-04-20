@@ -11,6 +11,7 @@ from elocate.config import (
     Config,
     DirConfig,
     load_config,
+    validate_exclude_rule,
     validate_extension_rule,
 )
 
@@ -41,6 +42,10 @@ def test_validate_extension_rule_suffix() -> None:
 
 def test_validate_extension_rule_glob() -> None:
     assert validate_extension_rule("glob:*.*") == "glob:*.*"
+
+
+def test_validate_exclude_rule() -> None:
+    assert validate_exclude_rule(" .VENV ") == ".venv"
 
 
 def test_load_config_missing_file(tmp_path: Path) -> None:
@@ -75,12 +80,14 @@ def test_load_config_dirs(tmp_path: Path) -> None:
         "dirs:\n"
         "  - path: /docs\n"
         "    extensions: [.md, suffix:.tar.gz, glob:*.*]\n"
+        "    exclude: [.venv, .claude/*]\n"
         "    extractor: plaintext\n"
     )
     config = load_config(cfg_file)
     assert len(config.dirs) == 1
     assert config.dirs[0].path == "/docs"
     assert config.dirs[0].extensions == [".md", "suffix:.tar.gz", "glob:*.*"]
+    assert config.dirs[0].exclude == [".venv", ".claude/*"]
     assert config.dirs[0].extractor_config == {}
 
 
@@ -210,4 +217,11 @@ def test_load_config_invalid_glob_rule(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text('dirs:\n  - path: /docs\n    extensions: ["glob:"]\n')
     with pytest.raises(ValueError, match="glob"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_exclude_rule(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text('dirs:\n  - path: /docs\n    exclude: [""]\n')
+    with pytest.raises(ValueError, match="exclude rule"):
         load_config(cfg_file)

@@ -24,6 +24,7 @@ class DirConfig:
 
     path: str
     extensions: list[str] = field(default_factory=lambda: list(DEFAULT_EXTENSIONS))
+    exclude: list[str] = field(default_factory=list)
     extractor_config: dict[str, Any] = field(default_factory=dict)
     # extractor_config is forwarded to all2txt.Config;
     # supported top-level keys are: backends / extractors / extensions.
@@ -69,6 +70,18 @@ def validate_extension_rule(rule: str) -> str:
     return normalized
 
 
+def validate_exclude_rule(rule: str) -> str:
+    """Validate one exclude rule and return its normalized form."""
+    if not isinstance(rule, str):
+        raise ValueError(f"exclude rule must be a string, got {type(rule).__name__}")
+
+    normalized = rule.strip().replace("\\", "/").lower()
+    if not normalized:
+        raise ValueError("exclude rule must not be empty")
+
+    return normalized
+
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     """Load configuration from YAML file, falling back to defaults."""
     if not path.exists():
@@ -92,10 +105,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             validate_extension_rule(rule)
             for rule in entry.get("extensions", list(DEFAULT_EXTENSIONS))
         ]
+        exclude = [validate_exclude_rule(rule) for rule in entry.get("exclude", [])]
         dirs.append(
             DirConfig(
                 path=entry["path"],
                 extensions=extensions,
+                exclude=exclude,
                 extractor_config=entry.get("extractor_config", {}),
             )
         )
