@@ -169,6 +169,15 @@ files 表中存在但磁盘上消失的 path：
    - `embed_seconds_total`
    - `db_write_seconds_total`
 
+### debug 日志范围
+
+CLI 的 `--debug` 不再把 root logger 直接提升到 `DEBUG`。改为：
+
+1. root logging 维持在 `WARNING`，避免第三方依赖输出大量调试日志。
+2. `elocate` 命名空间 logger（如 `elocate.cli`、`elocate.indexer`）单独提升到 `DEBUG`。
+3. `openai`、`httpx`、`httpcore` 命名空间显式设为 `WARNING`，确保网络请求和 SDK 细节不会冲掉批次性能输出。
+4. 非 debug 模式保持现状，不主动调整日志配置。
+
 ---
 
 ## 文档切分策略（Chunker）

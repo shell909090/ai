@@ -1,12 +1,13 @@
 """Integration tests for CLI commands."""
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
 from click.testing import CliRunner
 
-from elocate.cli import main_search, main_updatedb
+from elocate.cli import _configure_logging, main_search, main_updatedb
 from elocate.config import Config, DirConfig
 
 DIM = 8
@@ -190,3 +191,21 @@ def test_search_shows_snippet(tmp_path: Path) -> None:
     assert result.exit_code == 0
     # The snippet is "Hello semantic search world." which must appear
     assert "Hello" in result.output
+
+
+def test_configure_logging_debug_scopes_to_elocate() -> None:
+    with patch("logging.basicConfig") as mock_basic:
+        _configure_logging(True)
+
+    mock_basic.assert_called_once_with(level=logging.WARNING, force=True)
+    assert logging.getLogger("elocate").level == logging.DEBUG
+    assert logging.getLogger("openai").level == logging.WARNING
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("httpcore").level == logging.WARNING
+
+
+def test_configure_logging_no_debug_is_noop() -> None:
+    with patch("logging.basicConfig") as mock_basic:
+        _configure_logging(False)
+
+    mock_basic.assert_not_called()

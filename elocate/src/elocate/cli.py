@@ -21,6 +21,19 @@ _CONFIG_OPTION = click.option(
     help="Config file path (default: ~/.config/elocate/config.yaml).",
 )
 
+_NOISY_DEBUG_LOGGERS = ("openai", "httpx", "httpcore")
+
+
+def _configure_logging(debug: bool) -> None:
+    """Configure logging so debug mode stays focused on elocate output."""
+    if not debug:
+        return
+
+    logging.basicConfig(level=logging.WARNING, force=True)
+    logging.getLogger("elocate").setLevel(logging.DEBUG)
+    for name in _NOISY_DEBUG_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 
 def _load_config_or_exit(config_path: str | None):  # type: ignore[return]
     """Load config from path or DEFAULT_CONFIG_PATH; print error and exit on failure."""
@@ -54,8 +67,7 @@ def main_search(
     debug: bool,
 ) -> None:
     """Search indexed documents by semantic query."""
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
+    _configure_logging(debug)
     config = _load_config_or_exit(config_path)
     if top_k is not None:
         config.top_k = top_k
@@ -86,8 +98,7 @@ def main_search(
 @click.option("--debug", is_flag=True, help="Enable debug logging.")
 def main_updatedb(config_path: str | None, debug: bool) -> None:
     """Build or update the document vector index."""
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
+    _configure_logging(debug)
     config = _load_config_or_exit(config_path)
     if not config.dirs:
         click.echo("Warning: no dirs configured. Nothing to index.", err=True)
