@@ -1,6 +1,6 @@
 [project]
 name = "all2txt"
-version = "0.1.0"
+version = "0.1.1"
 description = "Extract plain text from any file format for vector search pipelines"
 requires-python = ">=3.11"
 dependencies = [
