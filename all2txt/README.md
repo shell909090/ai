@@ -11,6 +11,7 @@ Extract plain text from any file format, designed for RAG (Retrieval-Augmented G
 - **Fully configurable** — override backend order and pass per-backend settings via `all2txt.yaml`
 - **Glue-mode design** — wraps external CLI tools; no mandatory heavy dependencies
 - **HTML encoding normalization for pandoc** — HTML/XHTML is decoded from BOM / `<meta charset>` / `http-equiv` before pandoc sees it
+- **HTML resource isolation for pandoc** — pandoc runs with `--sandbox` for HTML/XHTML so remote assets cannot break extraction
 - **Extensible** — add a new backend in a single file with one decorator
 
 ## Supported Formats
@@ -92,6 +93,7 @@ Notes:
 
 - For `text/html` and `application/xhtml+xml`, the `pandoc` backend normalizes the source to UTF-8 before invoking pandoc.
 - Header-declared encodings (`<meta charset>` / `http-equiv`) take precedence; `chardet` is only used as a fallback.
+- HTML/XHTML extraction runs pandoc with `--sandbox`, so external `script`, `link`, and similar remote resources are not fetched.
 
 ## Configuration (`all2txt.yaml`)
 

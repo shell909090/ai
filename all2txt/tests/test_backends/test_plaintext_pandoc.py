@@ -132,7 +132,7 @@ class TestPandocExtractor:
                 result = extractor.extract(f)
 
         mock_run.assert_called_once_with(
-            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "-"],
+            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "--sandbox", "-"],
             input=html,
             capture_output=True,
             text=True,
@@ -163,8 +163,33 @@ class TestPandocExtractor:
 
         mock_detect.assert_called_once_with(raw)
         mock_run.assert_called_once_with(
-            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "-"],
+            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "--sandbox", "-"],
             input=html,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+
+    def test_extract_uses_sandbox_for_xhtml_stdin(self, tmp_path: Path) -> None:
+        from all2txt.backends.pandoc import PandocExtractor
+
+        f = tmp_path / "page.xhtml"
+        f.write_text(
+            '<html><head><meta charset="utf-8" /></head><body>hello</body></html>',
+            encoding="utf-8",
+        )
+
+        fake_result = MagicMock()
+        fake_result.stdout = "decoded html\n"
+
+        with patch("all2txt.backends.pandoc.subprocess.run", return_value=fake_result) as mock_run:
+            extractor = PandocExtractor(config={"_mime": "application/xhtml+xml"})
+            extractor.extract(f)
+
+        mock_run.assert_called_once_with(
+            ["pandoc", "-t", "plain", "--wrap=none", "-f", "html", "--sandbox", "-"],
+            input='<html><head><meta charset="utf-8" /></head><body>hello</body></html>',
             capture_output=True,
             text=True,
             encoding="utf-8",

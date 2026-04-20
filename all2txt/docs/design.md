@@ -186,7 +186,11 @@ pandoc，而是在 Python 侧先完成编码归一：
    - 其他编码通过 Python codec 名称直接解码。
 4. 若 header 指定的编码无法成功解码，输出 WARNING 后回退到 `chardet`。
 5. 解码得到 Unicode 文本后，以 UTF-8 通过 stdin 喂给
-   `pandoc -f html -t plain --wrap=none -`。
+   `pandoc --sandbox -f html -t plain --wrap=none -`。
+
+其中 `--sandbox` 为必需项，用于阻止 pandoc 在解析 HTML/XHTML 时继续抓取页面中的
+外部 `script`、`link`、图片等资源；提取结果必须只依赖本地输入文件，不能受网络可达性
+或远端资源编码影响。
 
 这样可避免 `file` 或 pandoc 对原始 HTML 字节流做错误猜测而产生乱码。
 

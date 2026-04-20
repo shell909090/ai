@@ -11,6 +11,7 @@
 - **完全可配置**：通过 `all2txt.yaml` 覆盖后端顺序，并为每个后端传入配置
 - **胶水模式设计**：封装外部 CLI 工具，无强制重依赖
 - **Pandoc HTML 编码归一**：HTML/XHTML 会先按 BOM / `<meta charset>` / `http-equiv` 解码后再交给 pandoc
+- **Pandoc HTML 资源隔离**：HTML/XHTML 会以 `--sandbox` 模式调用 pandoc，避免远端资源影响提取结果
 - **易于扩展**：新增后端只需新建一个文件加一行装饰器
 
 ## 支持格式
@@ -92,6 +93,7 @@ all2txt --allow-archive 归档.zip
 
 - 对 `text/html` 和 `application/xhtml+xml`，`pandoc` 后端会先将输入归一为 UTF-8，再调用 pandoc。
 - 文档 header 中声明的编码（`<meta charset>` / `http-equiv`）优先，只有缺失时才 fallback 到 `chardet`。
+- HTML/XHTML 提取会给 pandoc 加 `--sandbox`，因此不会继续抓取远端 `script`、`link` 等外部资源。
 
 ## 配置文件（all2txt.yaml）
 

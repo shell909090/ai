@@ -142,6 +142,9 @@ class PandocExtractor(Extractor):
         if reader:
             cmd += ["-f", reader]
         if mime in _HTML_MIMES:
+            # Keep HTML extraction self-contained; remote resources can introduce
+            # network flakiness and non-UTF-8 bytes from unrelated pages.
+            cmd.append("--sandbox")
             html = _decode_html(path.read_bytes(), path)
             cmd.append("-")
             result = subprocess.run(
