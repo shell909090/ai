@@ -120,6 +120,8 @@ dirs:
 - `embed_batch_chars`：限制单批在内存中等待嵌入的文本字符总量
 - `elocate-updatedb --debug` 会输出批次级和全局级性能计数，方便判断瓶颈是在
   抽取、切分、embedding 还是写库
+- `--debug` 还会保留 `all2txt` 的 backend 选择日志，同时继续抑制
+  `openai` / `httpx` / `httpcore` 的噪音调试输出
 
 ### 使用 OpenAI 官方 API
 

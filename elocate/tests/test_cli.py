@@ -199,6 +199,7 @@ def test_configure_logging_debug_scopes_to_elocate() -> None:
 
     mock_basic.assert_called_once_with(level=logging.WARNING, force=True)
     assert logging.getLogger("elocate").level == logging.DEBUG
+    assert logging.getLogger("all2txt").level == logging.INFO
     assert logging.getLogger("openai").level == logging.WARNING
     assert logging.getLogger("httpx").level == logging.WARNING
     assert logging.getLogger("httpcore").level == logging.WARNING

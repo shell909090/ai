@@ -175,8 +175,9 @@ CLI 的 `--debug` 不再把 root logger 直接提升到 `DEBUG`。改为：
 
 1. root logging 维持在 `WARNING`，避免第三方依赖输出大量调试日志。
 2. `elocate` 命名空间 logger（如 `elocate.cli`、`elocate.indexer`）单独提升到 `DEBUG`。
-3. `openai`、`httpx`、`httpcore` 命名空间显式设为 `WARNING`，确保网络请求和 SDK 细节不会冲掉批次性能输出。
-4. 非 debug 模式保持现状，不主动调整日志配置。
+3. `all2txt` 命名空间在 debug 模式下单独提升到 `INFO`，用于放出 MIME 检测、可用 backend 和最终 backend 选择等诊断信息。
+4. `openai`、`httpx`、`httpcore` 命名空间显式设为 `WARNING`，确保网络请求和 SDK 细节不会冲掉批次性能输出。
+5. 非 debug 模式保持现状，不主动调整日志配置。
 
 ---
 

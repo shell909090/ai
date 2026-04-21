@@ -21,6 +21,7 @@ _CONFIG_OPTION = click.option(
     help="Config file path (default: ~/.config/elocate/config.yaml).",
 )
 
+_DIAGNOSTIC_INFO_LOGGERS = ("all2txt",)
 _NOISY_DEBUG_LOGGERS = ("openai", "httpx", "httpcore")
 
 
@@ -31,6 +32,8 @@ def _configure_logging(debug: bool) -> None:
 
     logging.basicConfig(level=logging.WARNING, force=True)
     logging.getLogger("elocate").setLevel(logging.DEBUG)
+    for name in _DIAGNOSTIC_INFO_LOGGERS:
+        logging.getLogger(name).setLevel(logging.INFO)
     for name in _NOISY_DEBUG_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 

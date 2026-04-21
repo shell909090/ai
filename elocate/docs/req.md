@@ -82,6 +82,7 @@ elocate-updatedb [--debug]
 5. 抽取失败只能影响当前文件，不得导致已成功 flush 的批次失效。
 6. `--debug` 模式下必须输出索引性能计数，至少能观察抽取、切分、embedding、写库各阶段的吞吐与耗时。
 7. `--debug` 不得无差别放开第三方库的调试日志；OpenAI、httpx、httpcore 等外部依赖的 debug 输出必须默认抑制，避免冲掉批次性能信息。
+8. `--debug` 需要定向开放 `all2txt` 的 backend 选择日志，至少应能看到文件 MIME、可用 backend 与最终采用的 backend，便于定位 OCR 和格式抽取问题。
 
 ### 扫描排除规则
 
