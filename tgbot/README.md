@@ -10,7 +10,7 @@
 安全警告：
 
 1. 本模式通常需要 `--dangerously-skip-permissions` 或等效放权配置。一旦telegram账号或telegram bot账号被盗，等同于机器完全受控。一旦AI理解出错，可能造成任意破坏。请理解这点，并视自己接受能力而用。
-2. `chat_id` 必须填写你本人的 Telegram 用户 ID，只允许私聊，不得使用群组、频道或任何多人会话 ID；程序会消费全部 updates，但只有该私聊中的消息可作为指令来源。
+2. `allow_users` 是强信任白名单。白名单内的用户共享同一个后端 ACP session，可以在不同私聊/群聊里驱动同一个 agent；上下文会互相影响，回复也可能体现前一个管理员留下的状态。只有在 Owner 与协作者彼此知情并接受这种共享上下文模型时才应启用。
 3. `~/.config/telegram/config.ini` 包含 Bot Token，使用前请至少执行 `chmod 640 ~/.config/telegram/config.ini`；若机器上存在其他非信任用户，使用 `chmod 600`。
 
 # tgbot.py
@@ -37,6 +37,7 @@ file = ~/.config/telegram/crontab.md
 
 - `chat_id`：Bot owner 的 Telegram user ID。`get`/`send` 模式使用；`acp` 模式用于主动下行消息（权限请求、cron 回复）。
 - `allow_users`：逗号分隔的 Telegram user ID 列表，允许向 `acp` 模式发送指令。未设置时默认只有 `chat_id` 对应用户可以交互。
+- `[acp] cwd`：同时作为 agent 子进程的实际工作目录，以及 ACP `session/new` / `session/load` 里的 `cwd` 参数。可被 `python3 tgbot.py acp --cwd /path/to/project` 覆盖。
 
 注意：bot 需要先收到用户的 `/start` 消息才能向该用户发送消息。
 
@@ -102,10 +103,10 @@ python3 tgbot.py acp --session-id <UUID>
 python3 tgbot.py acp --yolo
 ```
 
-**消息过滤**：只处理 `allow_users` 中用户发来的消息（未配置时仅 `chat_id`）。回复发往消息所在的 chat，支持私聊和群聊并存。每条收到的指令会在日志中记录发言人 ID 和 username：
+**消息过滤**：只处理 `allow_users` 中用户发来的消息（未配置时仅 `chat_id`）。回复发往消息所在的 chat，支持私聊和群聊并存。console log 只记录发言人 ID、username 和 chat，不再输出消息正文：
 
 ```
-12:34:56 INFO ACP ← [12345678 @alice] 帮我查一下日志
+12:34:56 INFO ACP prompt from [12345678 @alice] chat=-1001234567890
 ```
 
 **权限处理**：agent 请求工具权限时，bot 会向 `chat_id`（owner）发送 Telegram 消息列出选项，等待 owner 回复：
@@ -113,9 +114,15 @@ python3 tgbot.py acp --yolo
 - `n` / `N`：拒绝
 - 数字（如 `1`、`2`）：选择对应选项编号
 
-回复必须是以上格式，其他内容会收到提示并继续等待。
+回复必须是以上格式。等待权限期间，bot 会先对新消息执行 `allow_users` 过滤，并最多缓冲 5 条合法 prompt，待当前权限请求结束后按顺序继续处理；若 owner 回了超出选项范围的数字，会收到格式提示。
 
 **回复流式推送**：agent 的回复按行缓冲，收到换行时 edit 同一条 Telegram 消息，完成后去掉光标。超过 4000 字符时自动分成新消息继续。
+
+**共享会话模型**：`allow_users` 里的所有管理员共享同一个 ACP session。这个模型是刻意设计的：它允许协作者在不同会话里接力操作同一个 agent，但也意味着上下文和工具状态不会按用户隔离。
+
+**Slash Commands**：如果 ACP agent 在会话启动后通过 `available_commands_update` 暴露可用 `/commands`，bot 会在启动时调用 Telegram `setMyCommands` 自动注册兼容的命令名。这里的命令菜单表示当前 agent 暴露出的能力，不是静态写死的产品配置。
+
+**会话日志**：`acp` 模式会把日志写到 `$XDG_STATE_HOME/tgbot/`；若未设置 `XDG_STATE_HOME`，则写到 `~/.local/state/tgbot/`。文件名为 `session-<SESSION_ID>.jsonl`，权限会收紧到仅当前用户可读写。日志内容包含入站 prompt、最终定型后的回复，以及命令注册事件；消息正文不再写入 console log。
 
 ### Cron
 

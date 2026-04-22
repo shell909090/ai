@@ -4,3 +4,4 @@ __pycache__
 .venv
 *.jpg
 *.png
+.codex

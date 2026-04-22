@@ -2,10 +2,13 @@
 """Simple Telegram Bot helper: fetch updates, send messages, and run ACP sessions."""
 
 import argparse
+from collections import deque
 import configparser
 import json
 import logging
+import os
 import queue
+import re
 import shlex
 import subprocess
 import sys
@@ -21,6 +24,8 @@ log = logging.getLogger("tgbot")
 
 CONFIG_PATH = Path.home() / ".config" / "telegram" / "config.ini"
 BASE_URL = "https://api.telegram.org/bot{token}"
+MAX_PENDING_PROMPTS = 5
+TG_COMMAND_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _retry_delay = 3  # seconds between network-error retries
 
 
@@ -71,6 +76,79 @@ def api_call(token: str, method: str, params: dict | None = None, retries: int =
                 time.sleep(_retry_delay)
                 continue
             sys.exit(1)
+
+
+class SessionLog:
+    """Append structured session events to a per-session JSONL file."""
+
+    def __init__(self, base_dir: Path, session_id: str):
+        safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id or "unknown")
+        self.path = base_dir / f"session-{safe_session_id}.jsonl"
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            self.path.parent.chmod(0o700)
+        except OSError:
+            pass
+        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        os.close(fd)
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
+
+    def append(self, event: str, **fields):
+        record = {
+            "time": datetime.now().astimezone().isoformat(),
+            "event": event,
+            **fields,
+        }
+        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False)
+            f.write("\n")
+
+
+def _state_dir() -> Path:
+    xdg_state = os.environ.get("XDG_STATE_HOME")
+    if xdg_state:
+        return Path(xdg_state).expanduser() / "tgbot"
+    return Path.home() / ".local" / "state" / "tgbot"
+
+
+def _normalize_tg_command_name(name: str) -> str | None:
+    command = name.strip().lstrip("/").lower().replace("-", "_")
+    if not command or not TG_COMMAND_RE.fullmatch(command):
+        return None
+    return command
+
+
+def _build_tg_commands(available_commands: list[dict]) -> list[dict]:
+    commands: list[dict] = []
+    seen: set[str] = set()
+    for item in available_commands:
+        raw_name = item.get("name", "")
+        command = _normalize_tg_command_name(raw_name)
+        if not command:
+            log.warning("Skipping ACP slash command %r: incompatible with Telegram", raw_name)
+            continue
+        if command in seen:
+            continue
+
+        description = (
+            item.get("description")
+            or item.get("input", {}).get("hint")
+            or f"Run /{command}"
+        )
+        description = " ".join(description.split())[:256] or f"Run /{command}"
+        commands.append({"command": command, "description": description})
+        seen.add(command)
+        if len(commands) >= 100:
+            break
+    return commands
 
 
 def cmd_get(args):
@@ -153,10 +231,12 @@ def cmd_send(args):
 class AcpSession:
     """Manages an ACP-compatible agent subprocess (Claude Code, Codex, OpenCode, …)."""
 
-    def __init__(self):
+    def __init__(self, on_available_commands=None):
         self._proc: subprocess.Popen | None = None
         self.session_id: str | None = None
         self._req_id = 0
+        self.available_commands: list[dict] = []
+        self._on_available_commands = on_available_commands
 
     # ── low-level I/O ─────────────────────────────────────────────────────
 
@@ -182,17 +262,30 @@ class AcpSession:
     def _reply(self, req_id: int, result):
         self._send({"jsonrpc": "2.0", "id": req_id, "result": result})
 
+    def _handle_session_update(self, update: dict):
+        kind = update.get("sessionUpdate")
+        if kind in ("available_commands_update", "availableCommandsUpdate"):
+            commands = update.get("availableCommands")
+            if commands is None:
+                commands = update.get("available_commands", [])
+            self.available_commands = commands or []
+            if self._on_available_commands:
+                self._on_available_commands(self.available_commands)
+        return kind
+
     # ── lifecycle ──────────────────────────────────────────────────────────
 
     @classmethod
-    def start(cls, command: str, cwd: str, session_id: str | None = None) -> "AcpSession":
-        inst = cls()
+    def start(cls, command: str, cwd: str, session_id: str | None = None,
+              on_available_commands=None) -> "AcpSession":
+        inst = cls(on_available_commands=on_available_commands)
         inst._proc = subprocess.Popen(
             shlex.split(command),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
             bufsize=1,
+            cwd=cwd,
         )
 
         # 1. initialize
@@ -216,13 +309,21 @@ class AcpSession:
             sess_req = inst._request("session/load", {"sessionId": session_id, "cwd": cwd, "mcpServers": []})
             while True:
                 msg = inst._recv()
+                if msg.get("method") == "session/update" and "id" not in msg:
+                    inst._handle_session_update(msg.get("params", {}).get("update", {}))
+                    continue
                 if "id" in msg and msg["id"] == sess_req:
                     break
             inst.session_id = session_id
             log.info("ACP session loaded: %s", session_id)
         else:
             sess_req = inst._request("session/new", {"cwd": cwd, "mcpServers": []})
-            resp = inst._recv()
+            while True:
+                resp = inst._recv()
+                if resp.get("method") == "session/update" and "id" not in resp:
+                    inst._handle_session_update(resp.get("params", {}).get("update", {}))
+                    continue
+                break
             if resp.get("id") != sess_req or "error" in resp:
                 inst._proc.kill()
                 raise RuntimeError(f"ACP session/new failed: {resp}")
@@ -303,7 +404,7 @@ class AcpSession:
             if has_method and not has_id:
                 if msg["method"] == "session/update":
                     upd = msg["params"].get("update", {})
-                    kind = upd.get("sessionUpdate")
+                    kind = self._handle_session_update(upd)
                     if kind == "agent_message_chunk":
                         chunk = upd.get("content", {}).get("text", "")
                         parts.append(chunk)
@@ -399,7 +500,7 @@ def _cron_matches(expr: str, dt: datetime) -> bool:
 # ─── Permission handling ──────────────────────────────────────────────────────
 
 def _handle_permission(token: str, chat_id: int, params: dict,
-                       yolo: bool, offset: int) -> tuple[str | None, int]:
+                       yolo: bool, offset: int, buffer_prompt=None) -> tuple[str | None, int]:
     """
     Handle a session/request_permission from the agent.
     Returns (option_id_or_None, updated_offset).
@@ -425,37 +526,35 @@ def _handle_permission(token: str, chat_id: int, params: dict,
     lines.append("\n回复 y（允许）/ n（拒绝）或选项编号")
     api_call(token, "sendMessage", {"chat_id": chat_id, "text": "\n".join(lines)}, retries=3)
 
-    hint_sent = False
     while True:
         resp = api_call(token, "getUpdates", {"timeout": 0, "offset": offset}, retries=3)
         for u in resp.get("result", []):
             offset = u["update_id"] + 1
             msg = u.get("message", {})
-            if msg.get("chat", {}).get("id") != chat_id:
-                continue
-            reply = msg.get("text", "").strip()
-            lower = reply.lower()
+            if msg.get("chat", {}).get("id") == chat_id:
+                reply = msg.get("text", "").strip()
+                lower = reply.lower()
 
-            if lower in ("y", "n"):
-                if lower == "n":
-                    return None, offset
-                for opt in options:
-                    if "allow" in opt.get("kind", "").lower():
-                        return opt["optionId"], offset
-                return (options[0]["optionId"] if options else "allow-once"), offset
+                if lower in ("y", "n"):
+                    if lower == "n":
+                        return None, offset
+                    for opt in options:
+                        if "allow" in opt.get("kind", "").lower():
+                            return opt["optionId"], offset
+                    return (options[0]["optionId"] if options else "allow-once"), offset
 
-            if reply.isdigit():
-                idx = int(reply) - 1
-                if 0 <= idx < len(options):
-                    return options[idx]["optionId"], offset
-                # out-of-range falls through to hint
+                if reply.isdigit():
+                    idx = int(reply) - 1
+                    if 0 <= idx < len(options):
+                        return options[idx]["optionId"], offset
+                    api_call(token, "sendMessage", {
+                        "chat_id": chat_id,
+                        "text": "⚠️ 请回复 y/n 或选项编号",
+                    }, retries=3)
+                    continue
 
-            if not hint_sent:
-                api_call(token, "sendMessage", {
-                    "chat_id": chat_id,
-                    "text": "⚠️ 请回复 y/n 或选项编号",
-                }, retries=3)
-                hint_sent = True
+            if buffer_prompt is not None:
+                buffer_prompt(u)
 
         if not resp.get("result"):
             time.sleep(0.5)
@@ -507,6 +606,41 @@ def _addressed_in_group(msg: dict, bot_id: int, bot_username: str) -> bool:
     return False
 
 
+def _extract_prompt(update: dict, allow_users: set[int], bot_id: int, bot_username: str) -> dict | None:
+    """Return a normalized prompt payload for allowed Telegram messages."""
+    msg = update.get("message", {})
+    from_info = msg.get("from", {})
+    from_id = from_info.get("id")
+    reply_chat_id = msg.get("chat", {}).get("id")
+
+    if from_id is None or reply_chat_id is None or from_id not in allow_users:
+        return None
+
+    chat_type = msg.get("chat", {}).get("type", "private")
+    if chat_type in ("group", "supergroup") and not _addressed_in_group(msg, bot_id, bot_username):
+        return None
+
+    text = msg.get("text", "").strip()
+    if not text:
+        return None
+
+    entities = msg.get("entities", [])
+    if chat_type in ("group", "supergroup"):
+        text = _strip_bot_mentions(text, entities, bot_username)
+    if not text:
+        return None
+
+    return {
+        "text": text,
+        "reply_chat_id": reply_chat_id,
+        "source": "telegram",
+        "from_id": from_id,
+        "username": from_info.get("username", ""),
+        "chat_type": chat_type,
+        "message_id": msg.get("message_id"),
+    }
+
+
 # ─── ACP daemon ───────────────────────────────────────────────────────────────
 
 def cmd_acp(args):
@@ -523,7 +657,13 @@ def cmd_acp(args):
             "Error: ACP command not configured. "
             "Set [acp] command in config or use --agent-cmd"
         )
-    cwd = args.cwd or cfg.get("acp", "cwd", fallback=str(Path.home()))
+    cwd_path = Path(args.cwd or cfg.get("acp", "cwd", fallback=str(Path.home()))).expanduser()
+    if not cwd_path.exists():
+        sys.exit(f"Error: cwd does not exist: {cwd_path}")
+    if not cwd_path.is_dir():
+        sys.exit(f"Error: cwd is not a directory: {cwd_path}")
+    cwd_path = cwd_path.resolve()
+    cwd = str(cwd_path)
 
     # allow_users: comma-separated Telegram user IDs allowed to send commands.
     # If unset, only the owner (chat_id) may interact.
@@ -553,24 +693,165 @@ def cmd_acp(args):
     bot_username: str = me["result"]["username"]
     log.info("ACP bot: @%s (id=%d)", bot_username, bot_id)
 
+    session_log: SessionLog | None = None
+    pending_prompts: deque[dict] = deque()
+    commands_state = {
+        "signature": None,
+        "registered": False,
+        "current": [],
+    }
+
+    def sync_telegram_commands(available_commands: list[dict]):
+        tg_commands = _build_tg_commands(available_commands)
+        signature = json.dumps(tg_commands, ensure_ascii=False, sort_keys=True)
+
+        if tg_commands:
+            if signature == commands_state["signature"]:
+                return
+            result = api_call(token, "setMyCommands", {"commands": tg_commands}, retries=3)
+            if not result.get("ok"):
+                log.warning("setMyCommands failed: %s", result)
+                return
+            commands_state["signature"] = signature
+            commands_state["registered"] = True
+            commands_state["current"] = tg_commands
+            log.info("Registered %d ACP slash command(s) with Telegram", len(tg_commands))
+            if session_log is not None:
+                session_log.append("commands_registered", count=len(tg_commands), commands=tg_commands)
+            return
+
+        if commands_state["registered"]:
+            result = api_call(token, "deleteMyCommands", {}, retries=3)
+            if not result.get("ok"):
+                log.warning("deleteMyCommands failed: %s", result)
+                return
+            commands_state["signature"] = signature
+            commands_state["registered"] = False
+            commands_state["current"] = []
+            log.info("Cleared ACP slash commands from Telegram")
+            if session_log is not None:
+                session_log.append("commands_cleared")
+
     log.info("Starting ACP: cmd=%r cwd=%r yolo=%s session=%s",
              acp_cmd, cwd, args.yolo, args.session_id)
-    acp = AcpSession.start(acp_cmd, cwd, session_id=args.session_id)
+    acp = AcpSession.start(
+        acp_cmd,
+        cwd,
+        session_id=args.session_id,
+        on_available_commands=sync_telegram_commands,
+    )
+    session_log = SessionLog(_state_dir(), acp.session_id)
+    session_log.append(
+        "session_started",
+        session_id=acp.session_id,
+        cwd=cwd,
+        agent_command=acp_cmd,
+        resumed=bool(args.session_id),
+        log_path=str(session_log.path),
+    )
+    if commands_state["current"]:
+        session_log.append(
+            "commands_registered",
+            count=len(commands_state["current"]),
+            commands=commands_state["current"],
+        )
     print(f"ACP session ready: {acp.session_id}", flush=True)
 
     offset = 0
     MAX_TG = 4000
+    turn_id = 0
+
+    def prompt_log_fields(prompt: dict) -> dict:
+        return {
+            "text": prompt.get("text"),
+            "chat_id": prompt.get("reply_chat_id"),
+            "source": prompt.get("source"),
+            "from_id": prompt.get("from_id"),
+            "username": prompt.get("username"),
+            "chat_type": prompt.get("chat_type"),
+            "message_id": prompt.get("message_id"),
+        }
+
+    def enqueue_prompt(prompt: dict):
+        if len(pending_prompts) >= MAX_PENDING_PROMPTS:
+            log.warning(
+                "Dropping buffered prompt from [%d @%s] chat=%d: queue full (%d)",
+                prompt.get("from_id"),
+                prompt.get("username", ""),
+                prompt.get("reply_chat_id"),
+                len(pending_prompts),
+            )
+            if session_log is not None:
+                session_log.append(
+                    "prompt_dropped",
+                    reason="buffer_full",
+                    queue_size=len(pending_prompts),
+                    **prompt_log_fields(prompt),
+                )
+            try:
+                api_call(token, "sendMessage", {
+                    "chat_id": prompt["reply_chat_id"],
+                    "text": "⚠️ 当前正在等待权限确认，排队已满，请稍后重试。",
+                }, retries=3)
+            except SystemExit:
+                log.warning("sendMessage failed after retries, drop notice skipped")
+            return False
+
+        pending_prompts.append(prompt)
+        log.info(
+            "Buffered prompt from [%d @%s] chat=%d pending=%d",
+            prompt.get("from_id"),
+            prompt.get("username", ""),
+            prompt.get("reply_chat_id"),
+            len(pending_prompts),
+        )
+        if session_log is not None:
+            session_log.append(
+                "prompt_buffered",
+                queue_size=len(pending_prompts),
+                **prompt_log_fields(prompt),
+            )
+        return True
+
+    def buffer_allowed_prompt(update: dict):
+        prompt = _extract_prompt(update, allow_users, bot_id, bot_username)
+        if prompt is None:
+            return False
+        return enqueue_prompt(prompt)
 
     def on_permission(params):
         nonlocal offset
         # Permission dialogs always go to owner, regardless of which chat triggered the prompt
         option_id, offset = _handle_permission(
-            token, owner_chat_id, params, args.yolo, offset
+            token, owner_chat_id, params, args.yolo, offset, buffer_prompt=buffer_allowed_prompt
         )
         return option_id
 
-    def handle_prompt(text: str, reply_chat_id: int):
+    def handle_prompt(text: str, reply_chat_id: int, *, source: str,
+                      from_id: int | None = None, username: str | None = None,
+                      chat_type: str | None = None, message_id: int | None = None,
+                      extra: dict | None = None):
         """Send text to ACP and stream the response back to reply_chat_id."""
+        nonlocal turn_id
+        turn_id += 1
+        current_turn_id = turn_id
+
+        if session_log is not None:
+            payload = {
+                "turn_id": current_turn_id,
+                "session_id": acp.session_id,
+                "source": source,
+                "chat_id": reply_chat_id,
+                "chat_type": chat_type,
+                "from_id": from_id,
+                "username": username,
+                "message_id": message_id,
+                "text": text,
+            }
+            if extra:
+                payload.update(extra)
+            session_log.append("incoming_prompt", **payload)
+
         sr = api_call(token, "sendMessage", {"chat_id": reply_chat_id, "text": "⏳"}, retries=3)
         if not sr.get("ok"):
             log.error("sendMessage failed: %s", sr)
@@ -617,22 +898,64 @@ def cmd_acp(args):
             response = acp.prompt(text, on_chunk=on_chunk, on_permission=on_permission)
         except Exception as e:
             log.error("ACP prompt failed: %s", e)
+            error_text = f"❌ {e}"
             api_call(token, "editMessageText", {
                 "chat_id": edit_state["chat_id"],
                 "message_id": edit_state["id"],
-                "text": f"❌ {e}",
+                "text": error_text,
             }, retries=3)
+            if session_log is not None:
+                session_log.append(
+                    "outgoing_response",
+                    turn_id=current_turn_id,
+                    session_id=acp.session_id,
+                    source=source,
+                    chat_id=reply_chat_id,
+                    message_id=edit_state["id"],
+                    status="error",
+                    text=error_text,
+                )
             return
 
-        tail = response[edit_state["offset"]:] if response else ""
+        final_text = response or "(无回复)"
+        tail = final_text[edit_state["offset"]:]
         api_call(token, "editMessageText", {
             "chat_id": edit_state["chat_id"],
             "message_id": edit_state["id"],
             "text": tail or "(无回复)",
         }, retries=3)
+        if session_log is not None:
+            session_log.append(
+                "outgoing_response",
+                turn_id=current_turn_id,
+                session_id=acp.session_id,
+                source=source,
+                chat_id=reply_chat_id,
+                message_id=edit_state["id"],
+                status="ok",
+                text=final_text,
+            )
 
     try:
         while True:
+            if pending_prompts:
+                prompt = pending_prompts.popleft()
+                log.info(
+                    "Draining buffered prompt from [%d @%s] chat=%d pending=%d",
+                    prompt.get("from_id"),
+                    prompt.get("username", ""),
+                    prompt.get("reply_chat_id"),
+                    len(pending_prompts),
+                )
+                if session_log is not None:
+                    session_log.append(
+                        "prompt_dequeued",
+                        queue_size=len(pending_prompts),
+                        **prompt_log_fields(prompt),
+                    )
+                handle_prompt(**prompt)
+                continue
+
             resp = api_call(token, "getUpdates", {"timeout": 30, "offset": offset}, retries=3)
             if not resp.get("ok"):
                 log.warning("getUpdates failed: %s", resp)
@@ -644,34 +967,17 @@ def cmd_acp(args):
                     continue
                 offset = u["update_id"] + 1
 
-                msg = u.get("message", {})
-                from_info = msg.get("from", {})
-                from_id = from_info.get("id")
-                username = from_info.get("username", "")
-                reply_chat_id = msg.get("chat", {}).get("id")
-
-                if from_id is None or reply_chat_id is None:
-                    continue
-                if from_id not in allow_users:
+                prompt = _extract_prompt(u, allow_users, bot_id, bot_username)
+                if prompt is None:
                     continue
 
-                chat_type = msg.get("chat", {}).get("type", "private")
-                if chat_type in ("group", "supergroup"):
-                    if not _addressed_in_group(msg, bot_id, bot_username):
-                        continue
-
-                text = msg.get("text", "").strip()
-                if not text:
-                    continue
-
-                entities = msg.get("entities", [])
-                if chat_type in ("group", "supergroup"):
-                    text = _strip_bot_mentions(text, entities, bot_username)
-                if not text:
-                    continue
-
-                log.info("ACP ← [%d @%s] %s", from_id, username, text)
-                handle_prompt(text, reply_chat_id)
+                log.info(
+                    "ACP prompt from [%d @%s] chat=%d",
+                    prompt.get("from_id"),
+                    prompt.get("username", ""),
+                    prompt.get("reply_chat_id"),
+                )
+                handle_prompt(**prompt)
 
             # fire any due cron jobs
             now = datetime.now()
@@ -680,7 +986,13 @@ def cmd_acp(args):
                 if _cron_matches(job["expr"], now) and cron_last.get(i) != now_key:
                     cron_last[i] = now_key
                     log.info("Cron[%d] firing: %s", i, job["expr"])
-                    handle_prompt(job["prompt"], owner_chat_id)
+                    handle_prompt(
+                        job["prompt"],
+                        owner_chat_id,
+                        source="cron",
+                        chat_type="private",
+                        extra={"cron_expr": job["expr"], "cron_index": i},
+                    )
 
     finally:
         acp.close()
@@ -708,7 +1020,7 @@ def main():
     p_acp.add_argument("--agent-cmd", default=None, metavar="CMD",
                        help="ACP agent command (overrides [acp] command in config)")
     p_acp.add_argument("--cwd", default=None,
-                       help="Working directory for agent (overrides [acp] cwd in config)")
+                       help="Working directory for agent process and ACP session")
     p_acp.add_argument("--session-id", default=None, metavar="UUID",
                        help="Resume an existing ACP session")
     p_acp.add_argument("--yolo", action="store_true",
