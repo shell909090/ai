@@ -5,9 +5,15 @@ from pathlib import Path
 import pytest
 
 from elocate.config import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
     DEFAULT_EMBED_BATCH_CHARS,
     DEFAULT_EMBED_BATCH_FILES,
     DEFAULT_EXTENSIONS,
+    DEFAULT_RAG_ENTROPY_MAX,
+    DEFAULT_RAG_ENTROPY_MIN,
+    DEFAULT_RAG_MIN_PARAGRAPH_LENGTH,
+    DEFAULT_SUMMARY_MODEL,
     Config,
     DirConfig,
     load_config,
@@ -19,10 +25,14 @@ from elocate.config import (
 def test_default_config_values() -> None:
     config = Config()
     assert config.top_k == 10
-    assert config.chunk_size == 500
-    assert config.chunk_overlap == 50
+    assert config.summary_model == DEFAULT_SUMMARY_MODEL
+    assert config.chunk_size == DEFAULT_CHUNK_SIZE
+    assert config.chunk_overlap == DEFAULT_CHUNK_OVERLAP
     assert config.embed_batch_files == DEFAULT_EMBED_BATCH_FILES
     assert config.embed_batch_chars == DEFAULT_EMBED_BATCH_CHARS
+    assert config.rag_entropy_min == DEFAULT_RAG_ENTROPY_MIN
+    assert config.rag_entropy_max == DEFAULT_RAG_ENTROPY_MAX
+    assert config.rag_min_paragraph_length == DEFAULT_RAG_MIN_PARAGRAPH_LENGTH
     assert config.dirs == []
 
 
@@ -60,18 +70,26 @@ def test_load_config_global_fields(tmp_path: Path) -> None:
     cfg_file.write_text(
         "top_k: 5\n"
         "embedding_model: my-model\n"
+        "summary_model: fast-summary\n"
         "chunk_size: 300\n"
         "chunk_overlap: 30\n"
         "embed_batch_files: 4\n"
         "embed_batch_chars: 2048\n"
+        "rag_entropy_min: 3.5\n"
+        "rag_entropy_max: 8.2\n"
+        "rag_min_paragraph_length: 120\n"
     )
     config = load_config(cfg_file)
     assert config.top_k == 5
     assert config.embedding_model == "my-model"
+    assert config.summary_model == "fast-summary"
     assert config.chunk_size == 300
     assert config.chunk_overlap == 30
     assert config.embed_batch_files == 4
     assert config.embed_batch_chars == 2048
+    assert config.rag_entropy_min == 3.5
+    assert config.rag_entropy_max == 8.2
+    assert config.rag_min_paragraph_length == 120
 
 
 def test_load_config_dirs(tmp_path: Path) -> None:
@@ -182,6 +200,27 @@ def test_load_config_invalid_embed_batch_chars(tmp_path: Path) -> None:
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text("embed_batch_chars: -1\n")
     with pytest.raises(ValueError, match="embed_batch_chars"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_summary_model(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text('summary_model: ""\n')
+    with pytest.raises(ValueError, match="summary_model"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_rag_entropy_range(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("rag_entropy_min: 6.0\nrag_entropy_max: 6.0\n")
+    with pytest.raises(ValueError, match="rag_entropy_max"):
+        load_config(cfg_file)
+
+
+def test_load_config_invalid_rag_min_paragraph_length(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("rag_min_paragraph_length: 0\n")
+    with pytest.raises(ValueError, match="rag_min_paragraph_length"):
         load_config(cfg_file)
 
 

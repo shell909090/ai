@@ -49,10 +49,14 @@ embedding_model: qwen3-embedding:4b
 openai_base_url: http://localhost:11434/v1
 openai_api_key: ""
 top_k: 10
-chunk_size: 500
-chunk_overlap: 50
+summary_model: qwen3.5:4b
+chunk_size: 2048
+chunk_overlap: 200
 embed_batch_files: 64
 embed_batch_chars: 65536
+rag_entropy_min: 4.5
+rag_entropy_max: 8.8
+rag_min_paragraph_length: 80
 
 dirs:
   # 纯文本笔记
@@ -116,6 +120,9 @@ dirs:
 
 ### 索引批处理控制
 
+- `summary_model`：指定走摘要索引路径时使用的总结模型
+- `rag_entropy_min` / `rag_entropy_max`：限制允许直接 raw embedding 的信息熵区间
+- `rag_min_paragraph_length`：典型段落长度中位数低于该值时，改走 summary 路径
 - `embed_batch_files`：限制单批在内存中等待嵌入的文件数量
 - `embed_batch_chars`：限制单批在内存中等待嵌入的文本字符总量
 - `elocate-updatedb --debug` 会输出批次级和全局级性能计数，方便判断瓶颈是在

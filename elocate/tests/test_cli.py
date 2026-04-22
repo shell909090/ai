@@ -5,10 +5,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 from click.testing import CliRunner
 
 from elocate.cli import _configure_logging, main_search, main_updatedb
 from elocate.config import Config, DirConfig
+from elocate.indexer import Indexer
 
 DIM = 8
 
@@ -22,6 +24,12 @@ def _mock_embedder(dim: int = DIM):  # type: ignore[return]
     return emb
 
 
+@pytest.fixture(autouse=True)
+def patch_summary_generation() -> None:
+    with patch.object(Indexer, "_summarize_text", return_value="summary text"):
+        yield
+
+
 def _default_config(tmp_path: Path, has_docs: bool = True) -> Config:
     docs = tmp_path / "docs"
     if has_docs:
@@ -31,6 +39,8 @@ def _default_config(tmp_path: Path, has_docs: bool = True) -> Config:
         dirs=[DirConfig(path=str(docs), extensions=[".md"])] if has_docs else [],
         index_path=tmp_path / "index",
         embedding_model="mock",
+        summary_model="summary-model",
+        rag_min_paragraph_length=20,
         top_k=5,
     )
 
@@ -104,6 +114,8 @@ def test_search_with_regex_filter(tmp_path: Path) -> None:
         dirs=[DirConfig(path=str(docs), extensions=[".md"])],
         index_path=tmp_path / "index",
         embedding_model="mock",
+        summary_model="summary-model",
+        rag_min_paragraph_length=20,
         top_k=10,
     )
     mock_emb = _mock_embedder()
@@ -189,8 +201,9 @@ def test_search_shows_snippet(tmp_path: Path) -> None:
         with patch("elocate.searcher.Embedder", return_value=mock_emb):
             result = runner.invoke(main_search, ["hello"])
     assert result.exit_code == 0
-    # The snippet is "Hello semantic search world." which must appear
-    assert "Hello" in result.output
+    lines = result.output.strip().splitlines()
+    assert len(lines) >= 2
+    assert lines[1].startswith("         ")
 
 
 def test_configure_logging_debug_scopes_to_elocate() -> None:

@@ -17,6 +17,9 @@ _FILES_SCHEMA = pa.schema(
         pa.field("size", pa.int64()),
         pa.field("mtime", pa.float64()),
         pa.field("file_hash", pa.utf8()),
+        pa.field("index_route", pa.utf8()),
+        pa.field("text_entropy", pa.float64()),
+        pa.field("median_paragraph_length", pa.int32()),
     ]
 )
 
@@ -35,6 +38,7 @@ def _chunks_schema(dim: int) -> pa.Schema:
             pa.field("chunk_index", pa.int32()),
             pa.field("start", pa.int32()),
             pa.field("end", pa.int32()),
+            pa.field("content_kind", pa.utf8()),
             pa.field("content", pa.utf8()),
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ]
@@ -109,11 +113,44 @@ class VectorDB:
         rows = tbl.search().where(f"path = '{_esc(path)}'", prefilter=True).limit(1).to_list()
         return rows[0] if rows else None
 
-    def upsert_file_meta(self, path: str, size: int, mtime: float, file_hash: str) -> None:
+    def get_file_meta_by_hash(self, file_hash: str) -> dict | None:
+        """Return one metadata row for this content hash, or None if missing."""
+        tbl = self._files_tbl()
+        rows = (
+            tbl.search()
+            .where(f"file_hash = '{_esc(file_hash)}'", prefilter=True)
+            .limit(1)
+            .to_list()
+        )
+        return rows[0] if rows else None
+
+    def upsert_file_meta(
+        self,
+        path: str,
+        size: int,
+        mtime: float,
+        file_hash: str,
+        *,
+        index_route: str = "raw",
+        text_entropy: float = 0.0,
+        median_paragraph_length: int = 0,
+    ) -> None:
         """Insert or overwrite file metadata record."""
         tbl = self._files_tbl()
         tbl.delete(f"path = '{_esc(path)}'")
-        tbl.add([{"path": path, "size": size, "mtime": mtime, "file_hash": file_hash}])
+        tbl.add(
+            [
+                {
+                    "path": path,
+                    "size": size,
+                    "mtime": mtime,
+                    "file_hash": file_hash,
+                    "index_route": index_route,
+                    "text_entropy": text_entropy,
+                    "median_paragraph_length": median_paragraph_length,
+                }
+            ]
+        )
 
     def delete_file_meta(self, path: str) -> None:
         """Remove file metadata record."""
@@ -152,7 +189,7 @@ class VectorDB:
         return len(rows) > 0
 
     def add_chunks(self, records: list[dict]) -> None:
-        """Bulk-insert chunk records (file_hash/chunk_index/start/end/content/vector)."""
+        """Bulk-insert chunk records including raw/summary content kind."""
         self._chunks_tbl().add(records)
 
     def delete_chunks_by_hash(self, file_hash: str) -> None:
@@ -160,13 +197,13 @@ class VectorDB:
         self._chunks_tbl().delete(f"file_hash = '{_esc(file_hash)}'")
 
     def query(self, vector: list[float], top_k: int) -> list[dict]:
-        """Cosine ANN; returns dicts: file_hash/chunk_index/start/end/content/_distance."""
+        """Cosine ANN; returns dicts including content kind and snippet text."""
         return (
             self._chunks_tbl()
             .search(vector, vector_column_name="vector")
             .metric("cosine")
             .limit(top_k)
-            .select(["file_hash", "chunk_index", "start", "end", "content"])
+            .select(["file_hash", "chunk_index", "start", "end", "content", "content_kind"])
             .to_list()
         )
 

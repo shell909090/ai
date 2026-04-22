@@ -95,6 +95,21 @@ elocate-updatedb [--debug]
 5. `exclude` 与 `extensions` 同时存在时，`exclude` 优先级更高。
 6. 配置语法必须保持可读，并与现有 `dirs` 配置兼容；未配置 `exclude` 时行为必须保持现状。
 
+### 语义路由与摘要索引
+
+当前直接对提取文本做 chunk + embedding，会把宣传碎片、OCR 残片、表格流出文本与连续正文混在同一路径处理，召回质量不稳定，需要在 embedding 前增加一层“直接嵌入 vs 先摘要”的路由：
+
+1. 系统必须在文本抽取完成后、chunk 之前，判断当前材料是否适合直接做 embedding。
+2. 第一版判定粒度以单文件提取文本为单位，不引入新的细粒度 chunk 工程。
+3. 判定必须至少结合字符级信息熵上下限与典型段落长度：
+   - 信息熵低于下限，视为模式化、表格化或高重复文本，不得直接 embedding；
+   - 信息熵高于上限，视为乱码、噪音或非自然语言文本，不得直接 embedding；
+   - 只有信息熵位于正常区间且典型段落长度达到阈值时，才允许直接 chunk + embedding。
+4. 不适合直接 embedding 的文本，必须先调用摘要模型生成主题 summary，再对 summary 做 embedding。
+5. 摘要生成必须只基于原文，不得编造原文中不存在的事实；检索结果仍必须返回原始文件路径。
+6. 配置文件必须新增 `summary_model`、`rag_entropy_min`、`rag_entropy_max`、`rag_min_paragraph_length` 四个字段，并提供默认值。
+7. 摘要模型调用默认复用现有 OpenAI 兼容接口配置，不额外引入第二套服务端配置。
+
 ## 非功能需求
 
 - 语言：Python 3.11+，使用 uv 管理依赖

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from elocate.config import Config, DirConfig
+from elocate.indexer import Indexer
 from elocate.searcher import Searcher, SearchResult
 
 DIM = 8
@@ -17,6 +18,8 @@ def _make_config(tmp_path: Path) -> Config:
         dirs=[DirConfig(path=str(tmp_path / "docs"), extensions=[".md"])],
         index_path=tmp_path / "index",
         embedding_model="mock",
+        summary_model="summary-model",
+        rag_min_paragraph_length=20,
         top_k=5,
     )
 
@@ -26,6 +29,12 @@ def _mock_embedder(dim: int = DIM) -> MagicMock:
     emb.dim = dim
     emb.embed.side_effect = lambda texts: np.ones((len(texts), dim), dtype=np.float32)
     return emb
+
+
+@pytest.fixture(autouse=True)
+def patch_summary_generation() -> None:
+    with patch.object(Indexer, "_summarize_text", return_value="summary text"):
+        yield
 
 
 def test_search_raises_if_no_index(tmp_path: Path) -> None:

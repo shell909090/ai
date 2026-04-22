@@ -3,7 +3,9 @@
 import fnmatch
 import hashlib
 import logging
+import math
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -16,7 +18,14 @@ from elocate.embedder import Embedder
 logger = logging.getLogger(__name__)
 
 _OPENAI_BACKEND = "openai"
+_INDEX_SCHEMA_VERSION = "2"
 MIN_FILE_BYTES = 4  # files smaller than this have no search value (< ~2 CJK chars)
+_SUMMARY_SYSTEM_PROMPT = (
+    "You prepare retrieval summaries for local file search. "
+    "Summarize only what is explicitly supported by the input text. "
+    "Do not invent facts, names, claims, or details that do not appear in the source. "
+    "Write one concise summary in the same language as the source when possible."
+)
 
 
 @dataclass
@@ -39,7 +48,10 @@ class BatchItem:
     file_hash: str
     size: int
     mtime: float
-    text: str
+    index_text: str
+    index_route: str
+    text_entropy: float
+    median_paragraph_length: int
     old_hash: str | None
 
 
@@ -76,7 +88,21 @@ class ChunkedFile:
     mtime: float
     old_hash: str | None
     action: str
-    chunks: list
+    index_route: str
+    text_entropy: float
+    median_paragraph_length: int
+    chunks: list["IndexedChunk"]
+
+
+@dataclass
+class IndexedChunk:
+    """A chunk record ready for embedding and persistence."""
+
+    content: str
+    chunk_index: int
+    start: int
+    end: int
+    content_kind: str
 
 
 class Indexer:
@@ -94,23 +120,52 @@ class Indexer:
             api_key=self._config.openai_api_key,
         )
 
-        # B002: if model/backend changed since last run, force full rebuild
+        # B002: if model/backend/indexing semantics changed since last run, force rebuild
         if self._db.tables_exist():
+            stored_schema = self._db.get_meta("index_schema_version")
             stored_model = self._db.get_meta("embedding_model")
             stored_backend = self._db.get_meta("embedder_backend")
-            if stored_model != self._config.embedding_model or stored_backend != _OPENAI_BACKEND:
+            stored_chunk_size = self._db.get_meta("chunk_size")
+            stored_chunk_overlap = self._db.get_meta("chunk_overlap")
+            stored_summary_model = self._db.get_meta("summary_model")
+            stored_entropy_min = self._db.get_meta("rag_entropy_min")
+            stored_entropy_max = self._db.get_meta("rag_entropy_max")
+            stored_min_para = self._db.get_meta("rag_min_paragraph_length")
+            if (
+                stored_schema != _INDEX_SCHEMA_VERSION
+                or stored_model != self._config.embedding_model
+                or stored_backend != _OPENAI_BACKEND
+                or stored_chunk_size != str(self._config.chunk_size)
+                or stored_chunk_overlap != str(self._config.chunk_overlap)
+                or stored_summary_model != self._config.summary_model
+                or stored_entropy_min != str(self._config.rag_entropy_min)
+                or stored_entropy_max != str(self._config.rag_entropy_max)
+                or stored_min_para != str(self._config.rag_min_paragraph_length)
+            ):
                 logger.info(
-                    "Embedding config changed (%s/%s → %s/%s); rebuilding index.",
+                    "Index config changed; rebuilding index. "
+                    "schema=%s→%s backend/model=%s/%s→%s/%s summary_model=%s→%s",
+                    stored_schema,
+                    _INDEX_SCHEMA_VERSION,
                     stored_backend,
                     stored_model,
                     _OPENAI_BACKEND,
                     self._config.embedding_model,
+                    stored_summary_model,
+                    self._config.summary_model,
                 )
                 self._db.drop_tables()
 
         self._db.init_tables(embedder.dim)
+        self._db.set_meta("index_schema_version", _INDEX_SCHEMA_VERSION)
         self._db.set_meta("embedding_model", self._config.embedding_model)
         self._db.set_meta("embedder_backend", _OPENAI_BACKEND)
+        self._db.set_meta("chunk_size", str(self._config.chunk_size))
+        self._db.set_meta("chunk_overlap", str(self._config.chunk_overlap))
+        self._db.set_meta("summary_model", self._config.summary_model)
+        self._db.set_meta("rag_entropy_min", str(self._config.rag_entropy_min))
+        self._db.set_meta("rag_entropy_max", str(self._config.rag_entropy_max))
+        self._db.set_meta("rag_min_paragraph_length", str(self._config.rag_min_paragraph_length))
 
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
         perf = PerfStats()
@@ -202,7 +257,15 @@ class Indexer:
 
         if rec and file_hash == old_hash:
             # Metadata drift (size/mtime) but content identical — just refresh metadata
-            self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+            self._db.upsert_file_meta(
+                path_str,
+                size,
+                mtime,
+                file_hash,
+                index_route=rec.get("index_route", "raw"),
+                text_entropy=float(rec.get("text_entropy", 0.0)),
+                median_paragraph_length=int(rec.get("median_paragraph_length", 0)),
+            )
             return "updated", None
 
         # Content changed or new file.
@@ -221,7 +284,19 @@ class Indexer:
             )
 
         # New hash already indexed — update metadata and clean up old hash if unreferenced
-        self._db.upsert_file_meta(path_str, size, mtime, file_hash)
+        existing = self._db.get_file_meta_by_hash(file_hash)
+        index_route = existing.get("index_route", "raw") if existing else "raw"
+        text_entropy = float(existing.get("text_entropy", 0.0)) if existing else 0.0
+        median_paragraph_length = int(existing.get("median_paragraph_length", 0)) if existing else 0
+        self._db.upsert_file_meta(
+            path_str,
+            size,
+            mtime,
+            file_hash,
+            index_route=index_route,
+            text_entropy=text_entropy,
+            median_paragraph_length=median_paragraph_length,
+        )
         if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
             self._db.delete_chunks_by_hash(old_hash)
         return "updated" if rec else "added", None
@@ -251,6 +326,17 @@ class Indexer:
             extract_seconds = time.perf_counter() - extract_started
             perf.extract_seconds_total += extract_seconds
             perf.batch_extract_seconds += extract_seconds
+            text_entropy = self._text_entropy(text)
+            median_paragraph_length = self._median_paragraph_length(text)
+            index_route = self._choose_index_route(text_entropy, median_paragraph_length)
+            try:
+                index_text = text
+                if index_route == "summary":
+                    index_text = self._summarize_text(text)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Cannot summarize %s: %s", pending.path, exc)
+                perf.files_extract_failed += 1
+                continue
 
             batch.append(
                 BatchItem(
@@ -258,11 +344,14 @@ class Indexer:
                     file_hash=pending.file_hash,
                     size=pending.size,
                     mtime=pending.mtime,
-                    text=text,
+                    index_text=index_text,
+                    index_route=index_route,
+                    text_entropy=text_entropy,
+                    median_paragraph_length=median_paragraph_length,
                     old_hash=pending.old_hash,
                 )
             )
-            batch_chars += len(text)
+            batch_chars += len(index_text)
 
             if self._should_flush_batch(batch, batch_chars):
                 batch_added, batch_updated = self._index_batch(
@@ -288,6 +377,75 @@ class Indexer:
             len(batch) >= self._config.embed_batch_files
             or batch_chars >= self._config.embed_batch_chars
         )
+
+    def _text_entropy(self, text: str) -> float:
+        """Compute character-level Shannon entropy for extracted text."""
+        if not text:
+            return 0.0
+        counts: dict[str, int] = {}
+        for ch in text:
+            counts[ch] = counts.get(ch, 0) + 1
+        total = len(text)
+        entropy = 0.0
+        for count in counts.values():
+            p = count / total
+            entropy -= p * math.log2(p)
+        return entropy
+
+    def _median_paragraph_length(self, text: str) -> int:
+        """Compute the median length of non-empty paragraphs split by blank lines."""
+        if not text:
+            return 0
+        lengths = sorted(len(part.strip()) for part in re.split(r"\n\s*\n+", text) if part.strip())
+        if not lengths:
+            return 0
+        mid = len(lengths) // 2
+        if len(lengths) % 2 == 1:
+            return lengths[mid]
+        return (lengths[mid - 1] + lengths[mid]) // 2
+
+    def _choose_index_route(
+        self,
+        text_entropy: float,
+        median_paragraph_length: int,
+    ) -> str:
+        """Choose whether one file should use raw chunks or a summary chunk."""
+        if text_entropy < self._config.rag_entropy_min:
+            return "summary"
+        if text_entropy > self._config.rag_entropy_max:
+            return "summary"
+        if median_paragraph_length < self._config.rag_min_paragraph_length:
+            return "summary"
+        return "raw"
+
+    def _summarize_text(self, text: str) -> str:
+        """Generate a factual topic summary for indexing."""
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url=self._config.openai_base_url or None,
+            api_key=self._config.openai_api_key or "none",
+        )
+        response = client.chat.completions.create(
+            model=self._config.summary_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": _SUMMARY_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize this file for semantic retrieval. "
+                        "Keep the output concise, mention the main theme and key facts, "
+                        "and do not invent anything not supported by the source.\n\n"
+                        f"{text}"
+                    ),
+                },
+            ],
+        )
+        summary = (response.choices[0].message.content or "").strip()
+        if not summary:
+            raise ValueError("summary model returned empty content")
+        return summary
 
     def _index_batch(
         self,
@@ -362,10 +520,38 @@ class Indexer:
         per_file: list[ChunkedFile] = []
 
         for item in batch:
-            chunks = chunker.chunk(item.text)
+            if item.index_route == "summary":
+                chunks = [
+                    IndexedChunk(
+                        content=item.index_text,
+                        chunk_index=0,
+                        start=0,
+                        end=len(item.index_text),
+                        content_kind="summary",
+                    )
+                ]
+            else:
+                chunks = [
+                    IndexedChunk(
+                        content=chunk.content,
+                        chunk_index=chunk.chunk_index,
+                        start=chunk.start,
+                        end=chunk.end,
+                        content_kind="raw",
+                    )
+                    for chunk in chunker.chunk(item.index_text)
+                ]
             if not chunks:
                 logger.warning("No chunks produced for %s; recording metadata only.", item.path)
-                self._db.upsert_file_meta(item.path, item.size, item.mtime, item.file_hash)
+                self._db.upsert_file_meta(
+                    item.path,
+                    item.size,
+                    item.mtime,
+                    item.file_hash,
+                    index_route=item.index_route,
+                    text_entropy=item.text_entropy,
+                    median_paragraph_length=item.median_paragraph_length,
+                )
                 if item.old_hash is not None and not self._db.get_paths_by_hash(item.old_hash):
                     self._db.delete_chunks_by_hash(item.old_hash)
                 if item.old_hash is None:
@@ -382,6 +568,9 @@ class Indexer:
                     mtime=item.mtime,
                     old_hash=item.old_hash,
                     action="added" if item.old_hash is None else "updated",
+                    index_route=item.index_route,
+                    text_entropy=item.text_entropy,
+                    median_paragraph_length=item.median_paragraph_length,
                     chunks=chunks,
                 )
             )
@@ -410,6 +599,7 @@ class Indexer:
                         "chunk_index": chunk.chunk_index,
                         "start": chunk.start,
                         "end": chunk.end,
+                        "content_kind": chunk.content_kind,
                         "content": chunk.content,
                         "vector": vec.tolist(),
                     }
@@ -419,7 +609,15 @@ class Indexer:
             self._db.add_chunks(all_chunk_records)
 
         for item in per_file:
-            self._db.upsert_file_meta(item.path, item.size, item.mtime, item.file_hash)
+            self._db.upsert_file_meta(
+                item.path,
+                item.size,
+                item.mtime,
+                item.file_hash,
+                index_route=item.index_route,
+                text_entropy=item.text_entropy,
+                median_paragraph_length=item.median_paragraph_length,
+            )
             # B001: clean up old hash AFTER successful write
             if item.old_hash is not None and not self._db.get_paths_by_hash(item.old_hash):
                 self._db.delete_chunks_by_hash(item.old_hash)

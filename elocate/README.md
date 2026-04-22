@@ -49,10 +49,14 @@ embedding_model: qwen3-embedding:4b
 openai_base_url: http://localhost:11434/v1
 openai_api_key: ""
 top_k: 10
-chunk_size: 500
-chunk_overlap: 50
+summary_model: qwen3.5:4b
+chunk_size: 2048
+chunk_overlap: 200
 embed_batch_files: 64
 embed_batch_chars: 65536
+rag_entropy_min: 4.5
+rag_entropy_max: 8.8
+rag_min_paragraph_length: 80
 
 dirs:
   - path: ~/notes
@@ -114,6 +118,9 @@ Use relative globs when you only want to skip part of a tree.
 
 ### Indexing Batch Controls
 
+- `summary_model` chooses the model used when a file is routed to summary-first indexing
+- `rag_entropy_min` / `rag_entropy_max` bound the entropy band allowed for direct raw embedding
+- `rag_min_paragraph_length` sets the median paragraph-length threshold for direct raw embedding
 - `embed_batch_files` limits how many extracted files may wait in memory before a flush
 - `embed_batch_chars` limits the total extracted character count before a flush
 - `elocate-updatedb --debug` prints per-batch and overall timing so you can see whether

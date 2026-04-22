@@ -51,13 +51,24 @@ def test_init_tables_idempotent(db: VectorDB) -> None:
 
 
 def test_upsert_and_get_file_meta(db: VectorDB) -> None:
-    db.upsert_file_meta("/a/b.md", 100, 1.0, "abc123")
+    db.upsert_file_meta(
+        "/a/b.md",
+        100,
+        1.0,
+        "abc123",
+        index_route="summary",
+        text_entropy=4.2,
+        median_paragraph_length=18,
+    )
     meta = db.get_file_meta("/a/b.md")
     assert meta is not None
     assert meta["path"] == "/a/b.md"
     assert meta["size"] == 100
     assert meta["mtime"] == 1.0
     assert meta["file_hash"] == "abc123"
+    assert meta["index_route"] == "summary"
+    assert meta["text_entropy"] == pytest.approx(4.2)
+    assert meta["median_paragraph_length"] == 18
 
 
 def test_get_file_meta_missing(db: VectorDB) -> None:
@@ -92,6 +103,13 @@ def test_get_paths_by_hash(db: VectorDB) -> None:
     assert set(paths) == {"/orig.md", "/copy.md"}
 
 
+def test_get_file_meta_by_hash(db: VectorDB) -> None:
+    db.upsert_file_meta("/orig.md", 1, 1.0, "shared", index_route="raw")
+    meta = db.get_file_meta_by_hash("shared")
+    assert meta is not None
+    assert meta["path"] == "/orig.md"
+
+
 # ---- chunks table ----
 
 
@@ -104,6 +122,7 @@ def test_add_and_query_chunks(db: VectorDB) -> None:
                 "chunk_index": 0,
                 "start": 0,
                 "end": 10,
+                "content_kind": "raw",
                 "content": "hello world",
                 "vector": v,
             }
@@ -112,6 +131,7 @@ def test_add_and_query_chunks(db: VectorDB) -> None:
     results = db.query(v, top_k=5)
     assert len(results) == 1
     assert results[0]["file_hash"] == "h1"
+    assert results[0]["content_kind"] == "raw"
     assert results[0]["content"] == "hello world"
     assert "_distance" in results[0]
 
@@ -124,6 +144,7 @@ def test_hash_has_chunks_true(db: VectorDB) -> None:
                 "chunk_index": 0,
                 "start": 0,
                 "end": 5,
+                "content_kind": "raw",
                 "content": "data",
                 "vector": _vec(),
             }
@@ -144,6 +165,7 @@ def test_delete_chunks_by_hash(db: VectorDB) -> None:
                 "chunk_index": 0,
                 "start": 0,
                 "end": 5,
+                "content_kind": "raw",
                 "content": "data",
                 "vector": _vec(),
             }
@@ -162,6 +184,7 @@ def test_query_top_k_limit(db: VectorDB) -> None:
                     "chunk_index": 0,
                     "start": 0,
                     "end": 5,
+                    "content_kind": "raw",
                     "content": f"chunk {i}",
                     "vector": _vec(),
                 }

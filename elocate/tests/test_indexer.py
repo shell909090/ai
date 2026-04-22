@@ -26,6 +26,9 @@ def _make_config(
     *,
     embed_batch_files: int = 64,
     embed_batch_chars: int = 65536,
+    rag_entropy_min: float = 4.5,
+    rag_entropy_max: float = 8.8,
+    rag_min_paragraph_length: int = 20,
 ) -> Config:
     return Config(
         dirs=dirs,
@@ -35,6 +38,10 @@ def _make_config(
         chunk_overlap=50,
         embed_batch_files=embed_batch_files,
         embed_batch_chars=embed_batch_chars,
+        summary_model="summary-model",
+        rag_entropy_min=rag_entropy_min,
+        rag_entropy_max=rag_entropy_max,
+        rag_min_paragraph_length=rag_min_paragraph_length,
     )
 
 
@@ -47,6 +54,12 @@ def notes_dir(tmp_path: Path) -> Path:
     )
     (d / "b.txt").write_text("Another document with sufficient content for indexing.")
     return d
+
+
+@pytest.fixture(autouse=True)
+def patch_summary_generation() -> None:
+    with patch.object(Indexer, "_summarize_text", return_value="summary text"):
+        yield
 
 
 def _make_indexer(tmp_path: Path, notes_dir: Path) -> tuple[Indexer, MagicMock]:
@@ -225,6 +238,35 @@ def test_file_hash_consistent(tmp_path: Path) -> None:
     assert indexer._file_hash(f) == indexer._file_hash(f)
 
 
+def test_text_entropy_distinguishes_repetitive_text(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    repetitive = "A" * 200
+    natural = "这是一个完整的自然语言段落。" * 20
+    assert indexer._text_entropy(repetitive) < indexer._text_entropy(natural)
+
+
+def test_median_paragraph_length_uses_blank_line_split(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [])
+    indexer = Indexer(cfg)
+    text = "short\n\n" + ("long paragraph " * 10) + "\n\nmiddle sized para"
+    assert indexer._median_paragraph_length(text) > len("short")
+
+
+def test_choose_index_route_prefers_summary_for_short_paragraphs(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [], rag_min_paragraph_length=80)
+    indexer = Indexer(cfg)
+    route = indexer._choose_index_route(7.2, 20)
+    assert route == "summary"
+
+
+def test_choose_index_route_allows_raw_in_normal_band(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path, [], rag_entropy_min=4.5, rag_entropy_max=8.8)
+    indexer = Indexer(cfg)
+    route = indexer._choose_index_route(7.2, 120)
+    assert route == "raw"
+
+
 def test_extract_text_uses_all2txt_for_plaintext_files(tmp_path: Path) -> None:
     from all2txt import registry as _all2txt_registry
 
@@ -247,6 +289,70 @@ def test_run_adds_new_files(tmp_path: Path, notes_dir: Path) -> None:
     assert added == 2
     assert updated == 0
     assert removed == 0
+
+
+def test_run_routes_short_file_to_summary(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    doc = notes / "doc.md"
+    doc.write_text("placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        rag_min_paragraph_length=80,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(indexer, "_extract_text", return_value="短句一。\n\n短句二。"):
+            with patch.object(
+                indexer, "_summarize_text", return_value="这是主题摘要。"
+            ) as mock_sum:
+                added, updated, removed = indexer.run()
+
+    assert (added, updated, removed) == (1, 0, 0)
+    mock_sum.assert_called_once()
+    meta = indexer._db.get_file_meta(str(doc))
+    assert meta is not None
+    assert meta["index_route"] == "summary"
+    rows = indexer._db.query([1.0] * DIM, top_k=5)
+    assert rows[0]["content_kind"] == "summary"
+    assert rows[0]["content"] == "这是主题摘要。"
+
+
+def test_run_routes_long_text_to_raw_chunks(tmp_path: Path) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    doc = notes / "doc.md"
+    doc.write_text("placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        rag_min_paragraph_length=80,
+    )
+    mock_emb = _mock_embedder()
+    raw_text = (
+        "这是一段足够长的正文，用来说明这是一个适合直接嵌入的自然语言段落。" * 3
+        + "\n\n"
+        + "第二段也足够长，用来保持段落长度和主题展开。" * 3
+    )
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(indexer, "_extract_text", return_value=raw_text):
+            with patch.object(indexer, "_summarize_text") as mock_sum:
+                added, updated, removed = indexer.run()
+
+    assert (added, updated, removed) == (1, 0, 0)
+    mock_sum.assert_not_called()
+    meta = indexer._db.get_file_meta(str(doc))
+    assert meta is not None
+    assert meta["index_route"] == "raw"
+    rows = indexer._db.query([1.0] * DIM, top_k=5)
+    assert rows[0]["content_kind"] == "raw"
 
 
 def test_run_skips_unchanged_files(tmp_path: Path, notes_dir: Path) -> None:
@@ -380,6 +486,7 @@ def test_run_flushes_on_embed_batch_chars_threshold(tmp_path: Path) -> None:
         [DirConfig(path=str(notes), extensions=[".md"])],
         embed_batch_files=10,
         embed_batch_chars=50,
+        rag_entropy_min=0.0,
     )
     mock_emb = _mock_embedder()
 
@@ -388,7 +495,11 @@ def test_run_flushes_on_embed_batch_chars_threshold(tmp_path: Path) -> None:
         with patch.object(
             indexer,
             "_extract_text",
-            side_effect=["A" * 30, "B" * 30, "C" * 30],
+            side_effect=[
+                "Alpha beta gamma delta epsilon.",
+                "Zeta eta theta iota kappa mu.",
+                "Nu xi omicron pi rho sigma.",
+            ],
         ):
             indexer.run()
 
@@ -406,12 +517,20 @@ def test_run_single_large_file_flushes_immediately(tmp_path: Path) -> None:
         [DirConfig(path=str(notes), extensions=[".md"])],
         embed_batch_files=10,
         embed_batch_chars=25,
+        rag_entropy_min=0.0,
     )
     mock_emb = _mock_embedder()
 
     with patch("elocate.indexer.Embedder", return_value=mock_emb):
         indexer = Indexer(cfg)
-        with patch.object(indexer, "_extract_text", side_effect=["A" * 30, "B" * 30]):
+        with patch.object(
+            indexer,
+            "_extract_text",
+            side_effect=[
+                "Alpha beta gamma delta epsilon.",
+                "Zeta eta theta iota kappa mu.",
+            ],
+        ):
             added, updated, removed = indexer.run()
 
     assert added == 2
@@ -516,8 +635,10 @@ def test_run_rebuilds_on_model_change(tmp_path: Path, notes_dir: Path) -> None:
         dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
         index_path=tmp_path / "index",
         embedding_model="model-a",
+        summary_model="summary-model",
         chunk_size=500,
         chunk_overlap=50,
+        rag_min_paragraph_length=20,
     )
     mock_emb = _mock_embedder()
     with patch("elocate.indexer.Embedder", return_value=mock_emb):
@@ -529,14 +650,49 @@ def test_run_rebuilds_on_model_change(tmp_path: Path, notes_dir: Path) -> None:
         dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
         index_path=tmp_path / "index",
         embedding_model="model-b",
+        summary_model="summary-model",
         chunk_size=500,
         chunk_overlap=50,
+        rag_min_paragraph_length=20,
     )
     with patch("elocate.indexer.Embedder", return_value=mock_emb):
         indexer_b = Indexer(cfg_b)
         added_b, updated_b, _ = indexer_b.run()
 
     # After rebuild all files are new again
+    assert added_b == 2
+    assert updated_b == 0
+
+
+def test_run_rebuilds_on_summary_model_change(tmp_path: Path, notes_dir: Path) -> None:
+    cfg_a = Config(
+        dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
+        index_path=tmp_path / "index",
+        embedding_model="model-a",
+        summary_model="summary-a",
+        chunk_size=500,
+        chunk_overlap=50,
+        rag_min_paragraph_length=20,
+    )
+    mock_emb = _mock_embedder()
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer_a = Indexer(cfg_a)
+        added_a, _, _ = indexer_a.run()
+    assert added_a == 2
+
+    cfg_b = Config(
+        dirs=[DirConfig(path=str(notes_dir), extensions=[".md", ".txt"])],
+        index_path=tmp_path / "index",
+        embedding_model="model-a",
+        summary_model="summary-b",
+        chunk_size=500,
+        chunk_overlap=50,
+        rag_min_paragraph_length=20,
+    )
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer_b = Indexer(cfg_b)
+        added_b, updated_b, _ = indexer_b.run()
+
     assert added_b == 2
     assert updated_b == 0
 
