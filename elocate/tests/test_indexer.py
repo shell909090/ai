@@ -595,6 +595,43 @@ def test_run_logs_debug_perf_counters(tmp_path: Path, caplog: pytest.LogCaptureF
     assert "Index perf:" in caplog.text
 
 
+def test_run_logs_route_summary_and_file_write(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    doc = notes / "doc.md"
+    doc.write_text("placeholder")
+
+    cfg = _make_config(
+        tmp_path,
+        [DirConfig(path=str(notes), extensions=[".md"])],
+        embed_batch_files=1,
+        embed_batch_chars=10_000,
+        rag_min_paragraph_length=80,
+    )
+    mock_emb = _mock_embedder()
+
+    with patch("elocate.indexer.Embedder", return_value=mock_emb):
+        indexer = Indexer(cfg)
+        with patch.object(indexer, "_extract_text", return_value="短句一。\n\n短句二。"):
+            with patch.object(indexer, "_summarize_text", return_value="这是主题摘要。"):
+                with caplog.at_level(logging.DEBUG):
+                    indexer.run()
+
+    assert "Routing config:" in caplog.text
+    assert "Route decision:" in caplog.text
+    assert "reason=" in caplog.text
+    assert "Summary start:" in caplog.text
+    assert "Summary done:" in caplog.text
+    assert "raw_chars_per_second=" in caplog.text
+    assert "summary_chars_per_second=" in caplog.text
+    assert "Indexed file:" in caplog.text
+    assert "route=summary" in caplog.text
+    assert "status=written" in caplog.text
+
+
 def test_run_preserves_index_on_extract_failure(tmp_path: Path) -> None:
     """B001: extraction failure after content change must not destroy the old index."""
     notes = tmp_path / "notes"

@@ -169,6 +169,7 @@ class Indexer:
 
         chunker = Chunker(self._config.chunk_size, self._config.chunk_overlap)
         perf = PerfStats()
+        self._log_route_config()
 
         disk_files = self._collect_files()
         disk_paths = {str(p) for p, _ in disk_files}
@@ -266,6 +267,15 @@ class Indexer:
                 text_entropy=float(rec.get("text_entropy", 0.0)),
                 median_paragraph_length=int(rec.get("median_paragraph_length", 0)),
             )
+            self._log_file_written(
+                path=path_str,
+                action="updated",
+                status="metadata_refreshed",
+                index_route=rec.get("index_route", "raw"),
+                text_entropy=float(rec.get("text_entropy", 0.0)),
+                median_paragraph_length=int(rec.get("median_paragraph_length", 0)),
+                chunks=0,
+            )
             return "updated", None
 
         # Content changed or new file.
@@ -299,6 +309,15 @@ class Indexer:
         )
         if old_hash is not None and not self._db.get_paths_by_hash(old_hash):
             self._db.delete_chunks_by_hash(old_hash)
+        self._log_file_written(
+            path=path_str,
+            action="updated" if rec else "added",
+            status="reused_chunks",
+            index_route=index_route,
+            text_entropy=text_entropy,
+            median_paragraph_length=median_paragraph_length,
+            chunks=0,
+        )
         return "updated" if rec else "added", None
 
     def _flush_pending_files(
@@ -328,11 +347,31 @@ class Indexer:
             perf.batch_extract_seconds += extract_seconds
             text_entropy = self._text_entropy(text)
             median_paragraph_length = self._median_paragraph_length(text)
-            index_route = self._choose_index_route(text_entropy, median_paragraph_length)
+            index_route, route_reason = self._route_decision(text_entropy, median_paragraph_length)
+            self._log_route_decision(
+                path=pending.path,
+                text_entropy=text_entropy,
+                median_paragraph_length=median_paragraph_length,
+                index_route=index_route,
+                reason=route_reason,
+            )
             try:
                 index_text = text
                 if index_route == "summary":
+                    summary_started = time.perf_counter()
+                    logger.debug(
+                        "Summary start: path=%s model=%s input_chars=%d",
+                        pending.path,
+                        self._config.summary_model,
+                        len(text),
+                    )
                     index_text = self._summarize_text(text)
+                    self._log_summary_metrics(
+                        path=pending.path,
+                        input_chars=len(text),
+                        output_chars=len(index_text),
+                        seconds=time.perf_counter() - summary_started,
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Cannot summarize %s: %s", pending.path, exc)
                 perf.files_extract_failed += 1
@@ -410,13 +449,22 @@ class Indexer:
         median_paragraph_length: int,
     ) -> str:
         """Choose whether one file should use raw chunks or a summary chunk."""
+        route, _ = self._route_decision(text_entropy, median_paragraph_length)
+        return route
+
+    def _route_decision(
+        self,
+        text_entropy: float,
+        median_paragraph_length: int,
+    ) -> tuple[str, str]:
+        """Return the chosen route plus the rule that selected it."""
         if text_entropy < self._config.rag_entropy_min:
-            return "summary"
+            return "summary", "entropy_below_min"
         if text_entropy > self._config.rag_entropy_max:
-            return "summary"
+            return "summary", "entropy_above_max"
         if median_paragraph_length < self._config.rag_min_paragraph_length:
-            return "summary"
-        return "raw"
+            return "summary", "paragraph_length_below_min"
+        return "raw", "within_thresholds"
 
     def _summarize_text(self, text: str) -> str:
         """Generate a factual topic summary for indexing."""
@@ -558,6 +606,15 @@ class Indexer:
                     added += 1
                 else:
                     updated += 1
+                self._log_file_written(
+                    path=item.path,
+                    action="added" if item.old_hash is None else "updated",
+                    status="metadata_only",
+                    index_route=item.index_route,
+                    text_entropy=item.text_entropy,
+                    median_paragraph_length=item.median_paragraph_length,
+                    chunks=0,
+                )
                 continue
 
             per_file.append(
@@ -625,8 +682,94 @@ class Indexer:
                 added += 1
             else:
                 updated += 1
+            self._log_file_written(
+                path=item.path,
+                action=item.action,
+                status="written",
+                index_route=item.index_route,
+                text_entropy=item.text_entropy,
+                median_paragraph_length=item.median_paragraph_length,
+                chunks=len(item.chunks),
+            )
 
         return added, updated, all_chunk_records
+
+    def _log_route_config(self) -> None:
+        """Emit the active routing thresholds for this indexing run."""
+        logger.debug(
+            "Routing config: summary_model=%s rag_entropy_min=%.3f rag_entropy_max=%.3f "
+            "rag_min_paragraph_length=%d",
+            self._config.summary_model,
+            self._config.rag_entropy_min,
+            self._config.rag_entropy_max,
+            self._config.rag_min_paragraph_length,
+        )
+
+    def _log_route_decision(
+        self,
+        *,
+        path: str,
+        text_entropy: float,
+        median_paragraph_length: int,
+        index_route: str,
+        reason: str,
+    ) -> None:
+        """Emit one debug log for the route chosen for a file."""
+        logger.debug(
+            "Route decision: path=%s entropy=%.3f median_paragraph_length=%d route=%s reason=%s",
+            path,
+            text_entropy,
+            median_paragraph_length,
+            index_route,
+            reason,
+        )
+
+    def _log_summary_metrics(
+        self,
+        *,
+        path: str,
+        input_chars: int,
+        output_chars: int,
+        seconds: float,
+    ) -> None:
+        """Emit debug metrics for one summary-model call."""
+        raw_chars_per_second = input_chars / seconds if seconds > 0 else 0.0
+        summary_chars_per_second = output_chars / seconds if seconds > 0 else 0.0
+        logger.debug(
+            "Summary done: path=%s model=%s input_chars=%d output_chars=%d "
+            "seconds=%.3f raw_chars_per_second=%.1f summary_chars_per_second=%.1f",
+            path,
+            self._config.summary_model,
+            input_chars,
+            output_chars,
+            seconds,
+            raw_chars_per_second,
+            summary_chars_per_second,
+        )
+
+    def _log_file_written(
+        self,
+        *,
+        path: str,
+        action: str,
+        status: str,
+        index_route: str,
+        text_entropy: float,
+        median_paragraph_length: int,
+        chunks: int,
+    ) -> None:
+        """Emit one info log after one file has been written or refreshed."""
+        logger.info(
+            "Indexed file: path=%s action=%s status=%s route=%s chunks=%d "
+            "entropy=%.3f median_paragraph_length=%d",
+            path,
+            action,
+            status,
+            index_route,
+            chunks,
+            text_entropy,
+            median_paragraph_length,
+        )
 
     def _log_batch_metrics(
         self,

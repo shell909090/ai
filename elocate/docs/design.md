@@ -125,6 +125,7 @@ files 表中存在但磁盘上消失的 path：
    - `median_paragraph_length`：按空行切段、去掉空白段后的段长中位数。
 3. 根据配置决定该文件走 `raw` 还是 `summary` 路径。
 4. `raw` 路径继续进入当前 chunker；`summary` 路径则先生成单份主题 summary，再把 summary 作为唯一索引文本写库。
+5. 每个文件完成路由和写库后，都要输出一条 `info` 日志，包含路径、路由结果、熵值、典型段落长度和写入结果。
 
 ### 配置项
 
@@ -167,6 +168,13 @@ def _summarize_text(self, text: str) -> str:
 2. 输出为单份 summary 文本，用于描述该文件的主题、核心对象与关键事实。
 3. prompt 必须要求模型仅基于输入总结，不得补充输入中不存在的信息。
 4. 摘要模型调用默认复用 `openai_base_url` 与 `openai_api_key`。
+
+额外日志要求：
+
+- summary 调用开始前输出 `debug`：文件路径、目标模型。
+- summary 调用结束后输出 `debug`：耗时秒数、输入字符数、summary 字符数、原始文本 chars/s 与 summary chars/s。
+- 每个文件完成路由判定时输出 `debug`：`text_entropy`、`median_paragraph_length`、命中的阈值规则与最终 `index_route`。
+- 每个文件完成写库或元数据刷新后输出 `info`：文件路径、action、写入状态、路由结果与 chunk 数。
 
 ### 写库策略
 
@@ -250,7 +258,8 @@ CLI 的 `--debug` 不再把 root logger 直接提升到 `DEBUG`。改为：
 2. `elocate` 命名空间 logger（如 `elocate.cli`、`elocate.indexer`）单独提升到 `DEBUG`。
 3. `all2txt` 命名空间在 debug 模式下单独提升到 `INFO`，用于放出 MIME 检测、可用 backend 和最终 backend 选择等诊断信息。
 4. `openai`、`httpx`、`httpcore` 命名空间显式设为 `WARNING`，确保网络请求和 SDK 细节不会冲掉批次性能输出。
-5. 非 debug 模式保持现状，不主动调整日志配置。
+5. `--debug` 需要额外输出当前 `summary_model`、熵阈值和段落长度阈值，便于用户确认当前路由参数。
+6. 非 debug 模式保持现状，不主动调整日志配置。
 
 ---
 

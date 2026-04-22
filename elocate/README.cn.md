@@ -127,6 +127,10 @@ dirs:
 - `embed_batch_chars`：限制单批在内存中等待嵌入的文本字符总量
 - `elocate-updatedb --debug` 会输出批次级和全局级性能计数，方便判断瓶颈是在
   抽取、切分、embedding 还是写库
+- `--debug` 还会输出当前语义路由阈值、每个文件的路由判定，以及 summary 模型
+  的输入/输出 chars/s，方便观察 summary 性能
+- 文件写库完成后会输出 `info` 日志，包含路径、路由、action 和写入状态，便于观察
+  已经索引了哪些文件
 - `--debug` 还会保留 `all2txt` 的 backend 选择日志，同时继续抑制
   `openai` / `httpx` / `httpcore` 的噪音调试输出
 

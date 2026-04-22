@@ -125,6 +125,10 @@ Use relative globs when you only want to skip part of a tree.
 - `embed_batch_chars` limits the total extracted character count before a flush
 - `elocate-updatedb --debug` prints per-batch and overall timing so you can see whether
   extraction, chunking, embedding, or DB writes are the bottleneck
+- `--debug` also shows the active semantic-routing thresholds, one route decision per file,
+  and summary-model throughput as raw/source chars per second plus summary chars per second
+- file writes emit `info` logs with the indexed path, route, action, and write status so you
+  can see which files were persisted
 - `--debug` also keeps `all2txt` backend-selection logs visible while still muting
   noisy `openai` / `httpx` / `httpcore` debug output
 

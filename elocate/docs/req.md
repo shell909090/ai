@@ -109,6 +109,8 @@ elocate-updatedb [--debug]
 5. 摘要生成必须只基于原文，不得编造原文中不存在的事实；检索结果仍必须返回原始文件路径。
 6. 配置文件必须新增 `summary_model`、`rag_entropy_min`、`rag_entropy_max`、`rag_min_paragraph_length` 四个字段，并提供默认值。
 7. 摘要模型调用默认复用现有 OpenAI 兼容接口配置，不额外引入第二套服务端配置。
+8. `--debug` 必须输出当前语义路由参数、单文件路由判定结果，以及 summary 模型调用的输入/输出性能；至少要包含原始文本 chars/s 与 summary chars/s。
+9. 每完成一个文件的索引处理后，系统必须输出一条 `info` 级日志，至少包含文件路径、路由结果与写入状态。
 
 ## 非功能需求
 
