@@ -5,3 +5,7 @@ __pycache__
 *.jpg
 *.png
 .codex
+**/docs/tasks.md
+**/docs/review.md
+**/docs/log.md
+**/.env

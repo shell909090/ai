@@ -211,3 +211,68 @@ python3 tgbot.py acp [--agent-cmd CMD] [--cwd DIR] [--session-id UUID] [--yolo]
 2. 如需更可靠的无人值守运行，可增加 offset 持久化。
 3. 如需更强审计控制，可为会话日志增加保留策略、裁剪和脱敏配置。
 4. 如需更强协作隔离，可在未来改为每个管理员独立 ACP session，但这不属于当前需求范围。
+
+## 9. 当前修复批次设计
+
+本轮计划先修复 `session/load` 的错误校验，再做一次小范围内部重构；目标是不改变 CLI 与 Telegram 外部行为，只降低状态机风险和维护成本。
+
+### 9.1 ACP session/load 响应校验
+
+`AcpSession.start()` 在 `session/load` 路径需要与 `session/new` 保持一致的错误处理策略：
+
+1. 等待匹配 `sess_req` 的响应。
+2. 若响应包含 `"error"`，立即终止子进程并抛出明确异常。
+3. 只有确认成功响应后，才写入 `inst.session_id` 并继续启动流程。
+
+这样可以把恢复失败收敛在启动阶段，而不是把错误延后到后续 prompt 调用时才暴露。
+
+### 9.2 Prompt 记录统一构造
+
+计划引入统一的 prompt record builder，负责生成所有与 Telegram prompt 相关的公共字段：
+
+```python
+{
+  "text": str,
+  "chat_id": int,
+  "source": str,
+  "from_id": int | None,
+  "username": str | None,
+  "chat_type": str | None,
+  "message_id": int | None,
+}
+```
+
+该结构将被缓冲、出队和正式处理日志共享，避免字段变更时多处同步修改。
+
+### 9.3 Telegram 回复输出 helper
+
+计划把 `handle_prompt()` 里的 Telegram 输出逻辑拆出为独立 helper，对外提供以下能力：
+
+1. 发送初始占位消息；
+2. 根据 chunk 流式编辑消息；
+3. 在超长场景下切分为多条消息；
+4. 在结束或异常时完成最终定型。
+
+`handle_prompt()` 保留“驱动 ACP prompt”的主流程，不再直接持有消息编辑细节。
+
+### 9.4 Mention 匹配公共 helper
+
+计划提取公共 mention matcher，用于：
+
+1. 判断群聊消息是否显式提及当前 bot；
+2. 返回可复用的 mention 区间信息；
+3. 供 `_addressed_in_group()` 与 `_strip_bot_mentions()` 共享。
+
+这样可以避免 UTF-16 offset 扫描逻辑在两处重复维护。
+
+### 9.5 `cmd_acp()` 的职责拆分目标
+
+当前 `cmd_acp()` 未来将逐步收敛为高层编排函数，内部 helper 拆分目标如下：
+
+1. 启动前配置与路径准备；
+2. Telegram slash command 同步；
+3. 审批期间缓冲队列处理；
+4. 单条 prompt 的桥接执行；
+5. 主循环与 cron 调度。
+
+本轮不改变共享 session、权限模型、缓冲上限和日志语义，只做结构化整理。
