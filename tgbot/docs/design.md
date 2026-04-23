@@ -111,7 +111,24 @@
 3. 群聊必须满足 reply 或 mention 才会被接受。
 4. 群聊中的 `@bot` mention 会在进入 agent 前剥离。
 
-### 4.4 权限审批与缓冲队列
+### 4.4 Prompt 记录与回复输出
+
+当前实现把 Telegram prompt 与 Telegram reply 各自收敛到统一 helper，减少主流程中的重复展开。
+
+关键接口：
+
+- `_prompt_record(...)`
+- `_prompt_log_fields(prompt)`
+- `TelegramReply`
+
+设计要点：
+
+1. prompt 的公共字段只由 `_prompt_record()` 构造，供正式处理、缓冲、出队和日志共用；
+2. `_prompt_log_fields()` 只负责把统一 record 投影为日志字段，避免多处手工取值；
+3. `TelegramReply` 负责占位消息、流式编辑、超长分片和最终定型，`handle_prompt()` 只保留 ACP 驱动逻辑；
+4. 回复链路保持现有 Telegram 外部行为，不因内部拆分改变消息体验。
+
+### 4.5 权限审批与缓冲队列
 
 `_handle_permission()` 负责审批等待；`pending_prompts` 负责审批期间的合法消息缓冲。
 
@@ -124,7 +141,7 @@
 
 该设计是“最小状态机”方案，不引入复杂的持久化队列或多级优先级。
 
-### 4.5 会话日志
+### 4.6 会话日志
 
 `SessionLog` 负责把结构化事件写入 JSONL。
 
@@ -149,6 +166,16 @@
 1. 日志目录创建为 `0700`。
 2. 日志文件创建/追加时尽量收紧到 `0600`。
 3. 日志落盘位置与工程目录解耦，避免误提交到 Git。
+
+### 4.7 内部编排与公共匹配逻辑
+
+守护模式的高层编排集中在 `cmd_acp()`，但内部职责通过 helper 拆分，避免单函数持续膨胀。
+
+关键设计：
+
+1. mention 匹配通过公共 helper 提供统一的 UTF-16 区间扫描，供群聊寻址判断与 mention 剥离共享；
+2. `cmd_acp()` 保留高层编排，配置解析、命令同步、缓冲出队、update 处理和 cron 调度交由内部 helper；
+3. 外部 CLI 和 Telegram 交互行为保持稳定，重构只降低维护成本，不改变共享 session 与权限模型。
 
 ## 5. CLI 接口定义
 
@@ -202,7 +229,7 @@ python3 tgbot.py acp [--agent-cmd CMD] [--cwd DIR] [--session-id UUID] [--yolo]
 1. 项目没有持久化 offset，进程重启后依赖 Telegram 服务端未消费状态。
 2. 缓冲队列只在内存中存在，进程退出后不会恢复。
 3. `cmd_get` 与 `acp` 模式共用 Telegram updates，使用时需要避免互相抢占。
-4. 当前没有测试框架、Makefile 或多文件拆分，仍是脚本型项目。
+4. 当前仍是单文件主程序，后续若复杂度继续上升需要进一步模块化。
 5. 当前实现只支持文本消息，不处理图片、附件、按钮回调等 Telegram 事件。
 
 ## 8. 后续演进方向
@@ -212,67 +239,59 @@ python3 tgbot.py acp [--agent-cmd CMD] [--cwd DIR] [--session-id UUID] [--yolo]
 3. 如需更强审计控制，可为会话日志增加保留策略、裁剪和脱敏配置。
 4. 如需更强协作隔离，可在未来改为每个管理员独立 ACP session，但这不属于当前需求范围。
 
-## 9. 当前修复批次设计
+## 9. 工程化与质量流程
 
-本轮计划先修复 `session/load` 的错误校验，再做一次小范围内部重构；目标是不改变 CLI 与 Telegram 外部行为，只降低状态机风险和维护成本。
+项目运行时代码保持标准库实现，但开发流程采用 `uv` + `Makefile` 统一管理，避免脚本项目继续无序生长。
 
-### 9.1 ACP session/load 响应校验
+### 9.1 uv 环境定义
 
-`AcpSession.start()` 在 `session/load` 路径需要与 `session/new` 保持一致的错误处理策略：
+项目根目录使用 `pyproject.toml` 作为 `uv` 可识别的工程定义，承担两类职责：
 
-1. 等待匹配 `sess_req` 的响应。
-2. 若响应包含 `"error"`，立即终止子进程并抛出明确异常。
-3. 只有确认成功响应后，才写入 `inst.session_id` 并继续启动流程。
+1. 声明项目的基础元数据与 Python 版本范围；
+2. 承载 `ruff` 与 `coverage` 的工具配置。
 
-这样可以把恢复失败收敛在启动阶段，而不是把错误延后到后续 prompt 调用时才暴露。
+设计约束：
 
-### 9.2 Prompt 记录统一构造
+1. 运行时代码仍保持标准库实现，不新增运行时第三方依赖；
+2. `uv run python tgbot.py ...` 与现有 `python3 tgbot.py ...` 均应可用；
+3. 不把当前脚本强行拆包，只提供最小工程化元数据。
 
-计划引入统一的 prompt record builder，负责生成所有与 Telegram prompt 相关的公共字段：
+### 9.2 Makefile 质量入口
 
-```python
-{
-  "text": str,
-  "chat_id": int,
-  "source": str,
-  "from_id": int | None,
-  "username": str | None,
-  "chat_type": str | None,
-  "message_id": int | None,
-}
-```
+为匹配仓库规范，根目录 `Makefile` 统一暴露以下目标：
 
-该结构将被缓冲、出队和正式处理日志共享，避免字段变更时多处同步修改。
+1. `make fmt`：执行格式化；
+2. `make lint`：执行 `ruff check`，并启用 McCabe `max-complexity = 10`；
+3. `make build`：执行 `python -m py_compile tgbot.py`；
+4. `make unittest`：执行 `coverage run -m unittest discover`；
+5. `make test`：在 `make unittest` 基础上输出覆盖率报告。
 
-### 9.3 Telegram 回复输出 helper
+设计要点：
 
-计划把 `handle_prompt()` 里的 Telegram 输出逻辑拆出为独立 helper，对外提供以下能力：
+1. Python 解释器相关步骤通过 `uv run` 执行，`ruff` 和 `coverage` 复用本机已安装工具；
+2. 若未来新增更多 Python 文件或测试模块，应保持入口不变，只扩展目标内部命令；
+3. `fmt` 与 `lint` 分离，避免格式化副作用掩盖真实静态检查问题。
 
-1. 发送初始占位消息；
-2. 根据 chunk 流式编辑消息；
-3. 在超长场景下切分为多条消息；
-4. 在结束或异常时完成最终定型。
+### 9.3 Ruff 配置
 
-`handle_prompt()` 保留“驱动 ACP prompt”的主流程，不再直接持有消息编辑细节。
+`ruff` 配置直接放入 `pyproject.toml`，避免引入额外配置文件。当前规则范围：
 
-### 9.4 Mention 匹配公共 helper
+1. 启用 `E`、`F`、`I` 等基础规则，覆盖语法、未使用符号与导入顺序；
+2. 启用 `C90` 并把 `max-complexity` 固定为 `10`；
+3. 测试目录可按需放宽部分规则，但不放宽复杂度与明显错误类规则。
 
-计划提取公共 mention matcher，用于：
+### 9.4 unittest 布局
 
-1. 判断群聊消息是否显式提及当前 bot；
-2. 返回可复用的 mention 区间信息；
-3. 供 `_addressed_in_group()` 与 `_strip_bot_mentions()` 共享。
+当前 `tests/test_tgbot.py` 优先覆盖无需真实 Telegram/ACP 网络交互的逻辑，包括：
 
-这样可以避免 UTF-16 offset 扫描逻辑在两处重复维护。
+1. 群聊 mention 识别与剥离；
+2. `_extract_prompt()` 的 `allow_users` 过滤与群聊判定；
+3. cron markdown 解析；
+4. prompt record / log field helper；
+5. ACP 会话启动/流式处理、命令同步与命令行分发等可通过 mock 隔离的辅助逻辑。
 
-### 9.5 `cmd_acp()` 的职责拆分目标
+设计约束：
 
-当前 `cmd_acp()` 未来将逐步收敛为高层编排函数，内部 helper 拆分目标如下：
-
-1. 启动前配置与路径准备；
-2. Telegram slash command 同步；
-3. 审批期间缓冲队列处理；
-4. 单条 prompt 的桥接执行；
-5. 主循环与 cron 调度。
-
-本轮不改变共享 session、权限模型、缓冲上限和日志语义，只做结构化整理。
+1. 测试必须使用 `unittest` 与标准库 `unittest.mock`；
+2. 不依赖真实 Telegram Token、网络访问或外部 ACP 进程；
+3. 若需测试 `AcpSession` 或 Telegram API 交互，仅通过 mock 验证边界行为，不做真实集成。
