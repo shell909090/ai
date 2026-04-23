@@ -1,34 +1,36 @@
-# tgbot远程操作模型
+# tgbot Remote Operation Model
 
-`tgbot` 目前有两种工作模式，使用前建议先理解差异：
+Chinese version: [README.cn.md](README.cn.md)
 
-1. `ACP模式`：直接运行 `python3 tgbot.py acp`，由 `tgbot` 启动并维护 Telegram 与 ACP agent 之间的实时桥接。
-2. `/loop模式`：由外部 agent 循环调用 `python3 tgbot.py get` 拉取消息，自行处理后再通过 `python3 tgbot.py send` 回传结果。
+`tgbot` currently supports two working modes, and it is best to understand the difference before using it:
 
-其中，`ACP模式` 是当前项目的主要模式，`/loop模式` 是兼容既有外部循环工作流的模式。
+1. `ACP mode`: run `python3 tgbot.py acp` directly, and `tgbot` will start and maintain a live bridge between Telegram and an ACP agent.
+2. `/loop mode`: an external agent loop calls `python3 tgbot.py get` to fetch messages, handles them on its own, and then sends results back through `python3 tgbot.py send`.
 
-## loop模式
+Among them, `ACP mode` is the main mode of the project, while `/loop mode` is the compatibility mode for existing external loop workflows.
 
-使用telegram bot远程操控claude code。方法是，配置使用tgbot.py工具，让本机命令行可以和特定的telegram user交互。然后编写tgbot.md指令，驱动这个脚本来获得消息，处理消息，回复消息。最后配置claude code的/loop，定期执行这个脚本。注意，由于本机console实际无人值守，所以没有人审批权限。因此，要么不使用工具，要么使用`--dangerously-skip-permissions`来跳过审批，要么配置--allowedTools去放行合适工具。一旦实际启用工具，/loop很可能会卡死。
+## /loop Mode
 
-启动方法：
+Use a Telegram bot to remotely operate Claude Code. The basic method is to configure and use `tgbot.py` so the local command line can interact with a specific Telegram user. Then write instructions in `tgbot.md` so the script can fetch messages, process them, and send replies. Finally, configure Claude Code `/loop` to run this script periodically. Note that because the local console is effectively unattended, there is nobody available to approve permissions. In practice, that means either avoiding tools entirely, using `--dangerously-skip-permissions` to bypass approval, or configuring `--allowedTools` to allow an appropriate subset of tools. Once tools are actually enabled, `/loop` can easily get stuck.
 
-1. 用`claude --dangerously-skip-permissions`启动agent。
-2. 读一下tgbot.md，照着执行。
+Startup:
 
-安全警告：
+1. Start the agent with `claude --dangerously-skip-permissions`.
+2. Read `tgbot.md` and follow it.
 
-1. 本模式通常需要 `--dangerously-skip-permissions` 或等效放权配置。一旦telegram账号或telegram bot账号被盗，等同于机器完全受控。一旦AI理解出错，可能造成任意破坏。请理解这点，并视自己接受能力而用。
-2. `allow_users` 是强信任白名单。白名单内的用户共享同一个后端 ACP session，可以在不同私聊/群聊里驱动同一个 agent；上下文会互相影响，回复也可能体现前一个管理员留下的状态。只有在 Owner 与协作者彼此知情并接受这种共享上下文模型时才应启用。
-3. `~/.config/telegram/config.ini` 包含 Bot Token，使用前请至少执行 `chmod 640 ~/.config/telegram/config.ini`；若机器上存在其他非信任用户，使用 `chmod 600`。
+Security warnings:
+
+1. This setup usually requires `--dangerously-skip-permissions` or an equivalent broad-permission configuration. If either the Telegram account or the Telegram bot account is compromised, the machine should be treated as fully compromised. If the AI misunderstands a request, it may also cause arbitrary damage. Please understand that risk before using it.
+2. `allow_users` is a strong-trust whitelist. Users in the whitelist share the same backend ACP session and can drive the same agent from different private chats or groups. Context will affect each other, and replies may reflect state left behind by a previous administrator. This should only be enabled when the owner and collaborators know and accept the shared-context model.
+3. `~/.config/telegram/config.ini` contains the bot token. Before use, run at least `chmod 640 ~/.config/telegram/config.ini`; if the machine has other untrusted local users, use `chmod 600`.
 
 # tgbot.py
 
-Telegram Bot 命令行工具，支持收取和发送消息。纯标准库，零依赖。
+A Telegram bot command-line tool for receiving and sending messages. Standard-library only, with zero runtime dependencies.
 
-## 配置
+## Configuration
 
-配置文件路径：`~/.config/telegram/config.ini`
+Configuration file path: `~/.config/telegram/config.ini`
 
 ```ini
 [bot]
@@ -44,82 +46,82 @@ cwd = /home/user/project
 file = ~/.config/telegram/crontab.md
 ```
 
-- `chat_id`：Bot owner 的 Telegram user ID。`get`/`send` 模式使用；`acp` 模式用于主动下行消息（权限请求、cron 回复）。
-- `allow_users`：逗号分隔的 Telegram user ID 列表，允许向 `acp` 模式发送指令。未设置时默认只有 `chat_id` 对应用户可以交互。
-- `[acp] cwd`：同时作为 agent 子进程的实际工作目录，以及 ACP `session/new` / `session/load` 里的 `cwd` 参数。可被 `python3 tgbot.py acp --cwd /path/to/project` 覆盖。
+- `chat_id`: the Telegram user ID of the bot owner. Used by `get` and `send`; in `acp` mode it is also used for outbound messages such as permission prompts and cron replies.
+- `allow_users`: a comma-separated list of Telegram user IDs allowed to send commands in `acp` mode. If unset, only the user identified by `chat_id` can interact.
+- `[acp] cwd`: used both as the real working directory of the agent subprocess and as the `cwd` parameter in ACP `session/new` and `session/load`. It can be overridden with `python3 tgbot.py acp --cwd /path/to/project`.
 
-注意：bot 需要先收到用户的 `/start` 消息才能向该用户发送消息。
+Note: the bot must first receive `/start` from a user before it can send messages to that user.
 
-## 用法
+## Usage
 
-### ACP 守护模式
+### ACP Daemon Mode
 
-将 Telegram 消息转发给 ACP 兼容的 agent（Claude Code、Codex、OpenCode 等），并将回复流式发回。
+Forward Telegram messages to an ACP-compatible agent such as Claude Code, Codex, or OpenCode, and stream the replies back.
 
 ```bash
-# 使用 config 中配置的后端
+# Use the backend configured in config
 python3 tgbot.py acp
 
-# 指定后端命令（覆盖 config）
+# Specify the backend command and override config
 python3 tgbot.py acp --agent-cmd "codex --acp"
 
-# 恢复已有会话
+# Resume an existing session
 python3 tgbot.py acp --session-id <UUID>
 
-# 自动批准所有权限请求（无人值守模式）
+# Automatically approve all permission requests (unattended mode)
 python3 tgbot.py acp --yolo
 ```
 
-**消息过滤**：只处理 `allow_users` 中用户发来的消息（未配置时仅 `chat_id`）。回复发往消息所在的 chat，支持私聊和群聊并存。console log 只记录发言人 ID、username 和 chat，不再输出消息正文：
+**Message filtering**: only messages from users in `allow_users` are processed, or only `chat_id` if `allow_users` is not configured. Replies are sent back to the chat where the message came from, so private chats and groups can coexist. Console logs only record sender ID, username, and chat, and no longer print message bodies:
 
 ```text
 12:34:56 INFO ACP prompt from [12345678 @alice] chat=-1001234567890
 ```
 
-**权限处理**：agent 请求工具权限时，bot 会向 `chat_id`（owner）发送 Telegram 消息列出选项，等待 owner 回复：
-- `y` / `Y`：允许（选第一个 allow 选项）
-- `n` / `N`：拒绝
-- 数字（如 `1`、`2`）：选择对应选项编号
+**Permission handling**: when the agent requests tool permission, the bot sends a Telegram message to `chat_id` (the owner) listing the options and waits for a reply:
+- `y` / `Y`: allow, choosing the first allow option
+- `n` / `N`: deny
+- a number such as `1` or `2`: choose the corresponding option
 
-回复必须是以上格式。等待权限期间，bot 会先对新消息执行 `allow_users` 过滤，并最多缓冲 5 条合法 prompt，待当前权限请求结束后按顺序继续处理；若 owner 回了超出选项范围的数字，会收到格式提示。
+Replies must use one of the formats above. While waiting for permission, the bot first filters new messages through `allow_users`, then buffers up to 5 valid prompts and continues processing them in order after the current permission request ends. If the owner replies with a number outside the option range, the bot sends a format reminder.
 
-**回复流式推送**：agent 的回复按行缓冲，收到换行时 edit 同一条 Telegram 消息，完成后去掉光标。超过 4000 字符时自动分成新消息继续。
+**Streaming replies**: agent replies are buffered by line. When a newline arrives, the bot edits the same Telegram message. When the response is complete, the cursor is removed. Replies longer than 4000 characters are automatically split into new messages.
 
-**共享会话模型**：`allow_users` 里的所有管理员共享同一个 ACP session。这个模型是刻意设计的：它允许协作者在不同会话里接力操作同一个 agent，但也意味着上下文和工具状态不会按用户隔离。
+**Shared session model**: all administrators in `allow_users` share the same ACP session. This is intentional: it allows collaborators to hand off work across different chats, but it also means context and tool state are not isolated per user.
 
-**Slash Commands**：如果 ACP agent 在会话启动后通过 `available_commands_update` 暴露可用 `/commands`，bot 会在启动时调用 Telegram `setMyCommands` 自动注册兼容的命令名。这里的命令菜单表示当前 agent 暴露出的能力，不是静态写死的产品配置。
+**Slash commands**: if the ACP agent exposes available `/commands` through `available_commands_update` after the session starts, the bot automatically registers compatible command names with Telegram using `setMyCommands`. The command menu represents the capabilities currently exposed by the agent, not a statically defined product menu.
 
-**会话日志**：`acp` 模式会把日志写到 `$XDG_STATE_HOME/tgbot/`；若未设置 `XDG_STATE_HOME`，则写到 `~/.local/state/tgbot/`。文件名为 `session-<SESSION_ID>.jsonl`，权限会收紧到仅当前用户可读写。日志内容包含入站 prompt、最终定型后的回复，以及命令注册事件；消息正文不再写入 console log。
+**Session log**: in `acp` mode, logs are written to `$XDG_STATE_HOME/tgbot/`; if `XDG_STATE_HOME` is not set, they are written to `~/.local/state/tgbot/`. The file name is `session-<SESSION_ID>.jsonl`, and permissions are tightened so only the current user can read and write it. The log contains inbound prompts, finalized replies, and command registration events; message bodies are no longer written to console logs.
 
-### /loop 模式
+### /loop Mode
 
-`/loop` 模式下，`tgbot` 主要充当 Telegram 的收发桥，实际 agent 逻辑由外部循环控制。
+In `/loop` mode, `tgbot` mainly acts as a Telegram send/receive bridge, while the actual agent logic is controlled by an external loop.
 
-典型流程：
+Typical flow:
 
-1. 外部循环调用 `python3 tgbot.py get` 拉取新消息。
-2. 外部 agent 自行解析消息并执行本地工作。
-3. 外部循环通过 `python3 tgbot.py send` 把结果发回 Telegram。
+1. The external loop calls `python3 tgbot.py get` to fetch new messages.
+2. The external agent interprets the messages and performs local work.
+3. The external loop sends the result back to Telegram with `python3 tgbot.py send`.
 
-### 获取消息
+### Fetch Messages
 
 ```bash
-# 仅显示配置 chat_id 的消息
+# Show only messages from the configured chat_id
 python3 tgbot.py get
 
-# 显示所有 chat 的消息
+# Show messages from all chats
 python3 tgbot.py get --all
 
-# JSON 格式输出
+# Output JSON
 python3 tgbot.py get --json
 
-# 组合使用
+# Combine both
 python3 tgbot.py get --all --json
 ```
 
-默认模式下，来自配置 chat_id 的消息直接显示为 `sender: text`，其他 chat 的消息带 `[chat_id=xxx]` 前缀。不论是否显示，所有消息都会被消费（offset 推进）。
+In the default mode, messages from the configured `chat_id` are shown directly as `sender: text`, while messages from other chats include a `[chat_id=xxx]` prefix. Whether displayed or not, all messages are consumed because the offset advances.
 
-JSON 输出格式：
+JSON output format:
 
 ```json
 [
@@ -133,37 +135,37 @@ JSON 输出格式：
 ]
 ```
 
-### 发送消息
+### Send Messages
 
 ```bash
-# 使用配置里的 chat_id
+# Use the configured chat_id
 python3 tgbot.py send "hello"
 
-# 指定 chat_id
+# Specify a chat_id
 python3 tgbot.py send -c 123456 "hello"
 ```
 
 ### Cron
 
-在 `acp` 模式运行期间，可按计划定时向 agent 发送 prompt，结果回复到 `chat_id`。
+While running in `acp` mode, the bot can send scheduled prompts to the agent and route the result back to `chat_id`.
 
-cron 任务配置在 markdown 文件中（`[cron] file` 指定路径），格式：
+Cron jobs are configured in a markdown file referenced by `[cron] file`, with this format:
 
 ```markdown
 ## 0 9 * * *
-早上好，请检查服务器日志，总结需要关注的问题。
+Good morning. Please check the server logs and summarize anything worth attention.
 
 ## 30 18 * * 1-5
-工作日结束，请整理今天的工作日志。
+At the end of the workday, please summarize today's work log.
 ```
 
-- 二级标题（`## `）后跟标准 5 字段 cron 表达式（`分 时 日 月 周`，dow 0=周日）
-- 标题后的段落即为发给 agent 的 prompt
-- 精度为分钟级（取决于 getUpdates 轮询间隔，最大误差约 30 秒）
+- The level-2 heading (`## `) is followed by a standard 5-field cron expression (`minute hour day month weekday`, with Sunday as `0`)
+- The paragraph below the heading becomes the prompt sent to the agent
+- Precision is minute-level, depending on the `getUpdates` polling interval, with up to about 30 seconds of skew
 
-### 日志
+### Logging
 
-通过 `-l` 控制日志级别，默认 WARNING。
+Use `-l` to control the log level. The default is `WARNING`.
 
 ```bash
 python3 tgbot.py -l DEBUG get
@@ -171,9 +173,9 @@ python3 tgbot.py -l INFO send "hello"
 python3 tgbot.py -l INFO acp
 ```
 
-## 开发
+## Development
 
-运行时依旧保持标准库实现，但开发和质量检查流程使用 `uv` 与 `Makefile` 统一管理。
+Runtime behavior still stays standard-library only, but development and quality checks are managed with `uv` and `Makefile`.
 
 ```bash
 uv sync
@@ -184,7 +186,7 @@ make unittest
 make test
 ```
 
-直接运行脚本的方式保持不变：
+Direct script usage remains unchanged:
 
 ```bash
 python3 tgbot.py get
@@ -192,10 +194,14 @@ python3 tgbot.py send "hello"
 python3 tgbot.py acp
 ```
 
-# 作者
+# Author
 
-Copyright (c) 2026 Shell Xu <shell909090@gmail.com>
+Shell Xu <shell909090@gmail.com>
 
-# 授权
+# Copyright
+
+Copyright (c) 2026 Shell Xu
+
+# License
 
 MIT
