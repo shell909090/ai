@@ -6,7 +6,7 @@
 
 当前已确定的前提如下：
 
-1. 最小目标是“对话 + tools = agent”。
+1. 最小目标是"对话 + tools = agent"。
 2. 内核采用 `asyncio`。
 3. 架构上与 ACP 保持等效语义，但同进程内不机械复制 JSON-RPC 包装。
 4. 长期存在三个 frontend：`cli`、`web`、`acp`，本期只实现 `cli`。
@@ -16,11 +16,11 @@
 
 ## 2. 模块划分
 
-一级模块只保留五个：
+一级模块四个：
 
 1. `agent`
    - 系统核心。
-   - 维护会话、分支、倒排链、取消、冻结、fork。
+   - 维护会话、分支、倒排链、取消、冻结、fork、压缩。
    - 对 frontend 暴露 ACP 类接口。
    - 调用 backend 获取模型输出。
    - 调用 tools 执行工具。
@@ -35,9 +35,8 @@
 4. `backends`
    - 负责具体模型供应商接入。
    - 本期只实现 OpenAI backend。
-5. `entry`
-   - 最终封装层。
-   - 负责加载 config、初始化各模块、拼装依赖、启动执行。
+
+系统启动由一个命令行脚本 `little-agent` 完成装配：加载 YAML 配置、初始化 logger、初始化各模块、拼装依赖、启动 client。脚本通过 `pyproject.toml` 的 `[project.scripts]` 注册，不是一级模块，只是装配层。
 
 说明：
 
@@ -55,13 +54,13 @@
    - MCP 类接口。
 3. `backends <-> agent`
    - 项目内部接口，本期先做最小化定义。
-4. `entry -> all`
+4. 启动脚本 `-> all`
    - 只负责装配，不承载业务逻辑。
 
 总体依赖方向如下：
 
 ```text
-entry
+little-agent (script)
   -> frontends
   -> agent
   -> tools
@@ -77,7 +76,7 @@ agent -> backends
 1. `agent` 不直接依赖具体 frontend 实现。
 2. `agent` 不直接依赖具体 backend 实现。
 3. `agent` 不直接依赖具体 tool 实现。
-4. `entry` 负责把具体实现注入到协议接口上。
+4. 启动脚本负责把具体实现注入到协议接口上。
 
 ## 4. frontends 与 agent 的 ACP 类接口
 
@@ -86,7 +85,7 @@ agent -> backends
 这一层采用更符合 Python 使用习惯的对象模型：
 
 1. frontend 具体实现 `Client` 接口。
-2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolManager` 引用。
+2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolManager`（以及可选的 `Compressor`）引用。
 3. `Agent.new()` 与 `Agent.load()` 创建 `Session`。
 4. `Session.prompt()` 负责推进一轮对话，也就是延伸倒排链。
 5. `Session` 在运行中通过 `Agent` 反向回调 `Client.update()`。
@@ -96,6 +95,7 @@ agent -> backends
 1. `Agent` 已经在构造时绑定了唯一的 `Client`，因此 `new()` 与 `load()` 无需再次传入 `client`。
 2. 如果需要绑定不同的 frontend/client，应创建不同的 agent 实例。
 3. 每个 agent 实例都是有状态的 stateful agent；其核心状态是它所管理的 sessions。
+4. ACP 的 `initialize`（能力协商）由 `Agent.__init__` 在构造时隐式完成，不单独建模。目的是消除"未初始化对象"这种在同进程内意义不大的中间状态。
 
 ### 4.2 共享类型
 
@@ -147,14 +147,21 @@ class Client(Protocol):
 说明：
 
 1. `update` 应当是 client 的方法，而不是 agent 的方法。
-2. 白名单、访问者鉴权等逻辑属于 frontend 或 entry，不属于 agent 核心。
+2. 白名单、访问者鉴权等逻辑属于 frontend 或启动脚本，不属于 agent 核心。
 3. terminal、filesystem 等能力在本项目里优先建模为 tools，而不是 client 方法。
 
 ### 4.4 Agent 接口
 
 ```python
 class Agent(Protocol):
-    def __init__(self, client: Client, backend: Backend, tools: ToolManager) -> None: ...
+    def __init__(
+        self,
+        client: Client,
+        backend: Backend,
+        tools: ToolManager,
+        compressor: "Compressor | None" = None,
+    ) -> None: ...
+
     async def new(self, cwd: str | None = None) -> "Session": ...
     async def load(self, data: JSONValue) -> "Session": ...
 ```
@@ -163,26 +170,23 @@ class Agent(Protocol):
 
 1. `new()` 对应 ACP `session/new`
 2. `load()` 对应 ACP `session/load`
+3. ACP `initialize` 由 `__init__` 隐式完成
 
 说明：
 
-1. `Agent` 在构造时完成依赖绑定。
+1. `Agent` 在构造时完成依赖绑定，消除"未初始化对象"中间状态。
 2. `new()` 与 `load()` 不重复接收 `client` 参数。
 3. 如需不同 client，应创建不同 agent 实例。
+4. `compressor` 为可选注入；不注入时 `Session.compress()` 抛异常。
 
 ### 4.5 Session 接口
 
 ```python
 class Session(Protocol):
-    async def prompt(
-        self,
-        prompt: str | list[ContentBlock],
-        *,
-        allowed_tool_names: list[str] | None = None,
-    ) -> PromptReturn: ...
-
+    async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn: ...
     async def cancel(self) -> None: ...
     async def fork(self) -> "Session": ...
+    async def compress(self) -> None: ...
     def save(self) -> JSONValue: ...
 ```
 
@@ -190,14 +194,17 @@ class Session(Protocol):
 
 1. `prompt()` 对应 ACP `session/prompt`
 2. `cancel()` 对应 ACP `session/cancel`
-3. `fork()` 与 `save()` 是项目扩展能力
+3. `fork()`、`compress()`、`save()` 是项目扩展能力
 
 说明：
 
-1. `allowed_tool_names=None` 的语义固定为“本轮允许使用全部已注册 tools”。
+1. 本期不接收 `allowed_tool_names` 参数；agent 对本轮可见全部已注册 tools。运行时动态 tool 选择能力推迟到后续版本，届时以新参数或 Session 级别的配置接入。
 2. `fork()` 不接收 `from_node_id`，避免把低频且复杂的节点选择暴露给调用方。
 3. `fork()` 的语义就是基于当前 session 状态进行浅拷贝式分叉。
-4. `save()` 导出当前 session 状态；`load()` 由 agent 负责恢复。
+4. `compress()` 调用 agent 注入的 `Compressor`，把 session 的 tail 替换为压缩后的链头。
+5. `save()` 导出当前 session 状态；`load()` 由 agent 负责恢复。
+6. `Session` 内部维护一个 pending prompt 队列，容量默认 3（允许短时多句追加，超出即视为滥用）。在活跃 turn 存在时，新的 `prompt()` 调用进入队列等待；队列满则抛 `SessionBusy` 异常。
+7. 活跃 turn 存在时调用 `fork()` 或 `compress()`，直接抛异常。
 
 ### 4.6 frontends 模块说明
 
@@ -211,7 +218,7 @@ class Session(Protocol):
 
 本期实现为 `CliClient`，其职责如下：
 
-1. 由 `entry` 构造并注入 `agent`。
+1. 由启动脚本构造并注入 `agent`。
 2. 创建或恢复 session。
 3. 对 session 调用 `prompt()`。
 4. 实现 `update()` 来消费通知并输出。
@@ -252,7 +259,7 @@ ToolMap = dict[str, ToolDef]
    - 顶层固定为 `type: "object"`
    - 字段填入 `properties`
    - `required` 列表由四元组中的 `required` 推导
-6. 当前只支持顶层 object + 一层平铺字段，不追求完整 JSON Schema。
+6. 当前只支持顶层 object + 一层平铺标量字段；不支持嵌套对象、数组、枚举、默认值。本期已知限制（见 §11），`ToolArgDef` 未来会重新设计。
 
 额外约束：
 
@@ -266,7 +273,7 @@ ToolMap = dict[str, ToolDef]
 class ToolManager(Protocol):
     def list(self) -> ToolMap: ...
 
-    def invoke(
+    async def invoke(
         self,
         name: str,
         **kwargs: JSONValue,
@@ -276,14 +283,15 @@ class ToolManager(Protocol):
 规则：
 
 1. `list()` 返回当前 manager 聚合后的全部 tools。
-2. agent 如需做“本轮仅允许部分 tools”，在 `list()` 返回结果上按名称筛选即可。
-3. `allowed_tool_names=None` 的语义固定为“允许全部 tools”。
-4. `invoke()` 的签名与底层 provider 一致，便于透传与测试。
-5. `invoke()` 的返回值不限定为字符串，只要求可 JSON 序列化。
-6. 未知 tool、参数不合法、执行失败都通过异常表示，不使用额外的错误码返回机制。
-7. 建议内部至少区分两类异常：
+2. `invoke()` 是 async 的，以便 agent 用 `asyncio.gather` 并发执行多个 tool call。同步 tool 由 provider 层用 `asyncio.to_thread` 包装成 async。
+3. `invoke()` 的签名与底层 provider 一致，便于透传与测试。
+4. `invoke()` 的返回值不限定为字符串，只要求可 JSON 序列化。
+5. 未知 tool、参数不合法、执行失败都通过异常表示，不使用额外的错误码返回机制。
+6. 建议内部至少区分两类异常：
    - `ToolInvokeError`：调用层错误，例如未知 tool、参数不合法
    - `ToolExecutionError`：tool 自身执行失败
+7. 上述异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 结果中，**绝不向上冒出 prompt turn**。这是 tools 机制的关键语义：模型拿到失败反馈后，自主决定是否重试、换工具或放弃。
+8. 本期不对并发 tool 调用设上限；未来可能加入并发上限（见 §11）。
 
 ### 5.4 tools 模块内部实现边界
 
@@ -301,15 +309,17 @@ class ToolManager(Protocol):
 ```python
 class ToolProvider(Protocol):
     def list(self) -> ToolMap: ...
-    def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue: ...
+    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue: ...
 ```
 
 内置 tool 的最小函数形态为：
 
 ```python
-def f(**kwargs: JSONValue) -> JSONValue:
+async def f(**kwargs: JSONValue) -> JSONValue:
     ...
 ```
+
+同步 tool 由内置 provider 统一包装成 async（`asyncio.to_thread`）。
 
 说明：
 
@@ -359,8 +369,8 @@ class Backend(Protocol):
 1. backend 接收 `session` 对象，而不是单独的 `tail` 或 `cancel_event`。
 2. backend 负责读取 session 的链式历史，并转换为真实后端的输入。
 3. backend 负责把 session 当前可见的 tools 转换为 OpenAI 需要的工具定义。
-4. 当前不要求 backend 支持流式 generator 接口；MVP 先使用普通 async 方法。
-5. 如果后续实现 streaming，再把输入输出都调整为 generator 风格。
+4. 本期 **backend 不做 streaming**；`generate()` 返回完整 `BackendTurnResult`。`agent_message_chunk` 由 agent 在拿到结果后一次性发出一次 update。
+5. 如果后续实现 streaming，再把输入输出都调整为 async generator 风格。
 
 ## 7. agent 模块内部数据结构
 
@@ -374,7 +384,6 @@ class Node:
     id: str
     prev: "Node | None"
     created_at: datetime
-    frozen: bool = False
 
 
 @dataclass(slots=True)
@@ -387,12 +396,20 @@ class UserPromptNode(Node):
 class AssistantResponseNode(Node):
     kind: ClassVar[str] = "assistant_response"
     text: str
+    frozen: bool = False
 
 
 @dataclass(slots=True)
 class ToolCallNode(Node):
     kind: ClassVar[str] = "tool_call"
-    calls: dict[str, dict[str, Any]]
+    calls: dict[str, dict[str, Any]]   # call_id -> {tool_name, arguments}
+
+
+@dataclass(slots=True)
+class ToolResultNode(Node):
+    kind: ClassVar[str] = "tool_result"
+    results: dict[str, dict[str, Any]]  # call_id -> {status, content}
+    frozen: bool = False
 
 
 @dataclass(slots=True)
@@ -406,9 +423,12 @@ class SummaryNode(Node):
 1. 运行时通过 `prev` 对象引用回溯。
 2. `id` 主要用于 save/load、日志、调试和 fork 入口。
 3. 节点整体逻辑 append-only。
-4. 只有当前 session 的未封口尾节点允许原地更新。
-5. 可变节点在任意时刻只能被一个 session 作为活动尾节点持有。
-6. 一旦节点被后继节点引用、被 fork 共享、当前 turn 结束或被取消，必须立刻冻结。
+4. `frozen` 字段只出现在写入过程中可变的节点类型上：`AssistantResponseNode` 与 `ToolResultNode`。`UserPromptNode`、`ToolCallNode`、`SummaryNode` 创建即不可变，无需 `frozen` 字段。
+5. 可变节点在任意时刻只能被一个 session 作为活跃尾节点持有。
+6. 触发冻结的时机（由 Session 负责管理）：
+   - session 追加新节点时，旧尾若为可变类型，立刻冻结；
+   - session 被 fork（失去唯一引用）时，当前尾若为可变类型，立刻冻结；
+   - 当前 turn 结束或被取消时，尾节点立刻冻结。
 
 ### 7.2 Session 对象状态
 
@@ -418,112 +438,168 @@ class SummaryNode(Node):
 
 1. `id`
 2. `cwd`
-3. `tail`
+3. `tail`（当前链尾）
 4. 当前是否存在活跃 turn
 5. 当前 turn 是否已请求取消
-6. 本轮可见 tools 的上下文信息
+6. pending prompt 队列（容量默认 3，满则抛 `SessionBusy`）
 
-### 7.3 Tool Call 节点约束
+多 session 并发规则：
 
-一次模型返回的一组并行 tool calls，落为一个 `ToolCallNode`。
+1. 非 fork 产生的独立 session 各自持有完全独立的链条。
+2. fork 产生的新 session 在 fork 点之前共享已冻结的历史节点，fork 点之后各自追加新节点，互不干扰。
+3. 任何时刻，同一个可变节点只能被一个 session 作为活跃尾节点持有。
 
-建议 payload 结构：
+### 7.3 Tool Call 与 Tool Result 节点约束
+
+一次模型返回的一组并行 tool calls 落为一个 `ToolCallNode`，其后紧接一个 `ToolResultNode` 承载这组调用的结果。
+
+`ToolCallNode.calls` 结构：
 
 ```python
 {
-    "calls": {
-        "call_xxx": {
-            "tool_name": str,
-            "arguments": dict[str, Any],
-            "status": "pending" | "running" | "completed" | "failed" | "cancelled",
-            "results": list[dict[str, Any]],
-        },
+    "call_xxx": {
+        "tool_name": str,
+        "arguments": dict[str, Any],
+    },
+}
+```
+
+`ToolResultNode.results` 结构：
+
+```python
+{
+    "call_xxx": {
+        "status": "completed" | "failed" | "cancelled",
+        "content": JSONValue,
     },
 }
 ```
 
 规则：
 
-1. 一组并行 tool calls 属于同一个 `ToolCallNode`。
-2. 节点内部用 `call_id` 区分多个 call。
+1. `ToolCallNode` 由 backend 一次写入后立刻冻结，生命周期内不可变。
+2. `ToolResultNode` 跟随其后创建，按 `call_id` 逐步回填，直到全部结果就位或 turn 结束。
 3. 结果与状态更新依靠 `call_id` 对应，不依靠顺序。
-4. 只要该节点还是当前尾节点，且未被其他 session 共享，就允许原地更新。
-5. 若执行中被取消，该节点必须立刻标记为 `cancelled` 并冻结。
-6. 冻结之后到达的迟到结果直接丢弃。
+4. tool 执行抛出的 `ToolInvokeError` / `ToolExecutionError` 在编排层被捕获，写入对应 `call_id` 的结果中（`status = "failed"`，`content` 为异常信息），**绝不向上冒出 prompt turn**。模型拿到失败反馈后自主决定下一步。
+5. 若执行中被取消，`ToolResultNode` 中尚未完成的 call 标记为 `cancelled`，节点立刻冻结。
+6. 节点冻结之后到达的迟到结果直接丢弃。
 
 ### 7.4 fork 规则
 
 1. `session.fork()` 基于当前 session 状态创建一个新 session。
 2. 新旧 session 共享已有历史节点。
 3. fork 前如果当前尾节点仍可变，必须先冻结，再进行浅拷贝式分叉。
-4. `fork()` 不暴露 `from_node_id` 参数。
-5. 如果未来确实需要“从指定历史节点分叉”，再以新扩展方法加入。
+4. fork 时如果当前 session 存在活跃 turn，直接抛异常。
+5. `fork()` 不暴露 `from_node_id` 参数。
+6. 如果未来确实需要"从指定历史节点分叉"，再以新扩展方法加入。
 
-### 7.5 压缩规则
+### 7.5 压缩接口
 
-当上下文接近窗口上限时：
+压缩能力以可插拔协议定义，本期只预留接口、不提供具体实现：
 
-1. 不修改旧链。
-2. 不从旧链上摘节点。
-3. 通过生成 `summary` 节点建立新链。
-4. 当前 session 的尾指针指向新的压缩后链条。
-5. 原始链保留，用于回放与 fork。
+```python
+class Compressor(Protocol):
+    async def compress(self, head: Node) -> Node: ...
+```
+
+规则：
+
+1. 输入：要压缩的链头节点（含通过 `prev` 可达的全部历史）。
+2. 输出：新的链头节点（通常是 `SummaryNode`，但协议不强制）。
+3. `Compressor` 由启动脚本按配置构造，并在 `Agent.__init__` 注入。
+4. `Session.compress()` 的语义：
+   - agent 未注入 compressor：抛异常。
+   - 活跃 turn 存在：抛异常。
+   - 否则调用 `compressor.compress(tail)`，把返回节点设为 session 新的 tail。
+5. 旧链保留，用于回放与 fork。不修改旧链，不从旧链摘节点。
 
 ## 8. agent 的编排流程
 
-`Session.prompt()` 的最小编排流程如下：
+`Session.prompt()` 的编排流程如下：
 
-1. 校验当前 session 当前没有活跃 turn。
-2. 标记当前 session 进入活跃 turn 状态。
-3. 在当前尾部追加 `user_prompt` 节点。
-4. 调用 `ToolManager.list()` 得到全部 tools；若 `allowed_tool_names is None`，则本轮允许全部 tools，否则按名称筛选。
-5. 将本轮可见 tools 挂入当前 session 上下文，再调用 `Backend.generate(session)` 获取模型输出。
-6. 若 backend 返回文本，则创建或更新尾部 `assistant_response`。
-7. 若 backend 返回一组 tool calls，则追加一个 `tool_call` 节点。
-8. agent 并发调用 `ToolManager.invoke(...)` 执行这些 tools。
-9. tool 结果按 `call_id` 回写当前尾部 `tool_call` 节点，并通过 `Client.update(session, update)` 通知 frontend。
-10. 所有 tool 结果准备好后，再次调用 `Backend.generate(session)`。
-11. 若过程中收到 cancel，则停止继续推进，冻结最后一个未封口节点，并返回 `("cancelled", partial_output)`。
-12. 正常结束时返回 `("end_turn", output_text)`。
-13. 若发生真正失败，则直接抛异常，而不是返回 `failed`。
-14. 清理当前 session 的活跃 turn 状态。
+1. 若当前 session 已有活跃 turn：进入 pending 队列；队列满则抛 `SessionBusy`。否则立刻占据，标记"有活跃 turn"。
+2. 在当前尾部追加 `UserPromptNode`，旧尾若为可变类型先冻结。
+3. 进入主循环（循环上限 `MAX_TURN_ITERATIONS`，默认 10）：
+   1. 调用 `Backend.generate(session)`。
+   2. 若 `finish_reason == "completed"`：
+      - 追加或更新 `AssistantResponseNode`，追加完冻结。
+      - 通过 `Client.update(session, agent_message_chunk)` 一次性发出最终文本（本期非 streaming）。
+      - 跳出循环，返回 `("end_turn", output_text)`。
+   3. 若 `finish_reason == "tool_call"`：
+      - 追加 `ToolCallNode`（冻结）。
+      - 通过 `Client.update(session, tool_call)` 通知 frontend。
+      - 追加 `ToolResultNode`（可变）。
+      - 并发调用 `ToolManager.invoke(...)` 执行全部 tools（`asyncio.gather`）。
+        - 正常完成：写入对应 `call_id` 的结果（`status = "completed"`）。
+        - 抛出 `ToolInvokeError` / `ToolExecutionError`：捕获并写入失败结果（`status = "failed"`，`content` 为异常信息）。
+        - tool 抛出的异常**绝不冒出 prompt turn**。
+      - 每个结果就位通过 `Client.update(session, tool_call_update)` 通知 frontend。
+      - 全部结果到位或 turn 被取消后，`ToolResultNode` 冻结。
+      - 进入下一次循环。
+   4. 若 `finish_reason == "cancelled"`：跳出循环，返回 `("cancelled", partial_output)`。
+4. 超过 `MAX_TURN_ITERATIONS`：抛异常（视为真正失败）。
+5. 过程中任意时刻收到 cancel：
+   - 若正在等待 backend 返回：等当前调用自然结束，不再进入下一轮循环。
+   - 若正在并发执行 tools：`asyncio.gather` 的 wait 被解除，已完成的结果正常写入，尚未完成的 call 在 `ToolResultNode.results` 中标记 `cancelled`，节点立刻冻结；后到的结果因节点已冻结而被丢弃。
+   - 最后冻结任何未封口节点，返回 `("cancelled", partial_output)`。
+6. 真正失败（backend 异常、链条不一致等）直接抛异常，而不是返回 `failed`。
+7. 无论成功、取消还是异常，finally 清理活跃 turn 标记；pending 队列非空时唤醒下一个排队协程继续处理（失败不得污染队列）。
+8. `Session.cancel()` 只影响当前活跃 turn，不清空 pending 队列。
 
 `Session.cancel()` 的规则：
 
 1. 如果 session 没有活跃 turn，直接返回。
-2. 如果有活跃 turn，只设置“已请求取消”标记。
+2. 如果有活跃 turn，只设置"已请求取消"标记。
 3. 真正的停止、冻结与收尾由 `prompt()` 所在协程完成。
 
-## 9. entry 模块接口
+## 9. 启动脚本
 
-`entry` 是最后的封装层，用于把分散模块装配成可运行程序。
+启动装配是最顶层的一层，不属于任何一级模块。通过 `pyproject.toml` 的 `[project.scripts]` 注册为一个名为 `little-agent` 的命令：
 
-### 9.1 入口职责
-
-1. 加载 config。
-2. 初始化 logger。
-3. 初始化 `ToolManager`。
-4. 初始化 `Backend`。
-5. 初始化 `Agent`。
-6. 初始化具体 client/frontend 实现。
-7. 将它们按依赖关系拼装起来。
-8. 推动具体 client 的 `run(agent)` 执行。
-
-### 9.2 Entry 接口
-
-```python
-class EntryPoint(Protocol):
-    async def run(self) -> None: ...
+```toml
+[project.scripts]
+little-agent = "little_agent.main:main"
 ```
 
-本期可以有一个默认实现，例如：
+实际的 `main()` 函数放在一个独立模块（建议 `little_agent/main.py`）。用户 shell 下运行 `little-agent` 即调用该函数。
 
-```python
-class DefaultEntryPoint:
-    async def run(self) -> None: ...
+### 9.1 职责
+
+1. 解析 CLI 参数（包括 `--debug` 等日志级别 flag）。
+2. 加载 YAML 配置文件。
+3. 初始化 logger（标准 `logging` 模块；debug 模式由 argparse flag 控制，符合 AGENTS.md 工程要求）。
+4. 初始化 `ToolManager`（含所有已配置 providers）。
+5. 初始化 `Backend`。
+6. 初始化 `Compressor`（可选）。
+7. 初始化具体 `Client` 实现（本期为 `CliClient`）。
+8. 用上述依赖构造 `Agent`。
+9. 调用 client 的 `run(agent)` 启动交互。
+
+不承载业务逻辑。
+
+### 9.2 配置文件 schema
+
+本期使用 YAML。最小 schema（实现时可按需扩展）：
+
+```yaml
+backend:
+  type: openai
+  model: gpt-4
+  api_key_env: OPENAI_API_KEY
+
+tools:
+  providers:
+    - type: python
+      module: my_tools.weather
+    - type: python
+      module: my_tools.calculator
+
+frontend:
+  type: cli
+
+logging:
+  level: INFO
 ```
-
-`entry` 层不承载业务逻辑；它只是装配器。
 
 ## 10. 测试设计
 
@@ -537,36 +613,35 @@ class DefaultEntryPoint:
 
 ### 10.2 必须提供的 mock 实现
 
-为了程序化自动化测试，至少需要以下 mock：
-
-1. `MockFrontend`
+1. `MockClient`
    - 实现 `Client` 接口。
-   - 程序化创建 session、发送 prompt。
-   - 收集 `SessionUpdate` 与 `PromptResult`。
+   - 收集 `SessionUpdate` 与 prompt 结果。
    - 不依赖终端交互。
 2. `MockToolManager`
    - 返回固定 `ToolMap`。
    - 按预设规则返回 JSON 可序列化结果。
    - 支持模拟成功、失败、延迟、取消后迟到结果。
 3. `MockBackend`
-   - 根据预设脚本返回文本或 tool calls。
+   - 按预设脚本返回文本或 tool calls。
    - 支持模拟多轮 tool use。
    - 支持模拟取消和失败。
+4. `MockAgent`
+   - 暴露与 `Agent` 一致的 `new()` / `load()` 接口，返回可脚本化的 `MockSession`。
+   - 主要给 frontends 与 tools 的集成测试使用，让它们脱离 agent 内部实现做独立验证。
 
 ### 10.3 测试分层
 
-建议至少有三层测试：
+两类测试：
 
-1. 模块单元测试
-   - `agent` 内部倒排链、freeze、fork、cancel 规则
-   - `tools` 的 list/call/filter 行为
-   - `backends` 的请求转换逻辑
-2. 协议边界测试
-   - frontend-agent-session 的 ACP 类接口行为
-   - agent-tools 的 MCP 类接口行为
-3. 集成测试
-   - `MockFrontend + Agent + MockToolManager + MockBackend`
-   - `CliClient + Agent + MockToolManager + MockBackend`
+1. **模块单元测试**：覆盖每个模块内部逻辑。
+   - `agent`：倒排链、freeze、fork、cancel、compress 规则。
+   - `tools`：list/invoke/聚合行为。
+   - `backends`：请求转换、返回解析。
+2. **模块集成测试**：被测模块保留真实实现，其所有上下游接口换成 mock。
+   - 测 `agent`：`MockClient + Agent + MockToolManager + MockBackend`。
+   - 测 `frontends`：`CliClient + MockAgent`。
+   - 测 `tools`：`MockAgent` 驱动 + 真实 `ToolManager` + 真实 provider。
+   - 测 `backends`：真实 `Backend` + 预构造的真实 `Session` 对象。不走 MockAgent，因为 Backend 依赖 session 链条的具体形态，MockAgent 难以替代。
 
 ### 10.4 第一批关键用例
 
@@ -575,22 +650,33 @@ class DefaultEntryPoint:
 1. 无 tool 的单轮对话。
 2. 一轮中单个 tool call。
 3. 一轮中多个并行 tool calls。
-4. tool call 进行中触发 cancel。
-5. cancel 后迟到 tool result 被丢弃。
-6. 从当前 session fork 出新 session。
-7. 仅允许部分 tools 时，agent 只能看到指定子集。
-8. backend 连续两轮请求：先请求 tools，再基于 tool result 输出最终文本。
+4. 多轮 backend-tool 循环（模型连续多次请求 tool 直到完成）。
+5. tool 执行抛异常时，失败进入 `ToolResultNode.results`，模型继续推理，异常不冒出 prompt turn。
+6. tool call 进行中触发 cancel。
+7. cancel 后迟到 tool result 被丢弃。
+8. 从当前 session fork 出新 session。
+9. 有活跃 turn 时调用 `fork()` 或 `compress()` 抛异常。
+10. 有活跃 turn 时再次 `prompt()`，进入 pending 队列；队列满抛 `SessionBusy`。
+11. 超过 `MAX_TURN_ITERATIONS` 抛异常。
 
-## 11. 当前结论
+## 11. 本期已知限制
+
+1. `ToolArgDef` 只支持顶层 object + 一层平铺标量字段，不支持嵌套、数组、枚举、默认值。未来会重新设计。
+2. Backend 不做 streaming；`agent_message_chunk` 一次性发出。
+3. 不做运行时动态 tool 子集选择；所有已注册 tool 对 agent 始终可见。后续版本再加入"启动时配置开关"与"运行时动态切换"。
+4. 不对并行 tool 调用设并发上限。未来可能加入。
+5. `save()`/`load()` 的详细 schema 本期不定；只确定需要序列化节点链表，其他字段随实现确定。
+6. `Client.request_permission()` 预留接口不启用。
+
+## 12. 当前结论
 
 当前准备按以下结构推进实现：
 
-1. 一级模块固定为 `agent`、`tools`、`frontends`、`backends`、`entry`
-2. `frontends <-> agent` 用 ACP 类接口
-3. `tools <-> agent` 用 MCP 类接口
-4. `backends <-> agent` 先使用最小内部接口
-5. `entry` 只负责装配，不承载业务逻辑
-6. `Client` 是稳定边界，`frontends` 不再单独定义额外协议
-7. 测试中必须提供 mock 版 frontend/client、tools、backend
+1. 一级模块固定为 `agent`、`tools`、`frontends`、`backends`
+2. 启动装配由 `little-agent` 命令行脚本完成（`pyproject.toml` 的 `[project.scripts]` 注册）
+3. `frontends <-> agent` 用 ACP 类接口；`Client` 是稳定边界
+4. `tools <-> agent` 用 MCP 类接口
+5. `backends <-> agent` 先使用最小内部接口
+6. 测试中提供 `MockClient`、`MockToolManager`、`MockBackend`、`MockAgent`
 
-如果这版接口和边界确认无误，下一步再进入代码实现。
+设计确认无误后再开始编码。
