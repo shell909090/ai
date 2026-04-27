@@ -10,8 +10,8 @@ dependencies = [
     "lxml",
     "langchain-core",
     "langchain-community",
-    "litellm",
-    "langchain-litellm>=0.3.5",
+    "litellm>=1.83.14",
+    "langchain-litellm>=0.6.4",
     "feedparser>=6.0.12",
 ]
 
