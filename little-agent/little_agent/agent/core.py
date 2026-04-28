@@ -8,11 +8,18 @@ from little_agent.frontends.protocol import SessionUpdate
 from little_agent.types import ContentBlock, JSONValue, PromptReturn
 
 from .exceptions import SessionBusyError
-from .nodes import AssistantResponseNode, Node, ToolCallNode, ToolResultNode, UserPromptNode
+from .nodes import (
+    AssistantResponseNode,
+    Node,
+    SummaryNode,
+    ToolCallNode,
+    ToolResultNode,
+    UserPromptNode,
+)
 from .protocol import Agent, Compressor, Session
 
 if TYPE_CHECKING:
-    from little_agent.backends.protocol import Backend
+    from little_agent.backends.protocol import Backend, BackendTurnResult
     from little_agent.frontends.protocol import Client
     from little_agent.tools.protocol import ToolManager
 
@@ -105,67 +112,8 @@ class SessionCore(Session):
                 return ("end_turn", result.output_text)
 
             if result.finish_reason == "tool_call":
-                tool_call_node = ToolCallNode(
-                    id=str(uuid.uuid4()),
-                    prev=self.tail,
-                    calls={
-                        tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
-                        for tc in result.tool_calls
-                    },
-                )
-                self._append_node(tool_call_node)
-                await self.agent.client.update(
-                    self,
-                    SessionUpdate(
-                        type="tool_call",
-                        data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
-                    ),
-                )
-
-                tool_result_node = ToolResultNode(
-                    id=str(uuid.uuid4()),
-                    prev=self.tail,
-                    results={},
-                )
-                self._append_node(tool_result_node)
-
-                pending_calls = {tc.call_id: tc for tc in result.tool_calls}
-                tasks = [
-                    self.agent.tools.invoke(tc.tool_name, **tc.arguments)
-                    for tc in result.tool_calls
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                for tc, res in zip(result.tool_calls, results, strict=True):
-                    if self._cancel_requested and tc.call_id in pending_calls:
-                        tool_result_node.results[tc.call_id] = {
-                            "status": "cancelled",
-                            "content": "",
-                        }
-                        del pending_calls[tc.call_id]
-                    elif isinstance(res, Exception):
-                        tool_result_node.results[tc.call_id] = {
-                            "status": "failed",
-                            "content": str(res),
-                        }
-                    else:
-                        tool_result_node.results[tc.call_id] = {
-                            "status": "completed",
-                            "content": res,
-                        }
-                    await self.agent.client.update(
-                        self,
-                        SessionUpdate(
-                            type="tool_call_update",
-                            data={
-                                "call_id": tc.call_id,
-                                "status": tool_result_node.results[tc.call_id]["status"],
-                                "content": tool_result_node.results[tc.call_id]["content"],
-                            },
-                        ),
-                    )
-
-                self._freeze_tail()
+                handler = _ToolCallHandler(self)
+                partial_output = await handler.handle(result, partial_output)
                 continue
 
             if result.finish_reason == "cancelled":
@@ -333,6 +281,87 @@ class AgentCore(Agent):
 
     def _build_summary_node(self, item: dict[str, Any], node_id: str, prev: Node | None) -> Node:
         summary = item.get("summary")
-        from .nodes import SummaryNode
-
         return SummaryNode(id=node_id, prev=prev, summary=summary)
+
+
+class _ToolCallHandler:
+    """Handles tool_call finish_reason from backend."""
+
+    def __init__(self, session: SessionCore) -> None:
+        self.session = session
+
+    async def handle(self, result: BackendTurnResult, partial_output: str) -> str:
+        """Handle tool_call result and return updated partial_output."""
+        partial_output = result.output_text or partial_output
+        if result.output_text:
+            await self.session.agent.client.update(
+                self.session,
+                SessionUpdate(
+                    type="agent_message_chunk",
+                    data={"text": result.output_text},
+                ),
+            )
+        tool_call_node = ToolCallNode(
+            id=str(uuid.uuid4()),
+            prev=self.session.tail,
+            calls={
+                tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
+                for tc in result.tool_calls
+            },
+        )
+        self.session._append_node(tool_call_node)
+        await self.session.agent.client.update(
+            self.session,
+            SessionUpdate(
+                type="tool_call",
+                data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
+            ),
+        )
+
+        tool_result_node = ToolResultNode(
+            id=str(uuid.uuid4()),
+            prev=self.session.tail,
+            results={},
+        )
+        self.session._append_node(tool_result_node)
+
+        pending_calls = {tc.call_id: tc for tc in result.tool_calls}
+        tasks = [
+            self.session.agent.tools.invoke(tc.tool_name, **tc.arguments)
+            for tc in result.tool_calls
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for tc, res in zip(result.tool_calls, results, strict=True):
+            if tool_result_node.frozen:
+                break
+            if self.session._cancel_requested and tc.call_id in pending_calls:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "cancelled",
+                    "content": "",
+                }
+                del pending_calls[tc.call_id]
+            elif isinstance(res, Exception):
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": str(res),
+                }
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "completed",
+                    "content": res,
+                }
+            await self.session.agent.client.update(
+                self.session,
+                SessionUpdate(
+                    type="tool_call_update",
+                    data={
+                        "call_id": tc.call_id,
+                        "status": tool_result_node.results[tc.call_id]["status"],
+                        "content": tool_result_node.results[tc.call_id]["content"],
+                    },
+                ),
+            )
+
+        self.session._freeze_tail()
+        return partial_output

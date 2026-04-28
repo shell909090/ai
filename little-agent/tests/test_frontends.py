@@ -164,3 +164,16 @@ async def test_cli_run_success_path() -> None:
     with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
         with patch("builtins.print"):
             await client.run(agent)
+
+
+@pytest.mark.asyncio
+async def test_cli_run_unknown_command() -> None:
+    """Test CliClient.run prints hint for unknown / commands."""
+    client = CliClient()
+    agent = MockAgent()
+
+    with patch("asyncio.to_thread", side_effect=["/typo", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call("Unknown command: /typo")

@@ -32,9 +32,11 @@ class CliClient(Client):
             print(f"[Agent] {text}")
         elif update.type == "tool_call":
             calls = update.data.get("calls", {})
-            assert isinstance(calls, dict)
+            if not isinstance(calls, dict):
+                raise ValueError("tool_call update 'calls' must be a dict")
             for call_id, call_data in calls.items():
-                assert isinstance(call_data, dict)
+                if not isinstance(call_data, dict):
+                    raise ValueError(f"tool_call update call_data for {call_id} must be a dict")
                 print(f"[ToolCall] {call_id}: {call_data['tool_name']}")
         elif update.type == "tool_call_update":
             call_id_raw = update.data.get("call_id", "")
@@ -117,6 +119,7 @@ class CliClient(Client):
                 session = await self._do_load(agent, session, path)
             return session, True
 
+        print(f"Unknown command: {stripped}")
         return session, True
 
     async def run(self, agent: Agent) -> None:
