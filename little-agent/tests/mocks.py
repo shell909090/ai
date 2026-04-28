@@ -7,7 +7,7 @@ from little_agent.agent.protocol import Session
 from little_agent.backends.protocol import Backend, BackendTurnResult
 from little_agent.frontends.protocol import Client, SessionUpdate
 from little_agent.tools.exceptions import ToolExecutionError
-from little_agent.tools.protocol import ToolManager, ToolMap, ToolProvider
+from little_agent.tools.protocol import ToolMap, ToolProvider
 from little_agent.types import JSONValue
 
 
@@ -58,8 +58,8 @@ class MockBackend(Backend):
         )
 
 
-class MockToolManager(ToolManager):
-    """Mock tool manager with preset responses."""
+class MockToolProvider(ToolProvider):
+    """Mock tool provider with preset responses."""
 
     def __init__(
         self,
@@ -82,9 +82,6 @@ class MockToolManager(ToolManager):
         if name in self._responses:
             return self._responses[name]
         return {"result": "ok"}
-
-    def register(self, provider: ToolProvider) -> None:
-        """Register a tool provider (no-op for mock)."""
 
 
 class BuiltinToolProvider(ToolProvider):
@@ -130,11 +127,11 @@ class MockAgent:
     def __init__(
         self,
         backend: MockBackend | None = None,
-        tools: MockToolManager | None = None,
+        tools: MockToolProvider | None = None,
         client: MockClient | None = None,
     ) -> None:
         self._backend = backend or MockBackend()
-        self._tools = tools or MockToolManager()
+        self._tools = tools or MockToolProvider()
         self._client = client or MockClient()
         self._agent = AgentCore(
             client=self._client,

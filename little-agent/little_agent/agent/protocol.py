@@ -9,7 +9,7 @@ from little_agent.types import ContentBlock, JSONValue, PromptReturn
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
-    from little_agent.tools.protocol import ToolManager
+    from little_agent.tools.protocol import ToolProvider
 
     from .nodes import Node
 
@@ -41,7 +41,7 @@ class Agent(Protocol):
         self,
         client: Client,
         backend: Backend,
-        tools: ToolManager,
+        tools: ToolProvider,
         compressor: Compressor | None = None,
     ) -> None: ...
 

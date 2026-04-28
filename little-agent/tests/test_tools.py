@@ -3,14 +3,14 @@
 import pytest
 
 from little_agent.tools.exceptions import ToolExecutionError, ToolInvokeError
-from little_agent.tools.manager import AggregatedToolManager
+from little_agent.tools.manager import ToolManager
 from tests.mocks import BuiltinToolProvider
 
 
 @pytest.mark.asyncio
-async def test_aggregated_manager_register_and_list() -> None:
+async def test_tool_manager_register_and_list() -> None:
     """Test register and list tools."""
-    manager = AggregatedToolManager()
+    manager = ToolManager()
     provider = BuiltinToolProvider()
     manager.register(provider)
     tools = manager.list()
@@ -21,7 +21,7 @@ async def test_aggregated_manager_register_and_list() -> None:
 @pytest.mark.asyncio
 async def test_invoke_routes_to_provider() -> None:
     """Test invoke routes to correct provider."""
-    manager = AggregatedToolManager()
+    manager = ToolManager()
     provider = BuiltinToolProvider()
     manager.register(provider)
     result = await manager.invoke("echo", text="hello")
@@ -31,7 +31,7 @@ async def test_invoke_routes_to_provider() -> None:
 @pytest.mark.asyncio
 async def test_invoke_unknown_tool_raises() -> None:
     """Test invoke unknown tool raises ToolInvokeError."""
-    manager = AggregatedToolManager()
+    manager = ToolManager()
     with pytest.raises(ToolInvokeError):
         await manager.invoke("nonexistent")
 

@@ -85,7 +85,7 @@ agent -> backends
 这一层采用更符合 Python 使用习惯的对象模型：
 
 1. frontend 具体实现 `Client` 接口。
-2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolManager`（以及可选的 `Compressor`）引用。
+2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolProvider`（以及可选的 `Compressor`）引用。
 3. `Agent.new()` 与 `Agent.load()` 创建 `Session`。
 4. `Session.prompt()` 负责推进一轮对话，也就是延伸倒排链。
 5. `Session` 在运行中通过 `Agent` 反向回调 `Client.update()`。
@@ -158,7 +158,7 @@ class Agent(Protocol):
         self,
         client: Client,
         backend: Backend,
-        tools: ToolManager,
+        tools: ToolProvider,
         compressor: "Compressor | None" = None,
     ) -> None: ...
 
@@ -178,6 +178,7 @@ class Agent(Protocol):
 2. `new()` 与 `load()` 不重复接收 `client` 参数。
 3. 如需不同 client，应创建不同 agent 实例。
 4. `compressor` 为可选注入；不注入时 `Session.compress()` 抛异常。
+5. `tools` 参数类型为 `ToolProvider`。Agent 运行时只关心"能列出工具、能调用工具"，不关心对方是单个 provider 还是聚合后的 `ToolManager`。
 
 ### 4.5 Session 接口
 
@@ -267,26 +268,20 @@ ToolMap = dict[str, ToolDef]
 2. 框架层通过 `json.dumps(...)` 校验可序列化性。
 3. `session_id`、`cwd`、`call_id` 不进入 tool 函数签名；这些由 agent 内部管理。
 
-### 5.3 ToolManager 接口
+### 5.3 ToolProvider 接口
 
 ```python
-class ToolManager(Protocol):
+@runtime_checkable
+class ToolProvider(Protocol):
     def list(self) -> ToolMap: ...
-
-    async def invoke(
-        self,
-        name: str,
-        **kwargs: JSONValue,
-    ) -> JSONValue: ...
-
-    def register(self, provider: ToolProvider) -> None: ...
+    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue: ...
 ```
 
 规则：
 
-1. `list()` 返回当前 manager 聚合后的全部 tools。
+1. `list()` 返回当前 provider 暴露的全部 tools。
 2. `invoke()` 是 async 的，以便 agent 用 `asyncio.gather` 并发执行多个 tool call。同步 tool 由 provider 层用 `asyncio.to_thread` 包装成 async。
-3. `invoke()` 的签名与底层 provider 一致，便于透传与测试。
+3. `invoke()` 的签名与底层 tool 函数一致，便于透传与测试。
 4. `invoke()` 的返回值不限定为字符串，只要求可 JSON 序列化。
 5. 未知 tool、参数不合法、执行失败都通过异常表示，不使用额外的错误码返回机制。
 6. 建议内部至少区分两类异常：
@@ -295,7 +290,17 @@ class ToolManager(Protocol):
 7. 上述异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 结果中，**绝不向上冒出 prompt turn**。这是 tools 机制的关键语义：模型拿到失败反馈后，自主决定是否重试、换工具或放弃。
 8. 本期不对并发 tool 调用设上限；未来可能加入并发上限（见 §11）。
 
-### 5.4 tools 模块内部实现边界
+### 5.4 ToolManager 实现
+
+`ToolManager` 是一个**具体类**，不是 Protocol。它聚合多个 `ToolProvider`，对外实现 `ToolProvider` Protocol（即提供 `list()` 和 `invoke()`），同时额外提供 `register(provider)` 方法用于组装期注册。
+
+说明：
+
+1. `ToolProvider` 是 agent 运行时的统一契约。任何实现了 `list` + `invoke` 的对象都可以注入 Agent。
+2. 由于 `ToolMap` 是字典结构，聚合时可以直接 `tools.update(provider.list())`。
+3. 这种设计支持 Chain of Responsibility 模式：可以在 `ToolManager` 外再包一层 filter、logger、权限检查等装饰层，只要外层也实现 `ToolProvider` 即可注入 Agent。
+
+### 5.5 tools 模块内部实现边界
 
 `tools` 模块内部可以继续拆实现，但不向外暴露为一级模块接口：
 
@@ -303,15 +308,7 @@ class ToolManager(Protocol):
 2. MCP provider adapter
 3. tool routing
 
-对 `agent` 暴露的唯一稳定边界就是 `ToolManager`。
-
-`tools` 模块内部注册对象的最小接口形态为：
-
-```python
-class ToolProvider(Protocol):
-    def list(self) -> ToolMap: ...
-    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue: ...
-```
+对 `agent` 暴露的唯一稳定边界就是 `ToolProvider` Protocol。
 
 内置 tool 的最小函数形态为：
 
@@ -321,12 +318,6 @@ async def f(**kwargs: JSONValue) -> JSONValue:
 ```
 
 同步 tool 由内置 provider 统一包装成 async（`asyncio.to_thread`）。
-
-说明：
-
-1. provider 负责暴露一批 tools。
-2. `ToolManager` 负责聚合多个 provider。
-3. 由于 `ToolMap` 是字典结构，聚合时可以直接 `tools.update(provider.list())`。
 
 ## 6. backends 与 agent 的接口
 
@@ -530,7 +521,7 @@ class Compressor(Protocol):
       - 追加 `ToolCallNode`（冻结）。
       - 通过 `Client.update(session, tool_call)` 通知 frontend。
       - 追加 `ToolResultNode`（可变）。
-      - 并发调用 `ToolManager.invoke(...)` 执行全部 tools（`asyncio.gather`）。
+      - 并发调用 `ToolProvider.invoke(...)` 执行全部 tools（`asyncio.gather`）。
         - 正常完成：写入对应 `call_id` 的结果（`status = "completed"`）。
         - 抛出 `ToolInvokeError` / `ToolExecutionError`：捕获并写入失败结果（`status = "failed"`，`content` 为异常信息）。
         - tool 抛出的异常**绝不冒出 prompt turn**。
@@ -569,7 +560,7 @@ little-agent = "little_agent.main:main"
 1. 解析 CLI 参数（包括 `--debug` 等日志级别 flag）。
 2. 加载 YAML 配置文件。
 3. 初始化 logger（标准 `logging` 模块；debug 模式由 argparse flag 控制，符合 AGENTS.md 工程要求）。
-4. 初始化 `ToolManager`（含所有已配置 providers）。
+4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例，并调用其 `register()` 方法注册所有已配置的 providers。
 5. 初始化 `Backend`。
 6. 初始化 `Compressor`（可选）。
 7. 初始化具体 `Client` 实现（本期为 `CliClient`）。
@@ -618,7 +609,8 @@ logging:
    - 实现 `Client` 接口。
    - 收集 `SessionUpdate` 与 prompt 结果。
    - 不依赖终端交互。
-2. `MockToolManager`
+2. `MockToolProvider`
+   - 实现 `ToolProvider` 接口。
    - 返回固定 `ToolMap`。
    - 按预设规则返回 JSON 可序列化结果。
    - 支持模拟成功、失败、延迟、取消后迟到结果。
@@ -639,7 +631,7 @@ logging:
    - `tools`：list/invoke/聚合行为。
    - `backends`：请求转换、返回解析。
 2. **模块集成测试**：被测模块保留真实实现，其所有上下游接口换成 mock。
-   - 测 `agent`：`MockClient + Agent + MockToolManager + MockBackend`。
+   - 测 `agent`：`MockClient + Agent + MockToolProvider + MockBackend`。
    - 测 `frontends`：`CliClient + MockAgent`。
    - 测 `tools`：`MockAgent` 驱动 + 真实 `ToolManager` + 真实 provider。
    - 测 `backends`：真实 `Backend` + 预构造的真实 `Session` 对象。不走 MockAgent，因为 Backend 依赖 session 链条的具体形态，MockAgent 难以替代。
@@ -676,8 +668,6 @@ logging:
 1. 一级模块固定为 `agent`、`tools`、`frontends`、`backends`
 2. 启动装配由 `little-agent` 命令行脚本完成（`pyproject.toml` 的 `[project.scripts]` 注册）
 3. `frontends <-> agent` 用 ACP 类接口；`Client` 是稳定边界
-4. `tools <-> agent` 用 MCP 类接口
+4. `tools <-> agent` 用 MCP 类接口；`ToolProvider` 是稳定边界
 5. `backends <-> agent` 先使用最小内部接口
-6. 测试中提供 `MockClient`、`MockToolManager`、`MockBackend`、`MockAgent`
-
-设计确认无误后再开始编码。
+6. 测试中提供 `MockClient`、`MockToolProvider`、`MockBackend`、`MockAgent`

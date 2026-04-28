@@ -13,7 +13,7 @@ import yaml
 from little_agent.agent.core import AgentCore
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.cli import CliClient
-from little_agent.tools.manager import AggregatedToolManager
+from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolProvider
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def main() -> None:
     log_level = "DEBUG" if args.debug else config.get("logging", {}).get("level", "INFO")
     setup_logging(log_level)
 
-    tools = AggregatedToolManager()
+    tools = ToolManager()
 
     for provider in load_providers_from_config(config):
         tools.register(provider)

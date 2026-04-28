@@ -16,7 +16,7 @@ from little_agent.backends.openai import (
     _chain_to_messages,
     _tool_map_to_openai_functions,
 )
-from tests.mocks import MockClient, MockToolManager
+from tests.mocks import MockClient, MockToolProvider
 
 
 def test_tool_map_to_openai_functions() -> None:
@@ -87,7 +87,7 @@ def test_chain_to_messages_parallel_tool_calls() -> None:
 async def test_openai_backend_generate() -> None:
     """Test OpenAI backend generate method."""
     client = MockClient()
-    tools = MockToolManager(tools={"echo": ("Echo", [("text", "string", "text", True)])})
+    tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     mock_response = MagicMock()
@@ -109,7 +109,7 @@ async def test_openai_backend_generate() -> None:
 async def test_openai_backend_generate_with_tool_calls() -> None:
     """Test OpenAI backend generate with tool calls in response."""
     client = MockClient()
-    tools = MockToolManager(tools={"echo": ("Echo", [("text", "string", "text", True)])})
+    tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     mock_tool_call = MagicMock()

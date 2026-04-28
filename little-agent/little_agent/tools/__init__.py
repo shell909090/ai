@@ -1,16 +1,15 @@
 """Tools module."""
 
 from .exceptions import ToolExecutionError, ToolInvokeError
-from .manager import AggregatedToolManager
-from .protocol import ToolArgDef, ToolDef, ToolManager, ToolMap, ToolProvider
+from .manager import ToolManager
+from .protocol import ToolArgDef, ToolDef, ToolMap, ToolProvider
 
 __all__ = [
-    "ToolManager",
     "ToolProvider",
     "ToolArgDef",
     "ToolDef",
     "ToolMap",
-    "AggregatedToolManager",
+    "ToolManager",
     "ToolInvokeError",
     "ToolExecutionError",
 ]

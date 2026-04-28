@@ -21,7 +21,7 @@ from .protocol import Agent, Compressor, Session
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend, BackendTurnResult
     from little_agent.frontends.protocol import Client
-    from little_agent.tools.protocol import ToolManager
+    from little_agent.tools.protocol import ToolProvider
 
 MAX_TURN_ITERATIONS = 10
 
@@ -185,7 +185,7 @@ class AgentCore(Agent):
         self,
         client: Client,
         backend: Backend,
-        tools: ToolManager,
+        tools: ToolProvider,
         compressor: Compressor | None = None,
     ) -> None:
         self.client = client

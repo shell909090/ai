@@ -3,11 +3,10 @@
 from little_agent.types import JSONValue
 
 from .exceptions import ToolInvokeError
-from .protocol import ToolManager as ToolManagerProtocol
 from .protocol import ToolMap, ToolProvider
 
 
-class AggregatedToolManager(ToolManagerProtocol):
+class ToolManager:
     """Aggregates multiple tool providers."""
 
     def __init__(self) -> None:

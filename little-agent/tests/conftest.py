@@ -3,7 +3,7 @@
 import pytest
 
 from little_agent.agent.core import AgentCore
-from tests.mocks import MockBackend, MockClient, MockToolManager
+from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
 @pytest.fixture
@@ -19,9 +19,9 @@ def mock_backend() -> MockBackend:
 
 
 @pytest.fixture
-def mock_tools() -> MockToolManager:
-    """Return a mock tool manager."""
-    return MockToolManager(
+def mock_tools() -> MockToolProvider:
+    """Return a mock tool provider."""
+    return MockToolProvider(
         tools={
             "echo": ("Echo tool", [("text", "string", "text", True)]),
             "add": ("Add tool", [("a", "number", "a", True), ("b", "number", "b", True)]),
@@ -37,7 +37,7 @@ def mock_tools() -> MockToolManager:
 def agent(
     mock_client: MockClient,
     mock_backend: MockBackend,
-    mock_tools: MockToolManager,
+    mock_tools: MockToolProvider,
 ) -> AgentCore:
     """Return an agent with mock dependencies."""
     return AgentCore(client=mock_client, backend=mock_backend, tools=mock_tools)

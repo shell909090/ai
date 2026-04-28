@@ -7,7 +7,7 @@ import pytest
 from little_agent.agent.core import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from tests.mocks import MockBackend, MockClient, MockToolManager
+from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_single_turn_no_tools() -> None:
             BackendTurnResult(output_text="hello", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     reason, text = await session.prompt("hi")
@@ -45,7 +45,7 @@ async def test_single_tool_call() -> None:
             BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager(
+    tools = MockToolProvider(
         tools={"echo": ("Echo", [("text", "string", "text", True)])},
         responses={"echo": "echoed"},
     )
@@ -74,7 +74,7 @@ async def test_single_tool_call_with_output_text() -> None:
             BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager(
+    tools = MockToolProvider(
         tools={"echo": ("Echo", [("text", "string", "text", True)])},
         responses={"echo": "echoed"},
     )
@@ -104,7 +104,7 @@ async def test_multiple_parallel_tool_calls() -> None:
             BackendTurnResult(output_text="ok", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager(
+    tools = MockToolProvider(
         tools={
             "echo": ("Echo", [("text", "string", "text", True)]),
             "add": ("Add", [("a", "number", "a", True), ("b", "number", "b", True)]),
@@ -142,7 +142,7 @@ async def test_multi_turn_backend_tool_loop() -> None:
             BackendTurnResult(output_text="final", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager(
+    tools = MockToolProvider(
         tools={"echo": ("Echo", [("text", "string", "text", True)])},
         responses={"echo": "ok"},
     )
@@ -167,7 +167,7 @@ async def test_tool_exception_captured() -> None:
             BackendTurnResult(output_text="recovered", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager(
+    tools = MockToolProvider(
         tools={"bad": ("Bad tool", [])},
         errors={"bad"},
     )
@@ -193,7 +193,7 @@ async def test_cancel_during_tool_execution() -> None:
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
-    tools = MockToolManager(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
+    tools = MockToolProvider(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
@@ -215,7 +215,7 @@ async def test_fork_shares_history() -> None:
             BackendTurnResult(output_text="first", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.prompt("hi")
@@ -235,7 +235,7 @@ async def test_fork_during_active_turn_raises() -> None:
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     task = asyncio.create_task(session.prompt("slow"))
@@ -260,7 +260,7 @@ async def test_compress_during_active_turn_raises() -> None:
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     task = asyncio.create_task(session.prompt("slow"))
@@ -285,7 +285,7 @@ async def test_pending_queue_full_raises() -> None:
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     task1 = asyncio.create_task(session.prompt("first"))
@@ -319,7 +319,7 @@ async def test_pending_queue_executes_serially() -> None:
             BackendTurnResult(output_text="b", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
@@ -349,7 +349,7 @@ async def test_max_turn_iterations_exceeded() -> None:
         for i in range(15)
     ]
     backend = MockBackend(script)
-    tools = MockToolManager(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
+    tools = MockToolProvider(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     with pytest.raises(RuntimeError, match="Max turn iterations exceeded"):
@@ -361,7 +361,7 @@ async def test_cancel_when_not_active() -> None:
     """Test cancel when no active turn does nothing."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.cancel()
@@ -373,7 +373,7 @@ async def test_compress_with_compressor() -> None:
     """Test compress with compressor configured."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
 
     class FakeCompressor:
         async def compress(self, head):
@@ -389,7 +389,7 @@ async def test_compress_no_compressor_raises() -> None:
     """Test compress without compressor raises RuntimeError."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     with pytest.raises(RuntimeError, match="No compressor configured"):
@@ -405,7 +405,7 @@ async def test_save_returns_dict_with_chain() -> None:
             BackendTurnResult(output_text="hello", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.prompt("hi")
@@ -421,7 +421,7 @@ async def test_agent_load() -> None:
     """Test AgentCore.load restores session from data."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.load({"id": "test-id", "cwd": "/tmp"})
     assert session.id == "test-id"
@@ -433,7 +433,7 @@ async def test_agent_load_invalid_data_raises() -> None:
     """Test AgentCore.load with invalid data raises ValueError."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     with pytest.raises(ValueError, match="Invalid session data"):
         await agent.load("not a dict")
@@ -444,7 +444,7 @@ async def test_agent_load_missing_id_raises() -> None:
     """Test AgentCore.load with missing id raises ValueError."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     with pytest.raises(ValueError, match="Session data missing 'id'"):
         await agent.load({"cwd": "/tmp"})
@@ -455,7 +455,7 @@ async def test_agent_load_with_chain() -> None:
     """Test AgentCore.load restores chain."""
     client = MockClient()
     backend = MockBackend()
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     data = {
         "id": "test-id",
@@ -484,7 +484,7 @@ async def test_save_load_round_trip() -> None:
             BackendTurnResult(output_text="hello", tool_calls=[], finish_reason="completed"),
         ]
     )
-    tools = MockToolManager()
+    tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.prompt("hi")
