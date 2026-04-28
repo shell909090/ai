@@ -177,3 +177,20 @@ async def test_cli_run_unknown_command() -> None:
             await client.run(agent)
 
     mock_print.assert_any_call("Unknown command: /typo")
+
+
+@pytest.mark.asyncio
+async def test_cli_run_cancelled() -> None:
+    """Test CliClient.run prints [Cancelled] when prompt returns cancelled."""
+    client = CliClient()
+    agent = MockAgent()
+    agent._agent.new = AsyncMock(return_value=MagicMock())
+    session = await agent._agent.new()
+    session.prompt = AsyncMock(return_value=("cancelled", ""))
+    agent.new = AsyncMock(return_value=session)
+
+    with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call("[Cancelled]")

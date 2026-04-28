@@ -37,7 +37,12 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
-    """Load tool providers from configuration."""
+    """Load tool providers from configuration.
+
+    Note: ``isinstance(provider, ToolProvider)`` only checks that the object
+    implements the required methods (``list`` and ``invoke``) due to
+    ``@runtime_checkable``. It does **not** validate method signatures.
+    """
     providers: list[ToolProvider] = []
     tools_config = config.get("tools", {})
     provider_configs = tools_config.get("providers", [])
@@ -81,8 +86,12 @@ async def main() -> None:
     for provider in load_providers_from_config(config):
         tools.register(provider)
 
-    backend_config = config.get("backend", {})
-    backend_type = backend_config.get("type", "openai")
+    backend_config = config.get("backend")
+    if not isinstance(backend_config, dict):
+        raise ValueError("Config must contain a 'backend' section")
+    backend_type = backend_config.get("type")
+    if not backend_type:
+        raise ValueError("Config 'backend' must contain a 'type' field")
     if backend_type != "openai":
         raise ValueError(f"Unsupported backend type: {backend_type}")
 

@@ -91,6 +91,41 @@ async def test_main_unsupported_backend_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_main_missing_backend_raises() -> None:
+    """Test main raises ValueError when backend section is missing."""
+    mock_config = {
+        "logging": {"level": "INFO"},
+        "tools": {"providers": []},
+    }
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                with pytest.raises(ValueError, match="Config must contain a 'backend' section"):
+                    await main()
+
+
+@pytest.mark.asyncio
+async def test_main_missing_backend_type_raises() -> None:
+    """Test main raises ValueError when backend type is missing."""
+    mock_config = {
+        "backend": {"model": "gpt-4"},
+        "logging": {"level": "INFO"},
+        "tools": {"providers": []},
+    }
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                with pytest.raises(
+                    ValueError, match="Config 'backend' must contain a 'type' field"
+                ):
+                    await main()
+
+
+@pytest.mark.asyncio
 async def test_main_missing_api_key_raises() -> None:
     """Test main raises ValueError when API key env var is missing."""
     mock_config = {

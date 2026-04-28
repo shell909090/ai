@@ -59,6 +59,35 @@ async def test_single_tool_call() -> None:
 
 
 @pytest.mark.asyncio
+async def test_single_tool_call_with_output_text() -> None:
+    """Test output_text is not lost when finish_reason is tool_call."""
+    client = MockClient()
+    backend = MockBackend(
+        [
+            BackendTurnResult(
+                output_text="thinking...",
+                tool_calls=[
+                    BackendToolCall(call_id="c1", tool_name="echo", arguments={"text": "hi"})
+                ],
+                finish_reason="tool_call",
+            ),
+            BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
+        ]
+    )
+    tools = MockToolManager(
+        tools={"echo": ("Echo", [("text", "string", "text", True)])},
+        responses={"echo": "echoed"},
+    )
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+    reason, text = await session.prompt("call echo")
+    assert reason == "end_turn"
+    assert text == "done"
+    chunk_updates = [u for u in client.updates if u.type == "agent_message_chunk"]
+    assert any(u.data.get("text") == "thinking..." for u in chunk_updates)
+
+
+@pytest.mark.asyncio
 async def test_multiple_parallel_tool_calls() -> None:
     """Test multiple parallel tool calls."""
     client = MockClient()

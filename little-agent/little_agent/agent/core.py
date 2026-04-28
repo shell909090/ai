@@ -324,6 +324,7 @@ class _ToolCallHandler:
             results={},
         )
         self.session._append_node(tool_result_node)
+        self.session._freeze_tail()
 
         pending_calls = {tc.call_id: tc for tc in result.tool_calls}
         tasks = [
@@ -333,8 +334,6 @@ class _ToolCallHandler:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for tc, res in zip(result.tool_calls, results, strict=True):
-            if tool_result_node.frozen:
-                break
             if self.session._cancel_requested and tc.call_id in pending_calls:
                 tool_result_node.results[tc.call_id] = {
                     "status": "cancelled",
@@ -363,5 +362,4 @@ class _ToolCallHandler:
                 ),
             )
 
-        self.session._freeze_tail()
         return partial_output
