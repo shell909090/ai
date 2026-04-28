@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from little_agent.agent.core import AgentCore
+from little_agent.agent.protocol import Session
 from little_agent.backends.protocol import Backend, BackendTurnResult
 from little_agent.frontends.protocol import Client, SessionUpdate
-from little_agent.tools.protocol import ToolManager, ToolMap
+from little_agent.tools.exceptions import ToolExecutionError
+from little_agent.tools.protocol import ToolManager, ToolMap, ToolProvider
 from little_agent.types import JSONValue
 
 
@@ -81,6 +83,46 @@ class MockToolManager(ToolManager):
             return self._responses[name]
         return {"result": "ok"}
 
+    def register(self, provider: ToolProvider) -> None:
+        """Register a tool provider (no-op for mock)."""
+
+
+class BuiltinToolProvider(ToolProvider):
+    """Provides built-in tools for testing."""
+
+    def __init__(self) -> None:
+        self._tools: ToolMap = {
+            "echo": (
+                "Echo the input text back",
+                [
+                    ("text", "string", "The text to echo", True),
+                ],
+            ),
+            "add": (
+                "Add two numbers",
+                [
+                    ("a", "number", "First number", True),
+                    ("b", "number", "Second number", True),
+                ],
+            ),
+        }
+
+    def list(self) -> ToolMap:
+        """Return built-in tools."""
+        return self._tools.copy()
+
+    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue:
+        """Invoke a built-in tool."""
+        if name == "echo":
+            return kwargs.get("text", "")
+        if name == "add":
+            a = kwargs.get("a", 0)
+            b = kwargs.get("b", 0)
+            if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+                raise ToolExecutionError("Arguments must be numbers")
+            return a + b
+        raise ToolExecutionError(f"Unknown tool: {name}")
+
 
 class MockAgent:
     """Mock agent for frontend and tools integration testing."""
@@ -100,10 +142,10 @@ class MockAgent:
             tools=self._tools,
         )
 
-    async def new(self, cwd: str | None = None) -> object:
+    async def new(self, cwd: str | None = None) -> Session:
         """Create a new mock session."""
         return await self._agent.new(cwd=cwd)
 
-    async def load(self, data: JSONValue) -> object:
+    async def load(self, data: JSONValue) -> Session:
         """Load a mock session."""
         return await self._agent.load(data)

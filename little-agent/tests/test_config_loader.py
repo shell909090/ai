@@ -1,8 +1,8 @@
-"""Tests for tool configuration loader."""
+"""Tests for tool configuration loader in main."""
 
 from unittest.mock import MagicMock, patch
 
-from little_agent.tools.config_loader import load_providers_from_config
+from little_agent.main import load_providers_from_config
 from little_agent.tools.protocol import ToolProvider
 
 

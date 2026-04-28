@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import importlib
 import logging
 import os
 from pathlib import Path
@@ -12,9 +13,10 @@ import yaml
 from little_agent.agent.core import AgentCore
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.cli import CliClient
-from little_agent.tools.builtin import BuiltinToolProvider
-from little_agent.tools.config_loader import load_providers_from_config
 from little_agent.tools.manager import AggregatedToolManager
+from little_agent.tools.protocol import ToolProvider
+
+logger = logging.getLogger(__name__)
 
 
 def setup_logging(level: str) -> None:
@@ -29,8 +31,37 @@ def load_config(path: Path) -> dict[str, Any]:
     """Load YAML configuration."""
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    assert isinstance(data, dict)
+    if not isinstance(data, dict):
+        raise ValueError("Config file must contain a YAML mapping")
     return data
+
+
+def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
+    """Load tool providers from configuration."""
+    providers: list[ToolProvider] = []
+    tools_config = config.get("tools", {})
+    provider_configs = tools_config.get("providers", [])
+
+    for provider_config in provider_configs:
+        provider_type = provider_config.get("type")
+        if provider_type == "python":
+            module_name = provider_config.get("module")
+            if not module_name:
+                logger.warning("Python provider missing 'module', skipping")
+                continue
+            try:
+                module = importlib.import_module(module_name)
+                provider = module.create_provider()
+                if not isinstance(provider, ToolProvider):
+                    logger.warning("Module %s did not return a ToolProvider", module_name)
+                    continue
+                providers.append(provider)
+            except Exception:
+                logger.exception("Failed to load python module provider: %s", module_name)
+        else:
+            logger.warning("Unknown provider type: %s", provider_type)
+
+    return providers
 
 
 async def main() -> None:
@@ -46,7 +77,6 @@ async def main() -> None:
     setup_logging(log_level)
 
     tools = AggregatedToolManager()
-    tools.register(BuiltinToolProvider())
 
     for provider in load_providers_from_config(config):
         tools.register(provider)

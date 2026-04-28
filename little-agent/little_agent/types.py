@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal, Union
+from typing import Literal
 
-JSONScalar = Union[str, int, float, bool, None]
-JSONValue = Union[JSONScalar, list["JSONValue"], dict[str, "JSONValue"]]
+JSONScalar = str | int | float | bool | None
+JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 ContentBlock = dict[str, JSONValue]
 
 StopReason = Literal["end_turn", "cancelled"]

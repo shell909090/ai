@@ -336,7 +336,7 @@ async def test_cancel_when_not_active() -> None:
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.cancel()
-    assert session._cancel_requested is False
+    assert not session.save().get("chain")
 
 
 @pytest.mark.asyncio
@@ -408,3 +408,62 @@ async def test_agent_load_invalid_data_raises() -> None:
     agent = AgentCore(client=client, backend=backend, tools=tools)
     with pytest.raises(ValueError, match="Invalid session data"):
         await agent.load("not a dict")
+
+
+@pytest.mark.asyncio
+async def test_agent_load_missing_id_raises() -> None:
+    """Test AgentCore.load with missing id raises ValueError."""
+    client = MockClient()
+    backend = MockBackend()
+    tools = MockToolManager()
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    with pytest.raises(ValueError, match="Session data missing 'id'"):
+        await agent.load({"cwd": "/tmp"})
+
+
+@pytest.mark.asyncio
+async def test_agent_load_with_chain() -> None:
+    """Test AgentCore.load restores chain."""
+    client = MockClient()
+    backend = MockBackend()
+    tools = MockToolManager()
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    data = {
+        "id": "test-id",
+        "cwd": "/tmp",
+        "chain": [
+            {"kind": "user_prompt", "id": "n1", "prompt": "hello"},
+            {"kind": "assistant_response", "id": "n2", "text": "hi"},
+        ],
+    }
+    session = await agent.load(data)
+    assert session.id == "test-id"
+    assert session.tail is not None
+    assert session.tail.kind == "assistant_response"
+    assert session.tail.text == "hi"
+    assert session.tail.prev is not None
+    assert session.tail.prev.kind == "user_prompt"
+    assert session.tail.prev.prompt == "hello"
+
+
+@pytest.mark.asyncio
+async def test_save_load_round_trip() -> None:
+    """Test save and load round-trip."""
+    client = MockClient()
+    backend = MockBackend(
+        [
+            BackendTurnResult(output_text="hello", tool_calls=[], finish_reason="completed"),
+        ]
+    )
+    tools = MockToolManager()
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+    await session.prompt("hi")
+    saved = session.save()
+
+    loaded_session = await agent.load(saved)
+    assert loaded_session.id == session.id
+    assert loaded_session.cwd == session.cwd
+    assert loaded_session.tail is not None
+    assert loaded_session.tail.kind == "assistant_response"
+    assert loaded_session.tail.text == "hello"

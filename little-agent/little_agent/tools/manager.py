@@ -13,10 +13,13 @@ class AggregatedToolManager(ToolManagerProtocol):
     def __init__(self) -> None:
         self._providers: list[ToolProvider] = []
         self._tools: ToolMap = {}
+        self._index: dict[str, ToolProvider] = {}
 
     def register(self, provider: ToolProvider) -> None:
         """Register a tool provider."""
         self._providers.append(provider)
+        for name in provider.list():
+            self._index[name] = provider
         self._tools.update(provider.list())
 
     def list(self) -> ToolMap:
@@ -25,7 +28,7 @@ class AggregatedToolManager(ToolManagerProtocol):
 
     async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue:
         """Invoke a tool by name."""
-        for provider in self._providers:
-            if name in provider.list():
-                return await provider.invoke(name, **kwargs)
+        provider = self._index.get(name)
+        if provider is not None:
+            return await provider.invoke(name, **kwargs)
         raise ToolInvokeError(f"Tool '{name}' not found")

@@ -119,3 +119,48 @@ async def test_cli_run_prompt_error() -> None:
             await client.run(agent)
 
     mock_print.assert_any_call("[Error] bad prompt")
+
+
+@pytest.mark.asyncio
+async def test_cli_run_new() -> None:
+    """Test CliClient.run handles /new."""
+    client = CliClient()
+    agent = MockAgent()
+
+    with patch("asyncio.to_thread", side_effect=["/new", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call("Created new session.")
+
+
+@pytest.mark.asyncio
+async def test_cli_run_save_and_load(tmp_path) -> None:
+    """Test CliClient.run handles /save and /load."""
+    client = CliClient()
+    agent = MockAgent()
+    save_path = tmp_path / "session.json"
+
+    with patch("asyncio.to_thread", side_effect=[f"/save {save_path}", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call(f"Session saved to {save_path}")
+    assert save_path.exists()
+
+    with patch("asyncio.to_thread", side_effect=[f"/load {save_path}", "/quit"]):
+        with patch("builtins.print") as mock_print2:
+            await client.run(agent)
+
+    mock_print2.assert_any_call(f"Session loaded from {save_path}")
+
+
+@pytest.mark.asyncio
+async def test_cli_run_success_path() -> None:
+    """Test CliClient.run successful prompt path."""
+    client = CliClient()
+    agent = MockAgent()
+
+    with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
+        with patch("builtins.print"):
+            await client.run(agent)

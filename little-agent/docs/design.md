@@ -278,6 +278,8 @@ class ToolManager(Protocol):
         name: str,
         **kwargs: JSONValue,
     ) -> JSONValue: ...
+
+    def register(self, provider: ToolProvider) -> None: ...
 ```
 
 规则：
@@ -298,9 +300,8 @@ class ToolManager(Protocol):
 `tools` 模块内部可以继续拆实现，但不向外暴露为一级模块接口：
 
 1. builtin tool registry
-2. config loader
-3. MCP provider adapter
-4. tool routing
+2. MCP provider adapter
+3. tool routing
 
 对 `agent` 暴露的唯一稳定边界就是 `ToolManager`。
 

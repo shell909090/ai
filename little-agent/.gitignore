@@ -8,5 +8,6 @@ dist/
 build/
 docs/log.md
 docs/review.md
+docs/tasks.md
 .coverage
 htmlcov/

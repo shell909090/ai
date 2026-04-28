@@ -2,9 +2,9 @@
 
 import pytest
 
-from little_agent.tools.builtin import BuiltinToolProvider
 from little_agent.tools.exceptions import ToolExecutionError, ToolInvokeError
 from little_agent.tools.manager import AggregatedToolManager
+from tests.mocks import BuiltinToolProvider
 
 
 @pytest.mark.asyncio

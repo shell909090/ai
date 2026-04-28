@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from little_agent.main import entrypoint, load_config, main, setup_logging
+from little_agent.main import (
+    entrypoint,
+    load_config,
+    main,
+    setup_logging,
+)
 
 
 def test_setup_logging_debug() -> None:
@@ -108,3 +113,5 @@ def test_entrypoint() -> None:
     with patch("asyncio.run") as mock_run:
         entrypoint()
         mock_run.assert_called_once()
+        coro = mock_run.call_args[0][0]
+        coro.close()
