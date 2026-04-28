@@ -44,39 +44,30 @@ class SessionCore(Session):
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
 
     async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn:
-        if self._active_turn:
-            future: asyncio.Future[PromptReturn] = asyncio.get_running_loop().create_future()
-            try:
-                self._pending_queue.put_nowait((prompt, future))
-            except asyncio.QueueFull as err:
-                raise SessionBusyError("Session pending queue is full") from err
-            return await future
-
-        self._active_turn = True
-        self._cancel_requested = False
+        future: asyncio.Future[PromptReturn] = asyncio.get_running_loop().create_future()
         try:
-            return await self._run_turn(prompt)
+            self._pending_queue.put_nowait((prompt, future))
+        except asyncio.QueueFull as err:
+            raise SessionBusyError("Session pending queue is full") from err
+
+        if not self._active_turn:
+            asyncio.create_task(self._consume_queue())
+
+        return await future
+
+    async def _consume_queue(self) -> None:
+        self._active_turn = True
+        try:
+            while not self._pending_queue.empty():
+                prompt, future = self._pending_queue.get_nowait()
+                self._cancel_requested = False
+                try:
+                    result = await self._run_turn(prompt)
+                    future.set_result(result)
+                except Exception as exc:
+                    future.set_exception(exc)
         finally:
             self._active_turn = False
-            if not self._pending_queue.empty():
-                next_prompt, next_future = self._pending_queue.get_nowait()
-                asyncio.create_task(self._process_pending(next_prompt, next_future))
-
-    async def _process_pending(
-        self, prompt: str | list[ContentBlock], future: asyncio.Future[PromptReturn]
-    ) -> None:
-        self._active_turn = True
-        self._cancel_requested = False
-        try:
-            result = await self._run_turn(prompt)
-            future.set_result(result)
-        except Exception as exc:
-            future.set_exception(exc)
-        finally:
-            self._active_turn = False
-            if not self._pending_queue.empty():
-                next_prompt, next_future = self._pending_queue.get_nowait()
-                asyncio.create_task(self._process_pending(next_prompt, next_future))
 
     async def _run_turn(self, prompt: str | list[ContentBlock]) -> PromptReturn:
         user_node = UserPromptNode(
@@ -94,31 +85,31 @@ class SessionCore(Session):
 
             result = await self.agent.backend.generate(self)
 
-            if result.finish_reason == "completed":
-                assistant_node = AssistantResponseNode(
-                    id=str(uuid.uuid4()),
-                    prev=self.tail,
-                    text=result.output_text,
-                )
-                self._append_node(assistant_node)
-                self._freeze_tail()
-                await self.agent.client.update(
-                    self,
-                    SessionUpdate(
-                        type="agent_message_chunk",
-                        data={"text": result.output_text},
-                    ),
-                )
-                return ("end_turn", result.output_text)
-
-            if result.finish_reason == "tool_call":
-                handler = _ToolCallHandler(self)
-                partial_output = await handler.handle(result, partial_output)
-                continue
-
-            if result.finish_reason == "cancelled":
-                self._freeze_tail()
-                return ("cancelled", partial_output)
+            match result.finish_reason:
+                case "completed":
+                    assistant_node = AssistantResponseNode(
+                        id=str(uuid.uuid4()),
+                        prev=self.tail,
+                        text=result.output_text,
+                    )
+                    self._append_node(assistant_node)
+                    self._freeze_tail()
+                    await self.agent.client.update(
+                        self,
+                        SessionUpdate(
+                            type="agent_message_chunk",
+                            data={"text": result.output_text},
+                        ),
+                    )
+                    return ("end_turn", result.output_text)
+                case "tool_call":
+                    handler = _ToolCallHandler(self)
+                    partial_output = await handler.handle(result, partial_output)
+                case "cancelled":
+                    self._freeze_tail()
+                    return ("cancelled", partial_output)
+                case _:
+                    raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
 
         raise RuntimeError("Max turn iterations exceeded")
 
