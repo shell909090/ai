@@ -54,14 +54,6 @@ class CliClient(Client):
         """Always grant permission."""
         return True
 
-    def _parse_path(self, stripped: str, prefix: str) -> Path | None:
-        """Extract path from command, print error if missing."""
-        parts = stripped.split(maxsplit=1)
-        if len(parts) < 2:
-            print(f"[Error] Usage: {prefix} <path>")
-            return None
-        return Path(parts[1])
-
     async def _do_save(self, session: Session, path: Path) -> None:
         """Save session to file."""
         try:
@@ -89,38 +81,30 @@ class CliClient(Client):
         self, agent: Agent, session: Session, stripped: str
     ) -> tuple[Session, bool]:
         """Handle CLI commands. Returns (session, should_continue)."""
-        if stripped == "/quit":
-            print("Goodbye!")
-            return session, False
-
-        if stripped == "/cancel":
-            await session.cancel()
-            return session, True
-
-        if stripped == "/fork":
-            session = await session.fork()
-            print("Forked new session.")
-            return session, True
-
-        if stripped == "/new":
-            session = await agent.new()
-            print("Created new session.")
-            return session, True
-
-        if stripped.startswith("/save "):
-            path = self._parse_path(stripped, "/save")
-            if path is not None:
-                await self._do_save(session, path)
-            return session, True
-
-        if stripped.startswith("/load "):
-            path = self._parse_path(stripped, "/load")
-            if path is not None:
-                session = await self._do_load(agent, session, path)
-            return session, True
-
-        print(f"Unknown command: {stripped}")
-        return session, True
+        match stripped.split(" ", 1):
+            case ["/quit"]:
+                print("Goodbye!")
+                return session, False
+            case ["/cancel"]:
+                await session.cancel()
+                return session, True
+            case ["/fork"]:
+                session = await session.fork()
+                print("Forked new session.")
+                return session, True
+            case ["/new"]:
+                session = await agent.new()
+                print("Created new session.")
+                return session, True
+            case ["/save", path_str]:
+                await self._do_save(session, Path(path_str))
+                return session, True
+            case ["/load", path_str]:
+                session = await self._do_load(agent, session, Path(path_str))
+                return session, True
+            case _:
+                print(f"Unknown command: {stripped}")
+                return session, True
 
     async def run(self, agent: Agent) -> None:
         """Run the CLI interactive loop."""

@@ -11,10 +11,10 @@ from .exceptions import SessionBusyError
 from .nodes import (
     AssistantResponseNode,
     Node,
-    SummaryNode,
     ToolCallNode,
     ToolResultNode,
     UserPromptNode,
+    _rebuild_chain,
 )
 from .protocol import Agent, Compressor, Session
 
@@ -161,23 +161,14 @@ class SessionCore(Session):
         chain: list[dict[str, JSONValue]] = []
         node = self.tail
         while node is not None:
-            item: dict[str, JSONValue] = {"kind": node.kind, "id": node.id}
-            if isinstance(node, UserPromptNode):
-                prompt: JSONValue = node.prompt  # type: ignore[assignment]
-                item["prompt"] = prompt
-            elif isinstance(node, AssistantResponseNode):
-                text = node.text
-                item["text"] = text
-            elif isinstance(node, ToolCallNode):
-                calls: JSONValue = node.calls  # type: ignore[assignment]
-                item["calls"] = calls
-            elif isinstance(node, ToolResultNode):
-                results: JSONValue = node.results  # type: ignore[assignment]
-                item["results"] = results
-            chain.append(item)
+            chain.append(node.to_dict())
             node = node.prev
         chain.reverse()
         return {"id": self.id, "cwd": self.cwd, "chain": chain}  # type: ignore[dict-item]
+
+    def _rebuild_tail(self, chain: list[Any]) -> None:
+        """Rebuild tail from serialized chain data."""
+        self.tail = _rebuild_chain(chain)
 
 
 class AgentCore(Agent):
@@ -217,71 +208,8 @@ class AgentCore(Agent):
         )
         chain = data.get("chain", [])
         if isinstance(chain, list):
-            session.tail = self._rebuild_chain(chain)
+            session._rebuild_tail(chain)
         return session
-
-    def _rebuild_chain(self, chain: list[Any]) -> Node | None:
-        """Rebuild node chain from serialized data."""
-        if not chain:
-            return None
-        prev: Node | None = None
-        for item in chain:
-            prev = self._rebuild_node(item, prev)
-        return prev
-
-    def _rebuild_node(self, item: Any, prev: Node | None) -> Node:
-        """Rebuild a single node from serialized data."""
-        if not isinstance(item, dict):
-            raise ValueError("Chain item must be a dict")
-        kind = item.get("kind")
-        node_id = item.get("id")
-        if not isinstance(kind, str) or not isinstance(node_id, str):
-            raise ValueError("Chain item must have 'kind' and 'id' as strings")
-        if kind == "user_prompt":
-            return self._build_user_prompt_node(item, node_id, prev)
-        if kind == "assistant_response":
-            return self._build_assistant_response_node(item, node_id, prev)
-        if kind == "tool_call":
-            return self._build_tool_call_node(item, node_id, prev)
-        if kind == "tool_result":
-            return self._build_tool_result_node(item, node_id, prev)
-        if kind == "summary":
-            return self._build_summary_node(item, node_id, prev)
-        raise ValueError(f"Unknown node kind: {kind}")
-
-    def _build_user_prompt_node(
-        self, item: dict[str, Any], node_id: str, prev: Node | None
-    ) -> Node:
-        prompt = item.get("prompt", "")
-        if not isinstance(prompt, (str, list)):
-            raise ValueError("UserPromptNode 'prompt' must be a string or list")
-        return UserPromptNode(id=node_id, prev=prev, prompt=prompt)
-
-    def _build_assistant_response_node(
-        self, item: dict[str, Any], node_id: str, prev: Node | None
-    ) -> Node:
-        text = item.get("text", "")
-        if not isinstance(text, str):
-            raise ValueError("AssistantResponseNode 'text' must be a string")
-        return AssistantResponseNode(id=node_id, prev=prev, text=text, frozen=True)
-
-    def _build_tool_call_node(self, item: dict[str, Any], node_id: str, prev: Node | None) -> Node:
-        calls = item.get("calls", {})
-        if not isinstance(calls, dict):
-            raise ValueError("ToolCallNode 'calls' must be a dict")
-        return ToolCallNode(id=node_id, prev=prev, calls=calls)
-
-    def _build_tool_result_node(
-        self, item: dict[str, Any], node_id: str, prev: Node | None
-    ) -> Node:
-        results = item.get("results", {})
-        if not isinstance(results, dict):
-            raise ValueError("ToolResultNode 'results' must be a dict")
-        return ToolResultNode(id=node_id, prev=prev, results=results, frozen=True)
-
-    def _build_summary_node(self, item: dict[str, Any], node_id: str, prev: Node | None) -> Node:
-        summary = item.get("summary")
-        return SummaryNode(id=node_id, prev=prev, summary=summary)
 
 
 class _ToolCallHandler:
