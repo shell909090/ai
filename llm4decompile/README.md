@@ -42,9 +42,9 @@ llm4decompile有不同级别的模型，我在测试中使用[llm4decompile-6.7b
 | llm4decompile | [ls_func1_refined.c](ls_func1_refined.c) | [ls_func2_refined.c](ls_func2_refined.c) | - | - | [ls_func5_refined.c](ls_func5_refined.c) |
 | opus4.7 | [ls_func1_opus47.c](ls_func1_opus47.c) | [ls_func2_opus47.c](ls_func2_opus47.c) | [ls_func3_opus47.c](ls_func3_opus47.c) | - | - |
 | sonnet4.7 | - | - | - | [ls_func4_sonnet.c](ls_func4_sonnet.c) | - |
-| deepseek-v4-pro | [ls_func1_ds4p.c](ls_func1_ds4p.c) | [ls_func2_ds4p.c](ls_func2_ds4p.c) | [ls_func3_ds4p.c](ls_func3_ds4p.c) | [ls_func5_ds4p.c](ls_func5_ds4p.c) | [ls_func5_ds4p.c](ls_func5_ds4p.c) |
+| deepseek-v4-pro | [ls_func1_ds4p.c](ls_func1_ds4p.c) | [ls_func2_ds4p.c](ls_func2_ds4p.c) | [ls_func3_ds4p.c](ls_func3_ds4p.c) | [ls_func4_ds4p.c](ls_func4_ds4p.c) | [ls_func5_ds4p.c](ls_func5_ds4p.c) |
 | minimax m2.7 | [ls_func1_m27.c](ls_func1_m27.c) | [ls_func2_m27.c](ls_func2_m27.c) | [ls_func3_m27.c](ls_func3_m27.c) | [ls_func4_m27.c](ls_func4_m27.c) | [ls_func5_m27.c](ls_func5_m27.c) |
-| kimi k2.6 | - | - | - | - | - |
+| kimi k2.6 | [ls_func1_k26.c](ls_func1_k26.c) | [ls_func2_k26.c](ls_func2_k26.c) | [ls_func3_k26.c](ls_func3_k26.c) | [ls_func4_k26.c](ls_func4_k26.c) | [ls_func5_k26.c](ls_func5_k26.c) |
 
 * 注意：func3和func4是直接反向ghidra输出得到的结果，未经llm4decompile处理。llm4decompile在跑这两个集合的时候，显存OOM炸了。
 * ls.c: [ghidra输出](ls.c.gz)。
