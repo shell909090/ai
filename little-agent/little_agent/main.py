@@ -69,8 +69,8 @@ def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
     return providers
 
 
-async def main() -> None:
-    """Main async entry point."""
+def main() -> None:
+    """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
@@ -95,25 +95,26 @@ async def main() -> None:
     if backend_type != "openai":
         raise ValueError(f"Unsupported backend type: {backend_type}")
 
-    api_key_env = backend_config.get("api_key_env", "OPENAI_API_KEY")
-    api_key = os.environ.get(api_key_env)
+    api_key = backend_config.get("api_key")
     if not api_key:
-        raise ValueError(f"Environment variable {api_key_env} not set")
+        api_key_env = backend_config.get("api_key_env", "OPENAI_API_KEY")
+        api_key = os.environ.get(api_key_env)
+        if not api_key:
+            raise ValueError(
+                f"No API key found: config 'api_key' not set "
+                f"and environment variable {api_key_env} not set"
+            )
 
     backend = OpenAIBackend(
         model=backend_config.get("model", "gpt-4"),
         api_key=api_key,
+        base_url=backend_config.get("base_url"),
     )
 
     client = CliClient()
     agent = AgentCore(client=client, backend=backend, tools=tools)
-    await client.run(agent)
-
-
-def entrypoint() -> None:
-    """Synchronous entry point."""
-    asyncio.run(main())
+    asyncio.run(client.run(agent))
 
 
 if __name__ == "__main__":
-    entrypoint()
+    main()

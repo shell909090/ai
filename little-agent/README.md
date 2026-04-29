@@ -34,7 +34,9 @@ Create a `config.yaml` file:
 backend:
   type: openai
   model: gpt-4
-  api_key_env: OPENAI_API_KEY
+  api_key: "sk-your-api-key"          # direct key (takes priority)
+  # api_key_env: OPENAI_API_KEY       # OR read from environment variable
+  # base_url: https://api.openai.com/v1  # optional custom endpoint
 
 logging:
   level: INFO
@@ -43,7 +45,7 @@ tools:
   providers: []
 ```
 
-Set your OpenAI API key:
+Set your OpenAI API key (if using `api_key_env`):
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
@@ -53,12 +55,6 @@ Run the CLI:
 
 ```bash
 little-agent --config config.yaml
-```
-
-Or run directly:
-
-```bash
-python -m little_agent.main
 ```
 
 ## Development

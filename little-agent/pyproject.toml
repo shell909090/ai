@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-little-agent = "little_agent.main:entrypoint"
+little-agent = "little_agent.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["little_agent"]

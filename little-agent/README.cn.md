@@ -34,7 +34,9 @@ make dev
 backend:
   type: openai
   model: gpt-4
-  api_key_env: OPENAI_API_KEY
+  api_key: "sk-your-api-key"          # 直接填写密钥（优先级更高）
+  # api_key_env: OPENAI_API_KEY       # 或从环境变量读取
+  # base_url: https://api.openai.com/v1  # 可选，自定义 API 端点
 
 logging:
   level: INFO
@@ -43,7 +45,7 @@ tools:
   providers: []
 ```
 
-设置 OpenAI API 密钥：
+设置 OpenAI API 密钥（如果使用 `api_key_env`）：
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
@@ -53,12 +55,6 @@ export OPENAI_API_KEY="your-api-key"
 
 ```bash
 little-agent --config config.yaml
-```
-
-或直接运行：
-
-```bash
-python -m little_agent.main
 ```
 
 ## 开发

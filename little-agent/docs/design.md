@@ -561,7 +561,7 @@ little-agent = "little_agent.main:main"
 2. 加载 YAML 配置文件。
 3. 初始化 logger（标准 `logging` 模块；debug 模式由 argparse flag 控制，符合 AGENTS.md 工程要求）。
 4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例，并调用其 `register()` 方法注册所有已配置的 providers。
-5. 初始化 `Backend`。
+5. 初始化 `Backend`（包括 base_url，默认为 None，使用 OpenAI 默认地址）。
 6. 初始化 `Compressor`（可选）。
 7. 初始化具体 `Client` 实现（本期为 `CliClient`）。
 8. 用上述依赖构造 `Agent`。
@@ -578,6 +578,7 @@ backend:
   type: openai
   model: gpt-4
   api_key_env: OPENAI_API_KEY
+  base_url: https://api.openai.com/v1  # optional
 
 tools:
   providers:

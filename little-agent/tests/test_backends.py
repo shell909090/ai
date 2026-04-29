@@ -1,6 +1,6 @@
 """Tests for backend request conversion."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -132,3 +132,19 @@ async def test_openai_backend_generate_with_tool_calls() -> None:
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_name == "echo"
     assert result.tool_calls[0].arguments == {"text": "hello"}
+
+
+def test_openai_backend_base_url() -> None:
+    """Test base_url is passed to AsyncOpenAI client."""
+    with patch("openai.AsyncOpenAI") as mock_async_openai:
+        OpenAIBackend(model="gpt-4", api_key="test-key", base_url="http://localhost:8080/v1")
+        mock_async_openai.assert_called_once_with(
+            api_key="test-key", base_url="http://localhost:8080/v1"
+        )
+
+
+def test_openai_backend_no_base_url() -> None:
+    """Test base_url defaults to None (not passed to AsyncOpenAI)."""
+    with patch("openai.AsyncOpenAI") as mock_async_openai:
+        OpenAIBackend(model="gpt-4", api_key="test-key")
+        mock_async_openai.assert_called_once_with(api_key="test-key")

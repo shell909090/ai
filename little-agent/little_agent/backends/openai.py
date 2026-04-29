@@ -100,10 +100,13 @@ def _chain_to_messages(tail: Node | None) -> list[dict[str, Any]]:
 class OpenAIBackend:
     """OpenAI backend implementation."""
 
-    def __init__(self, model: str, api_key: str) -> None:
+    def __init__(self, model: str, api_key: str, base_url: str | None = None) -> None:
         import openai
 
-        self._client = openai.AsyncOpenAI(api_key=api_key)
+        if base_url is not None:
+            self._client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+        else:
+            self._client = openai.AsyncOpenAI(api_key=api_key)
         self._model = model
 
     async def generate(self, session: SessionCore) -> BackendTurnResult:
