@@ -95,6 +95,10 @@ async def test_openai_backend_generate() -> None:
     mock_choice.message.tool_calls = None
     mock_choice.message.content = "Hello"
     mock_response.choices = [mock_choice]
+    mock_usage = MagicMock()
+    mock_usage.prompt_tokens = 10
+    mock_usage.completion_tokens = 5
+    mock_response.usage = mock_usage
     backend._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -103,6 +107,9 @@ async def test_openai_backend_generate() -> None:
     result = await backend.generate(session)
     assert result.finish_reason == "completed"
     assert result.output_text == "Hello"
+    assert result.usage is not None
+    assert result.usage["input_tokens"] == 10
+    assert result.usage["output_tokens"] == 5
 
 
 @pytest.mark.asyncio
@@ -122,6 +129,10 @@ async def test_openai_backend_generate_with_tool_calls() -> None:
     mock_choice.message.tool_calls = [mock_tool_call]
     mock_choice.message.content = None
     mock_response.choices = [mock_choice]
+    mock_usage = MagicMock()
+    mock_usage.prompt_tokens = 20
+    mock_usage.completion_tokens = 10
+    mock_response.usage = mock_usage
     backend._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -132,6 +143,9 @@ async def test_openai_backend_generate_with_tool_calls() -> None:
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_name == "echo"
     assert result.tool_calls[0].arguments == {"text": "hello"}
+    assert result.usage is not None
+    assert result.usage["input_tokens"] == 20
+    assert result.usage["output_tokens"] == 10
 
 
 def test_openai_backend_base_url() -> None:

@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from little_agent.types import JSONValue
 
@@ -24,12 +24,31 @@ class CliClient(Client):
     def __init__(self) -> None:
         self._updates: list[SessionUpdate] = []
 
+    def _print_message(self, prefix: str, text: str) -> None:
+        """Print a message with prefix after stripping whitespace."""
+        stripped = text.strip()
+        if stripped:
+            print(f"[{prefix}] {stripped}")
+
+    def _print_tool_call(self, call_id: str, call_data: dict[str, Any]) -> None:
+        """Print a tool call with truncated arguments."""
+        tool_name = call_data.get("tool_name", "")
+        arguments = call_data.get("arguments", {})
+        args_text = json.dumps(arguments, indent=2, ensure_ascii=False)
+        lines = args_text.splitlines()
+        if len(lines) > 3:
+            truncated = "\n".join(lines[:3])
+            args_text = f"{truncated}\n...{len(lines) - 3} lines..."
+        print(f"[ToolCall] {call_id}: {tool_name}")
+        print(args_text)
+
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Handle session update."""
         self._updates.append(update)
         if update.type == "agent_message_chunk":
-            text = update.data.get("text", "")
-            print(f"[Agent] {text}")
+            self._print_message("Agent", str(update.data.get("text", "")))
+        elif update.type == "thinking_chunk":
+            self._print_message("Thinking", str(update.data.get("text", "")))
         elif update.type == "tool_call":
             calls = update.data.get("calls", {})
             if not isinstance(calls, dict):
@@ -37,7 +56,7 @@ class CliClient(Client):
             for call_id, call_data in calls.items():
                 if not isinstance(call_data, dict):
                     raise ValueError(f"tool_call update call_data for {call_id} must be a dict")
-                print(f"[ToolCall] {call_id}: {call_data['tool_name']}")
+                self._print_tool_call(call_id, call_data)
         elif update.type == "tool_call_update":
             call_id_raw = update.data.get("call_id", "")
             status_raw = update.data.get("status", "")
@@ -52,6 +71,7 @@ class CliClient(Client):
         payload: dict[str, JSONValue],
     ) -> bool:
         """Always grant permission."""
+        logger.debug("Permission request: kind=%s payload=%s", kind, payload)
         return True
 
     async def _do_save(self, session: Session, path: Path) -> None:

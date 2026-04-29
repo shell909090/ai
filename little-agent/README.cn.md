@@ -39,7 +39,20 @@ backend:
   # base_url: https://api.openai.com/v1  # 可选，自定义 API 端点
 
 logging:
-  level: INFO
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    default:
+      format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      stream: ext://sys.stdout
+  loggers:
+    "":
+      level: INFO
+      handlers: [console]
 
 tools:
   providers: []

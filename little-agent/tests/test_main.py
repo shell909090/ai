@@ -12,28 +12,40 @@ from little_agent.main import (
 )
 
 
-def test_setup_logging_debug() -> None:
-    """Test setup_logging with DEBUG level."""
-    with patch("logging.basicConfig") as mock_basic_config:
-        setup_logging("DEBUG")
-        assert mock_basic_config.called
-        assert mock_basic_config.call_args.kwargs["level"] == 10
+def test_setup_logging_default_config() -> None:
+    """Test setup_logging uses default config when no config provided."""
+    with patch("logging.config.dictConfig") as mock_dict_config:
+        setup_logging(None, None)
+        assert mock_dict_config.called
+        cfg = mock_dict_config.call_args.args[0]
+        assert cfg["loggers"][""]["level"] == "INFO"
 
 
-def test_setup_logging_info() -> None:
-    """Test setup_logging with INFO level."""
-    with patch("logging.basicConfig") as mock_basic_config:
-        setup_logging("INFO")
-        assert mock_basic_config.called
-        assert mock_basic_config.call_args.kwargs["level"] == 20
+def test_setup_logging_override_level() -> None:
+    """Test setup_logging overrides level via --loglevel."""
+    with patch("logging.config.dictConfig") as mock_dict_config:
+        setup_logging(None, "DEBUG")
+        assert mock_dict_config.called
+        cfg = mock_dict_config.call_args.args[0]
+        assert cfg["loggers"][""]["level"] == "DEBUG"
 
 
-def test_setup_logging_default() -> None:
-    """Test setup_logging with unknown level defaults to INFO."""
-    with patch("logging.basicConfig") as mock_basic_config:
-        setup_logging("UNKNOWN")
-        assert mock_basic_config.called
-        assert mock_basic_config.call_args.kwargs["level"] == 20
+def test_setup_logging_config_provided() -> None:
+    """Test setup_logging uses provided config."""
+    with patch("logging.config.dictConfig") as mock_dict_config:
+        setup_logging({"version": 1, "loggers": {"": {"level": "WARNING"}}}, None)
+        assert mock_dict_config.called
+        cfg = mock_dict_config.call_args.args[0]
+        assert cfg["loggers"][""]["level"] == "WARNING"
+
+
+def test_setup_logging_config_with_level_override() -> None:
+    """Test --loglevel overrides config level."""
+    with patch("logging.config.dictConfig") as mock_dict_config:
+        setup_logging({"version": 1, "loggers": {"": {"level": "WARNING"}}}, "DEBUG")
+        assert mock_dict_config.called
+        cfg = mock_dict_config.call_args.args[0]
+        assert cfg["loggers"][""]["level"] == "DEBUG"
 
 
 def test_load_config() -> None:
@@ -48,7 +60,7 @@ def test_main_success() -> None:
     """Test main successful execution."""
     mock_config = {
         "backend": {"type": "openai", "model": "gpt-4", "api_key_env": "OPENAI_API_KEY"},
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
@@ -64,7 +76,7 @@ def test_main_success() -> None:
 
                         with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                             mock_parse.return_value = MagicMock(
-                                config=Path("config.yaml"), debug=False
+                                config=Path("config.yaml"), loglevel=None
                             )
                             main()
 
@@ -75,14 +87,14 @@ def test_main_unsupported_backend_raises() -> None:
     """Test main raises ValueError for unsupported backend."""
     mock_config = {
         "backend": {"type": "unsupported"},
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
                 with pytest.raises(ValueError, match="Unsupported backend type"):
                     main()
 
@@ -90,14 +102,14 @@ def test_main_unsupported_backend_raises() -> None:
 def test_main_missing_backend_raises() -> None:
     """Test main raises ValueError when backend section is missing."""
     mock_config = {
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
                 with pytest.raises(ValueError, match="Config must contain a 'backend' section"):
                     main()
 
@@ -106,14 +118,14 @@ def test_main_missing_backend_type_raises() -> None:
     """Test main raises ValueError when backend type is missing."""
     mock_config = {
         "backend": {"model": "gpt-4"},
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
                 with pytest.raises(
                     ValueError, match="Config 'backend' must contain a 'type' field"
                 ):
@@ -124,7 +136,7 @@ def test_main_missing_api_key_raises() -> None:
     """Test main raises ValueError when no API key configured."""
     mock_config = {
         "backend": {"type": "openai", "api_key_env": "MISSING_KEY"},
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
@@ -132,7 +144,7 @@ def test_main_missing_api_key_raises() -> None:
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value=None):
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
                     with pytest.raises(ValueError, match="No API key found"):
                         main()
 
@@ -141,7 +153,7 @@ def test_main_api_key_from_config() -> None:
     """Test main uses api_key directly from config."""
     mock_config = {
         "backend": {"type": "openai", "api_key": "direct-key"},
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
@@ -155,7 +167,9 @@ def test_main_api_key_from_config() -> None:
                     mock_backend_cls.return_value = MagicMock()
 
                     with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                        mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                        mock_parse.return_value = MagicMock(
+                            config=Path("config.yaml"), loglevel=None
+                        )
                         main()
 
                     mock_backend_cls.assert_called_once_with(
@@ -171,7 +185,7 @@ def test_main_api_key_priority_over_env() -> None:
             "api_key": "direct-key",
             "api_key_env": "OPENAI_API_KEY",
         },
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
@@ -187,7 +201,7 @@ def test_main_api_key_priority_over_env() -> None:
 
                         with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                             mock_parse.return_value = MagicMock(
-                                config=Path("config.yaml"), debug=False
+                                config=Path("config.yaml"), loglevel=None
                             )
                             main()
 
@@ -204,7 +218,7 @@ def test_main_base_url_passthrough() -> None:
             "api_key": "test-key",
             "base_url": "http://localhost:8080/v1",
         },
-        "logging": {"level": "INFO"},
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
 
@@ -218,7 +232,9 @@ def test_main_base_url_passthrough() -> None:
                     mock_backend_cls.return_value = MagicMock()
 
                     with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                        mock_parse.return_value = MagicMock(config=Path("config.yaml"), debug=False)
+                        mock_parse.return_value = MagicMock(
+                            config=Path("config.yaml"), loglevel=None
+                        )
                         main()
 
                     mock_backend_cls.assert_called_once_with(

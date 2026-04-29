@@ -30,9 +30,8 @@
 7. 至少一种本地插件式 tool 注册方式：通过配置文件注册 Python 模块暴露的 tool。
 8. 为未来扩展子进程方式注册 tool 预留设计空间。
 9. 支持通过配置为 OpenAI backend 指定 base_url，以兼容兼容 API 代理（如 LiteLLM）或本地模型。
-10. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
-11. CLI 支持 `/exit` 指令（与 `/quit` 等效）。
-12. CLI 支持 `/list-tools` 指令，列出当前已注册的所有 tools。
+10. Backend 性能计数：每次请求记录 input/output token、执行时间、缓存信息，通过 INFO 级别日志输出。
+11. 日志配置支持 `logging.config.dictConfig`：允许通过配置文件自定义日志格式、级别、处理器等。
 
 ### 3.2 本期不包含
 
@@ -93,6 +92,15 @@
 2. 用户可以发送 prompt 并看到 Agent 回复。
 3. 用户应能看到基本的 tool 调用过程或结果摘要。
 4. 本期 CLI 只需满足最小可用，不追求复杂交互体验。
+5. CLI 支持 `/exit` 指令（与 `/quit` 等效）。
+6. CLI 支持 `/list-tools` 指令，列出当前已注册的所有 tools。
+7. CLI 消息显示分离：模型回复的"思考"与"显示"内容分离输出，每条消息 strip 前后空白。
+
+### 4.6 Tools 要求
+
+1. Tool call 参数显示：CLI 显示具体 tool 调用指令，过长时截断尾部并提示行数。
+2. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
+
 
 ## 5. 非功能需求
 

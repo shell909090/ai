@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from little_agent.agent.nodes import (
@@ -115,17 +116,46 @@ class OpenAIBackend:
         messages = _chain_to_messages(session.tail)
         tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
 
-        logger.debug("OpenAI request: model=%s messages=%s tools=%s", self._model, messages, tools)
+        logger.debug(
+            "OpenAI request payload: model=%s messages=%s tools=%s", self._model, messages, tools
+        )
 
+        start_time = time.perf_counter()
         response = await self._client.chat.completions.create(  # type: ignore[call-overload]
             model=self._model,
             messages=messages,
             tools=tools,
             tool_choice="auto" if tools else None,
         )
+        elapsed = time.perf_counter() - start_time
 
         choice = response.choices[0]
         message = choice.message
+
+        usage: dict[str, int] | None = None
+        if response.usage:
+            usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+            }
+            if (
+                hasattr(response.usage, "prompt_tokens_details")
+                and response.usage.prompt_tokens_details
+            ):
+                cached = getattr(response.usage.prompt_tokens_details, "cached_tokens", None)
+                if cached is not None:
+                    usage["cached_tokens"] = cached
+
+        logger.info(
+            "OpenAI response: model=%s finish_reason=%s "
+            "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
+            self._model,
+            choice.finish_reason,
+            usage.get("input_tokens") if usage else None,
+            usage.get("output_tokens") if usage else None,
+            usage.get("cached_tokens") if usage else None,
+            elapsed,
+        )
 
         if message.tool_calls:
             tool_calls = [
@@ -140,10 +170,12 @@ class OpenAIBackend:
                 output_text=message.content or "",
                 tool_calls=tool_calls,
                 finish_reason="tool_call",
+                usage=usage,
             )
 
         return BackendTurnResult(
             output_text=message.content or "",
             tool_calls=[],
             finish_reason="completed",
+            usage=usage,
         )

@@ -113,6 +113,7 @@ PromptReturn = tuple[StopReason, str]
 class SessionUpdate:
     type: Literal[
         "agent_message_chunk",
+        "thinking_chunk",
         "tool_call",
         "tool_call_update",
     ]
@@ -122,9 +123,10 @@ class SessionUpdate:
 说明：
 
 1. `SessionUpdate` 是 client/frontend 观察到的事件。
-2. `agent_message_chunk` 只是一种通知语义，不要求在历史链中物化成独立节点。
-3. 当前先主要实现 `update()`；`request_permission()` 先留接口，不在本期真正启用。
-4. `prompt()` 失败时不返回 `failed`，而是直接抛异常，遵循 Python 风格。
+2. `agent_message_chunk` 是模型最终输出的显示内容；`thinking_chunk` 是模型的思考过程（如 reasoning）。CLI 中两者分离输出，显示内容直接打印，思考内容可折叠或前缀标注。
+3. 每条消息在输出前 strip 前后空白字符。
+4. 当前先主要实现 `update()`；`request_permission()` 先留接口，不在本期真正启用。
+5. `prompt()` 失败时不返回 `failed`，而是直接抛异常，遵循 Python 风格。
 
 ### 4.3 Client 接口
 
@@ -149,6 +151,7 @@ class Client(Protocol):
 1. `update` 应当是 client 的方法，而不是 agent 的方法。
 2. 白名单、访问者鉴权等逻辑属于 frontend 或启动脚本，不属于 agent 核心。
 3. terminal、filesystem 等能力在本项目里优先建模为 tools，而不是 client 方法。
+4. `request_permission()`应在 DEBUG 级别记录 `kind` 和 `payload`，便于审计和调试。
 
 ### 4.4 Agent 接口
 
@@ -226,7 +229,13 @@ class Session(Protocol):
 5. 处理取消、退出与后续 fork 命令。
 6. 处理 `/list-tools` 命令：列出当前 agent 已注册的所有 tools。
 
-**CLI 命令清单：**
+### 4.7 CLI 显示设计
+
+1. 消息分离：`agent_message_chunk` 前缀加 `[Agent]`；`thinking_chunk` 前缀标注为 `[Thinking]` 或折叠显示。两者输出区域分离，避免混淆。
+2. 空白处理：所有消息输出前 `strip()` 去除前后空白。
+3. Tool call 参数显示：`tool_call` 类型更新除显示 tool 名称外，还显示具体调用参数（arguments）。若参数文本超过 3 行，截断尾部并显示 `...{n} lines...`。
+
+### 4.8 CLI 命令清单
 
 | 命令 | 作用 |
 | --- | --- |
@@ -384,6 +393,7 @@ class BackendTurnResult:
     output_text: str
     tool_calls: list[BackendToolCall]
     finish_reason: Literal["completed", "tool_call", "cancelled"]
+    usage: dict[str, int] | None = None  # e.g. {"input_tokens": 100, "output_tokens": 50}
 ```
 
 ### 6.3 Backend 接口
@@ -400,6 +410,11 @@ class Backend(Protocol):
 3. backend 负责把 session 当前可见的 tools 转换为 OpenAI 需要的工具定义。
 4. 本期 **backend 不做 streaming**；`generate()` 返回完整 `BackendTurnResult`。`agent_message_chunk` 由 agent 在拿到结果后一次性发出一次 update。
 5. 如果后续实现 streaming，再把输入输出都调整为 async generator 风格。
+6. 性能计数：每次 `generate()` 调用完成后，通过 INFO 级别日志输出性能指标，包括：
+   - input/output token 数（从 API 响应的 usage 字段提取）
+   - 执行时间（`generate()` 入口到出口的耗时）
+   - 缓存信息（如 OpenAI 的 `cached_tokens`，如有）
+7. DEBUG 日志：每次 `generate()` 调用前，在 DEBUG 级别记录完整的请求 payload（messages、tools 等），便于调试。
 
 ## 7. agent 模块内部数据结构
 
@@ -596,7 +611,10 @@ little-agent = "little_agent.main:main"
 
 1. 解析 CLI 参数（包括 `--debug` 等日志级别 flag）。
 2. 加载 YAML 配置文件。
-3. 初始化 logger（标准 `logging` 模块；debug 模式由 argparse flag 控制，符合 AGENTS.md 工程要求）。
+3. 初始化 logger：
+   - 若配置中存在 `cfg['logging']`，使用 `logging.config.dictConfig(cfg['logging'])` 加载完整日志配置。
+   - 若不存在，回退到默认的 `logging.basicConfig(level=logging.INFO)`。
+   - 日志级别可通过 `cfg['logging']['loggers']['']['level']` 调整。
 4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例；加载配置中的 providers 列表，将 `BashToolProvider` append 到列表末尾，然后统一注册所有 providers。
 5. 初始化 `Backend`（包括 base_url，默认为 None，使用 OpenAI 默认地址）。
 6. 初始化 `Compressor`（可选）。

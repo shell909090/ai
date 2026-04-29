@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import importlib
 import logging
+import logging.config
 import os
 from pathlib import Path
 from typing import Any
@@ -19,13 +20,36 @@ from little_agent.tools.protocol import ToolProvider
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_LOGGING_CONFIG: dict[str, Any] = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "loggers": {
+        "": {
+            "level": "INFO",
+            "handlers": ["console"],
+        },
+    },
+}
 
-def setup_logging(level: str) -> None:
-    """Configure logging."""
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+
+def setup_logging(config: dict[str, Any] | None, level: str | None) -> None:
+    """Configure logging from config or fallback to default config."""
+    cfg = config if config is not None else _DEFAULT_LOGGING_CONFIG.copy()
+    if level is not None:
+        cfg.setdefault("loggers", {}).setdefault("", {})["level"] = level
+    logging.config.dictConfig(cfg)
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -74,13 +98,15 @@ def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--loglevel", default=None, help="Override log level (DEBUG/INFO/WARNING/ERROR)"
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
 
-    log_level = "DEBUG" if args.debug else config.get("logging", {}).get("level", "INFO")
-    setup_logging(log_level)
+    log_config = config.get("logging")
+    setup_logging(log_config, args.loglevel)
 
     tools = ToolManager()
 

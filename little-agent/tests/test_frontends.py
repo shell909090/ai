@@ -23,10 +23,52 @@ async def test_cli_client_collects_updates() -> None:
 async def test_cli_update_tool_call() -> None:
     """Test CliClient.update with tool_call prints correctly."""
     client = CliClient()
-    update = SessionUpdate(type="tool_call", data={"calls": {"c1": {"tool_name": "echo"}}})
+    update = SessionUpdate(
+        type="tool_call",
+        data={"calls": {"c1": {"tool_name": "echo", "arguments": {"text": "hello"}}}},
+    )
     with patch("builtins.print") as mock_print:
         await client.update(None, update)  # type: ignore[arg-type]
-        mock_print.assert_called_once_with("[ToolCall] c1: echo")
+    mock_print.assert_any_call("[ToolCall] c1: echo")
+    printed = [call.args[0] for call in mock_print.call_args_list]
+    assert '  "text": "hello"' in printed[1]
+
+
+@pytest.mark.asyncio
+async def test_cli_update_tool_call_truncated() -> None:
+    """Test CliClient.update truncates long tool_call arguments."""
+    client = CliClient()
+    args = {"line1": "a", "line2": "b", "line3": "c", "line4": "d", "line5": "e"}
+    update = SessionUpdate(
+        type="tool_call",
+        data={"calls": {"c1": {"tool_name": "echo", "arguments": args}}},
+    )
+    with patch("builtins.print") as mock_print:
+        await client.update(None, update)  # type: ignore[arg-type]
+    mock_print.assert_any_call("[ToolCall] c1: echo")
+    printed = [call.args[0] for call in mock_print.call_args_list]
+    args_text = printed[1]
+    assert "...4 lines..." in args_text
+
+
+@pytest.mark.asyncio
+async def test_cli_update_thinking_chunk() -> None:
+    """Test CliClient.update with thinking_chunk prints correctly."""
+    client = CliClient()
+    update = SessionUpdate(type="thinking_chunk", data={"text": "  thinking...  "})
+    with patch("builtins.print") as mock_print:
+        await client.update(None, update)  # type: ignore[arg-type]
+    mock_print.assert_called_once_with("[Thinking] thinking...")
+
+
+@pytest.mark.asyncio
+async def test_cli_update_agent_message_strip() -> None:
+    """Test CliClient.update strips whitespace from agent_message_chunk."""
+    client = CliClient()
+    update = SessionUpdate(type="agent_message_chunk", data={"text": "  hello  "})
+    with patch("builtins.print") as mock_print:
+        await client.update(None, update)  # type: ignore[arg-type]
+    mock_print.assert_called_once_with("[Agent] hello")
 
 
 @pytest.mark.asyncio
