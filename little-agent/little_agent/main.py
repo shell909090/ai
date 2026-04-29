@@ -13,6 +13,7 @@ import yaml
 from little_agent.agent.core import AgentCore
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.cli import CliClient
+from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolProvider
 
@@ -83,7 +84,9 @@ def main() -> None:
 
     tools = ToolManager()
 
-    for provider in load_providers_from_config(config):
+    providers = load_providers_from_config(config)
+    providers.append(BashToolProvider())
+    for provider in providers:
         tools.register(provider)
 
     backend_config = config.get("backend")

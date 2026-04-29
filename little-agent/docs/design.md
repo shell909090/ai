@@ -224,6 +224,20 @@ class Session(Protocol):
 3. 对 session 调用 `prompt()`。
 4. 实现 `update()` 来消费通知并输出。
 5. 处理取消、退出与后续 fork 命令。
+6. 处理 `/list-tools` 命令：列出当前 agent 已注册的所有 tools。
+
+**CLI 命令清单：**
+
+| 命令 | 作用 |
+| --- | --- |
+| `/quit` | 退出 CLI |
+| `/exit` | `/quit` 的别名，行为完全一致 |
+| `/cancel` | 取消当前活跃 turn |
+| `/fork` | 从当前 session 分叉出新 session |
+| `/new` | 创建全新 session |
+| `/save <path>` | 保存当前 session 到文件 |
+| `/load <path>` | 从文件加载 session |
+| `/list-tools` | 列出当前已注册的所有 tool 名称与描述 |
 
 ## 5. tools 与 agent 的 MCP 类接口
 
@@ -318,6 +332,29 @@ async def f(**kwargs: JSONValue) -> JSONValue:
 ```
 
 同步 tool 由内置 provider 统一包装成 async（`asyncio.to_thread`）。
+
+### 5.6 内置 Bash Tool
+
+系统内置一个 `bash` tool，允许 Agent 执行 shell 命令。
+
+**Tool 定义：**
+
+- name: `bash`
+- description: `Execute a shell command and return stdout/stderr`
+- 参数：
+  - `command` (string, required): 要执行的 shell 命令
+
+**实现要点：**
+
+1. 使用 `asyncio.create_subprocess_shell` 异步执行命令。
+2. 捕获 stdout 和 stderr，返回合并后的字符串输出。
+3. 命令超时时间默认 30 秒，超时后 kill 进程并返回超时信息。
+4. 命令执行失败（非零退出码）返回 stderr 内容，不抛异常（让模型自行判断）。
+5. 出于安全考虑，不执行交互式命令（stdin 关闭）。
+
+**注册方式：**
+
+启动脚本先加载配置文件中的 `tools.providers` 列表，然后将 `BashToolProvider` append 到列表末尾，最后统一调用 `ToolManager.register()` 注册所有 providers。内置 tool 不通过特殊机制注册，与普通配置加载的 provider 走同一流程。
 
 ## 6. backends 与 agent 的接口
 
@@ -560,7 +597,7 @@ little-agent = "little_agent.main:main"
 1. 解析 CLI 参数（包括 `--debug` 等日志级别 flag）。
 2. 加载 YAML 配置文件。
 3. 初始化 logger（标准 `logging` 模块；debug 模式由 argparse flag 控制，符合 AGENTS.md 工程要求）。
-4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例，并调用其 `register()` 方法注册所有已配置的 providers。
+4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例；加载配置中的 providers 列表，将 `BashToolProvider` append 到列表末尾，然后统一注册所有 providers。
 5. 初始化 `Backend`（包括 base_url，默认为 None，使用 OpenAI 默认地址）。
 6. 初始化 `Compressor`（可选）。
 7. 初始化具体 `Client` 实现（本期为 `CliClient`）。

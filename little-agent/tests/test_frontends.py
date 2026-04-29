@@ -6,7 +6,7 @@ import pytest
 
 from little_agent.frontends.cli import CliClient
 from little_agent.frontends.protocol import SessionUpdate
-from tests.mocks import MockAgent
+from tests.mocks import MockAgent, MockToolProvider
 
 
 @pytest.mark.asyncio
@@ -164,6 +164,34 @@ async def test_cli_run_success_path() -> None:
     with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
         with patch("builtins.print"):
             await client.run(agent)
+
+
+@pytest.mark.asyncio
+async def test_cli_run_exit() -> None:
+    """Test CliClient.run exits on /exit (alias for /quit)."""
+    client = CliClient()
+    agent = MockAgent()
+
+    with patch("asyncio.to_thread", return_value="/exit"):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call("Goodbye!")
+
+
+@pytest.mark.asyncio
+async def test_cli_run_list_tools() -> None:
+    """Test CliClient.run handles /list-tools."""
+    client = CliClient()
+    tools = {"echo": ("Echo tool", [("text", "string", "text", True)])}
+    agent = MockAgent(tools=MockToolProvider(tools=tools))
+
+    with patch("asyncio.to_thread", side_effect=["/list-tools", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    mock_print.assert_any_call("Available tools:")
+    mock_print.assert_any_call("  echo: Echo tool")
 
 
 @pytest.mark.asyncio

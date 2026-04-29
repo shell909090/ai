@@ -30,6 +30,9 @@
 7. 至少一种本地插件式 tool 注册方式：通过配置文件注册 Python 模块暴露的 tool。
 8. 为未来扩展子进程方式注册 tool 预留设计空间。
 9. 支持通过配置为 OpenAI backend 指定 base_url，以兼容兼容 API 代理（如 LiteLLM）或本地模型。
+10. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
+11. CLI 支持 `/exit` 指令（与 `/quit` 等效）。
+12. CLI 支持 `/list-tools` 指令，列出当前已注册的所有 tools。
 
 ### 3.2 本期不包含
 

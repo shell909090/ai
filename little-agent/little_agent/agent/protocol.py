@@ -37,6 +37,8 @@ class Session(Protocol):
 class Agent(Protocol):
     """Agent protocol."""
 
+    tools: ToolProvider
+
     def __init__(
         self,
         client: Client,

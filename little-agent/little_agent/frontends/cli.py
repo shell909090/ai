@@ -82,7 +82,7 @@ class CliClient(Client):
     ) -> tuple[Session, bool]:
         """Handle CLI commands. Returns (session, should_continue)."""
         match stripped.split(" ", 1):
-            case ["/quit"]:
+            case ["/quit"] | ["/exit"]:
                 print("Goodbye!")
                 return session, False
             case ["/cancel"]:
@@ -101,6 +101,15 @@ class CliClient(Client):
                 return session, True
             case ["/load", path_str]:
                 session = await self._do_load(agent, session, Path(path_str))
+                return session, True
+            case ["/list-tools"]:
+                tools = agent.tools.list()
+                if tools:
+                    print("Available tools:")
+                    for name, (desc, _) in tools.items():
+                        print(f"  {name}: {desc}")
+                else:
+                    print("No tools registered.")
                 return session, True
             case _:
                 print(f"Unknown command: {stripped}")

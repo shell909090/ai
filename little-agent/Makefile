@@ -1,4 +1,4 @@
-.PHONY: fmt lint build unittest test install dev
+.PHONY: fmt lint build unittest test install dev run
 
 fmt:
 	uv run ruff format little_agent tests
@@ -26,3 +26,6 @@ install:
 
 dev:
 	uv sync --extra dev
+
+run:
+	uv run python -m little_agent.main --config .config.yaml

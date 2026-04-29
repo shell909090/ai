@@ -139,6 +139,11 @@ class MockAgent:
             tools=self._tools,
         )
 
+    @property
+    def tools(self) -> MockToolProvider:
+        """Return the tool provider."""
+        return self._tools
+
     async def new(self, cwd: str | None = None) -> Session:
         """Create a new mock session."""
         return await self._agent.new(cwd=cwd)

@@ -1,4 +1,5 @@
 .codex
+.config.yaml
 .env
 .venv/
 __pycache__/
