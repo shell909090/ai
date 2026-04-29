@@ -103,8 +103,7 @@ class SessionCore(Session):
                     )
                     return ("end_turn", result.output_text)
                 case "tool_call":
-                    handler = _ToolCallHandler(self)
-                    partial_output = await handler.handle(result, partial_output)
+                    partial_output = await self._handle_tool_call(result, partial_output)
                 case "cancelled":
                     self._freeze_tail()
                     return ("cancelled", partial_output)
@@ -161,6 +160,93 @@ class SessionCore(Session):
         """Rebuild tail from serialized chain data."""
         self.tail = _rebuild_chain(chain)
 
+    async def _handle_tool_call(self, result: BackendTurnResult, partial_output: str) -> str:
+        """Handle tool_call result and return updated partial_output."""
+        partial_output = result.output_text or partial_output
+        if result.output_text:
+            await self.agent.client.update(
+                self,
+                SessionUpdate(
+                    type="agent_message_chunk",
+                    data={"text": result.output_text},
+                ),
+            )
+
+        tool_call_node = self._create_tool_call_node(result)
+        await self.agent.client.update(
+            self,
+            SessionUpdate(
+                type="tool_call",
+                data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
+            ),
+        )
+
+        tool_result_node = self._create_tool_result_node()
+        await self._invoke_tools(result, tool_result_node)
+
+        return partial_output
+
+    def _create_tool_call_node(self, result: BackendTurnResult) -> ToolCallNode:
+        """Create and append a ToolCallNode."""
+        node = ToolCallNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            calls={
+                tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
+                for tc in result.tool_calls
+            },
+        )
+        self._append_node(node)
+        return node
+
+    def _create_tool_result_node(self) -> ToolResultNode:
+        """Create and append a ToolResultNode, then freeze tail."""
+        node = ToolResultNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            results={},
+        )
+        self._append_node(node)
+        self._freeze_tail()
+        return node
+
+    async def _invoke_tools(
+        self, result: BackendTurnResult, tool_result_node: ToolResultNode
+    ) -> None:
+        """Invoke tools and populate tool_result_node."""
+        pending_calls = {tc.call_id: tc for tc in result.tool_calls}
+        tasks = [self.agent.tools.invoke(tc.tool_name, **tc.arguments) for tc in result.tool_calls]
+        tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for tc, res in zip(result.tool_calls, tool_results, strict=True):
+            if self._cancel_requested and tc.call_id in pending_calls:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "cancelled",
+                    "content": "",
+                }
+                del pending_calls[tc.call_id]
+            elif isinstance(res, Exception):
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": str(res),
+                }
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "completed",
+                    "content": res,
+                }
+            await self.agent.client.update(
+                self,
+                SessionUpdate(
+                    type="tool_call_update",
+                    data={
+                        "call_id": tc.call_id,
+                        "status": tool_result_node.results[tc.call_id]["status"],
+                        "content": tool_result_node.results[tc.call_id]["content"],
+                    },
+                ),
+            )
+
 
 class AgentCore(Agent):
     def __init__(
@@ -201,84 +287,3 @@ class AgentCore(Agent):
         if isinstance(chain, list):
             session._rebuild_tail(chain)
         return session
-
-
-class _ToolCallHandler:
-    """Handles tool_call finish_reason from backend."""
-
-    def __init__(self, session: SessionCore) -> None:
-        self.session = session
-
-    async def handle(self, result: BackendTurnResult, partial_output: str) -> str:
-        """Handle tool_call result and return updated partial_output."""
-        partial_output = result.output_text or partial_output
-        if result.output_text:
-            await self.session.agent.client.update(
-                self.session,
-                SessionUpdate(
-                    type="agent_message_chunk",
-                    data={"text": result.output_text},
-                ),
-            )
-        tool_call_node = ToolCallNode(
-            id=str(uuid.uuid4()),
-            prev=self.session.tail,
-            calls={
-                tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
-                for tc in result.tool_calls
-            },
-        )
-        self.session._append_node(tool_call_node)
-        await self.session.agent.client.update(
-            self.session,
-            SessionUpdate(
-                type="tool_call",
-                data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
-            ),
-        )
-
-        tool_result_node = ToolResultNode(
-            id=str(uuid.uuid4()),
-            prev=self.session.tail,
-            results={},
-        )
-        self.session._append_node(tool_result_node)
-        self.session._freeze_tail()
-
-        pending_calls = {tc.call_id: tc for tc in result.tool_calls}
-        tasks = [
-            self.session.agent.tools.invoke(tc.tool_name, **tc.arguments)
-            for tc in result.tool_calls
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for tc, res in zip(result.tool_calls, results, strict=True):
-            if self.session._cancel_requested and tc.call_id in pending_calls:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "cancelled",
-                    "content": "",
-                }
-                del pending_calls[tc.call_id]
-            elif isinstance(res, Exception):
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": str(res),
-                }
-            else:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "completed",
-                    "content": res,
-                }
-            await self.session.agent.client.update(
-                self.session,
-                SessionUpdate(
-                    type="tool_call_update",
-                    data={
-                        "call_id": tc.call_id,
-                        "status": tool_result_node.results[tc.call_id]["status"],
-                        "content": tool_result_node.results[tc.call_id]["content"],
-                    },
-                ),
-            )
-
-        return partial_output
