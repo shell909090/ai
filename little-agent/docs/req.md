@@ -29,22 +29,16 @@
 6. 为未来的运行时动态 tool 子集选择预留接口钩子。
 7. 至少一种本地插件式 tool 注册方式：通过配置文件注册 Python 模块暴露的 tool。
 8. 为未来扩展子进程方式注册 tool 预留设计空间。
-9. 支持通过配置为 OpenAI backend 指定 base_url，以兼容兼容 API 代理（如 LiteLLM）或本地模型。
-10. Backend 性能计数：每次请求记录 input/output token、执行时间、缓存信息，通过 INFO 级别日志输出。
-11. 日志配置支持 `logging.config.dictConfig`：允许通过配置文件自定义日志格式、级别、处理器等。
+9. 日志配置支持 `logging.config.dictConfig`：允许通过配置文件自定义日志格式、级别、处理器等。
 
 ### 3.2 本期不包含
 
 1. Web UI。
 2. HTTP API。
-3. 多 Agent。
-4. 持久化会话加载与恢复。
-5. 高级权限系统。
-6. 高级记忆系统。
-7. 远程工具注册。
-8. ACP 传输层的真实网络通信实现。
-9. 运行时动态 tool 子集选择。
-10. Backend streaming。
+3. 高级权限系统。
+4. 高级记忆系统。
+5. 运行时动态 tool 子集选择。
+6. Backend streaming。
 
 ## 4. 核心需求
 
@@ -53,6 +47,7 @@
 1. Agent 必须支持接收用户输入并返回文本回复。
 2. Agent 必须支持在一次 prompt turn 中执行零次或多次 tool 调用。
 3. Agent 必须在工具结果返回后继续完成本轮推理，直到本轮结束。
+4. 会话压缩：长对话自动压缩历史消息，降低 token 消耗。
 
 ### 4.2 ACP 等效架构
 
@@ -86,7 +81,14 @@
    - 运行时动态切换本轮可见 tool 子集。
 3. 未被选中的 tools 必须对本轮推理不可见，避免工具迷失（适用于未来实现）。
 
-### 4.5 CLI 要求
+### 4.5 Tools 要求
+
+1. Tool call 参数显示：CLI 显示具体 tool 调用指令，过长时截断尾部并提示行数。
+2. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
+3. Bash tool 扩展：支持自定义 `cwd`、`env` 和 `stdin` 参数。
+4. Task tool：允许 Agent 创建子任务（子会话），独立执行并返回结果。
+
+### 4.6 CLI 要求
 
 1. 用户可以在命令行中启动交互式会话。
 2. 用户可以发送 prompt 并看到 Agent 回复。
@@ -95,12 +97,14 @@
 5. CLI 支持 `/exit` 指令（与 `/quit` 等效）。
 6. CLI 支持 `/list-tools` 指令，列出当前已注册的所有 tools。
 7. CLI 消息显示分离：模型回复的"思考"与"显示"内容分离输出，每条消息 strip 前后空白。
+8. CLI 支持 readline：方向键召回历史指令、指令历史持久化、Tab 补全。
 
-### 4.6 Tools 要求
+### 4.7 Backend 要求
 
-1. Tool call 参数显示：CLI 显示具体 tool 调用指令，过长时截断尾部并提示行数。
-2. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
-
+1. Backend 性能计数：每次请求记录 input/output token、执行时间、缓存信息，通过 INFO 级别日志输出。
+2. Backend 调用超时：API 调用应有超时控制，防止网络异常导致 session 挂死。
+3. 多模型支持：配置支持多个 backend 定义，不同组件（如主对话、压缩）可使用不同模型。
+4. 支持通过配置为 OpenAI backend 指定 base_url，以兼容兼容 API 代理（如 LiteLLM）或本地模型。
 
 ## 5. 非功能需求
 
@@ -109,6 +113,7 @@
 1. 核心 Agent、ACP 适配层、CLI、Tool Registry 需要模块化分离。
 2. 后续应可以在不重写 Agent 内核的前提下增加新的 UI。
 3. 后续应可以增加新的 tool 插件加载方式。
+4. 支持多 backend 配置，不同组件可使用不同模型。
 
 ### 5.2 可测试性
 

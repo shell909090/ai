@@ -182,6 +182,7 @@ class Agent(Protocol):
 3. 如需不同 client，应创建不同 agent 实例。
 4. `compressor` 为可选注入；不注入时 `Session.compress()` 抛异常。
 5. `tools` 参数类型为 `ToolProvider`。Agent 运行时只关心"能列出工具、能调用工具"，不关心对方是单个 provider 还是聚合后的 `ToolManager`。
+6. backends支持多个，agent只持有一个backend，即名字为primary的那个。compressor在构造的时候，会根据配置，决定使用同一个backend，还是获得另一个。
 
 ### 4.5 Session 接口
 
@@ -228,6 +229,7 @@ class Session(Protocol):
 4. 实现 `update()` 来消费通知并输出。
 5. 处理取消、退出与后续 fork 命令。
 6. 处理 `/list-tools` 命令：列出当前 agent 已注册的所有 tools。
+7. readline 集成：支持方向键召回历史、指令历史持久化到 `~/.little_agent_history`、Tab 补全 `/` 命令。
 
 ### 4.7 CLI 显示设计
 
@@ -352,6 +354,9 @@ async def f(**kwargs: JSONValue) -> JSONValue:
 - description: `Execute a shell command and return stdout/stderr`
 - 参数：
   - `command` (string, required): 要执行的 shell 命令
+  - `cwd` (string, optional): 工作目录
+  - `env` (object, optional): 环境变量键值对
+  - `stdin` (string, optional): 标准输入内容
 
 **实现要点：**
 
@@ -359,11 +364,36 @@ async def f(**kwargs: JSONValue) -> JSONValue:
 2. 捕获 stdout 和 stderr，返回合并后的字符串输出。
 3. 命令超时时间默认 30 秒，超时后 kill 进程并返回超时信息。
 4. 命令执行失败（非零退出码）返回 stderr 内容，不抛异常（让模型自行判断）。
-5. 出于安全考虑，不执行交互式命令（stdin 关闭）。
+5. `cwd`、`env`、`stdin` 通过 `create_subprocess_shell` 和 `communicate()` 传入。
+6. 不传入新参数时行为不变（向后兼容）。
 
 **注册方式：**
 
 启动脚本先加载配置文件中的 `tools.providers` 列表，然后将 `BashToolProvider` append 到列表末尾，最后统一调用 `ToolManager.register()` 注册所有 providers。内置 tool 不通过特殊机制注册，与普通配置加载的 provider 走同一流程。
+
+### 5.7 Task Tool
+
+系统内置一个 `task` tool，允许 Agent 创建子任务（子会话），独立执行并返回结果。
+
+Tool 定义：
+
+- name: `create_task`
+- description: `Create a sub-task with its own session and execute it`
+- 参数：
+  - `prompt` (string, required): 子任务的提示词
+  - `id` (int, optional): 子任务的id
+  - `depends` (array of int, optional): 子任务的依赖
+  - `tools` (array of string, optional): 子任务可用的 tool 名称列表（默认可用全部）
+  - `inheritance` (bool, optional): 继承发起task的chain，sub-task的AI能看到之前全部对话历史
+
+实现要点：
+
+1. 子任务有独立的 `Session`，与主会话隔离。
+2. 子任务执行完成后，结果（`output_text` 和 `stop_reason`）返回给主会话。
+3. 子任务异常不影响主会话（异常被捕获并作为 failed 结果返回）。
+4. inheritance默认为false。如果inheritance为true，那么从当前session上倒推到第一个没有frozen属性的node，做fork，加UserPromptNode节点，然后执行任务。一般不从当前fork，因为当前一般是ToolResultNode，还要继续写入。
+5. 发起子任务后，tool call就不会超时。但是每个task都有300s的超时时间。
+6. 子任务的tools里面，去掉task tool，避免递归调用。
 
 ## 6. backends 与 agent 的接口
 
@@ -415,6 +445,7 @@ class Backend(Protocol):
    - 执行时间（`generate()` 入口到出口的耗时）
    - 缓存信息（如 OpenAI 的 `cached_tokens`，如有）
 7. DEBUG 日志：每次 `generate()` 调用前，在 DEBUG 级别记录完整的请求 payload（messages、tools 等），便于调试。
+8. 超时控制：`generate()` 应使用 `asyncio.wait_for` 或 httpx timeout 控制调用时长，超时后抛出 `TimeoutError` 或自定义异常，由上层处理。
 
 ## 7. agent 模块内部数据结构
 
@@ -556,6 +587,7 @@ class Compressor(Protocol):
    - 活跃 turn 存在：抛异常。
    - 否则调用 `compressor.compress(tail)`，把返回节点设为 session 新的 tail。
 5. 旧链保留，用于回放与 fork。不修改旧链，不从旧链摘节点。
+6. compressor在构造的时候，根据配置，main.py决定compressor和agent使用同一个backend，还是获得另一个。当backends里面有一个叫compressor的backend的时候，使用那个。如果没有，和agent使用同一个。
 
 ## 8. agent 的编排流程
 
@@ -609,18 +641,19 @@ little-agent = "little_agent.main:main"
 
 ### 9.1 职责
 
-1. 解析 CLI 参数（包括 `--debug` 等日志级别 flag）。
+1. 解析 CLI 参数（包括 `--loglevel` 等日志级别 flag）。
 2. 加载 YAML 配置文件。
 3. 初始化 logger：
    - 若配置中存在 `cfg['logging']`，使用 `logging.config.dictConfig(cfg['logging'])` 加载完整日志配置。
-   - 若不存在，回退到默认的 `logging.basicConfig(level=logging.INFO)`。
-   - 日志级别可通过 `cfg['logging']['loggers']['']['level']` 调整。
+   - 若不存在，使用内置 `_DEFAULT_LOGGING_CONFIG` 标准化 dictConfig。
+   - `--loglevel` 参数强制覆盖 `cfg['logging']['loggers']['']['level']`。
 4. 初始化 `ToolManager`：构造 `ToolManager` 具体实例；加载配置中的 providers 列表，将 `BashToolProvider` append 到列表末尾，然后统一注册所有 providers。
 5. 初始化 `Backend`（包括 base_url，默认为 None，使用 OpenAI 默认地址）。
-6. 初始化 `Compressor`（可选）。
-7. 初始化具体 `Client` 实现（本期为 `CliClient`）。
-8. 用上述依赖构造 `Agent`。
-9. 调用 client 的 `run(agent)` 启动交互。
+6. 多 backend 初始化：若配置中存在多个 backend 定义，按名称构造多个 `Backend` 实例。
+7. 初始化 `Compressor`（可选）。
+8. 初始化具体 `Client` 实现（本期为 `CliClient`）。
+9. 用上述依赖构造 `Agent`。
+10. 调用 client 的 `run(agent)` 启动交互。
 
 不承载业务逻辑。
 
@@ -629,11 +662,17 @@ little-agent = "little_agent.main:main"
 本期使用 YAML。最小 schema（实现时可按需扩展）：
 
 ```yaml
-backend:
-  type: openai
-  model: gpt-4
-  api_key_env: OPENAI_API_KEY
-  base_url: https://api.openai.com/v1  # optional
+# 多 backend 配置，无需考虑向后兼容
+backends:
+  primary:
+    type: openai
+    model: gpt-4
+    api_key: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1  # optional
+  compressor:
+    type: openai
+    model: gpt-3.5-turbo
+    api_key_env: OPENAI_API_KEY_NAME_IN_ENV
 
 tools:
   providers:
@@ -646,7 +685,20 @@ frontend:
   type: cli
 
 logging:
-  level: INFO
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    default:
+      format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      stream: ext://sys.stdout
+  loggers:
+    "":
+      level: INFO
+      handlers: [console]
 ```
 
 ## 10. 测试设计
