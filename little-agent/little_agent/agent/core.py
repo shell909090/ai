@@ -1,0 +1,289 @@
+from __future__ import annotations
+
+import asyncio
+import uuid
+from typing import TYPE_CHECKING, Any
+
+from little_agent.frontends.protocol import SessionUpdate
+from little_agent.types import ContentBlock, JSONValue, PromptReturn
+
+from .exceptions import SessionBusyError
+from .nodes import (
+    AssistantResponseNode,
+    Node,
+    ToolCallNode,
+    ToolResultNode,
+    UserPromptNode,
+    _rebuild_chain,
+)
+from .protocol import Agent, Compressor, Session
+
+if TYPE_CHECKING:
+    from little_agent.backends.protocol import Backend, BackendTurnResult
+    from little_agent.frontends.protocol import Client
+    from little_agent.tools.protocol import ToolProvider
+
+MAX_TURN_ITERATIONS = 10
+
+_PendingItem = tuple[str | list[ContentBlock], asyncio.Future[PromptReturn]]
+
+
+class SessionCore(Session):
+    def __init__(
+        self,
+        session_id: str,
+        cwd: str | None,
+        agent: AgentCore,
+    ) -> None:
+        self.id = session_id
+        self.cwd = cwd
+        self.agent = agent
+        self.tail: Node | None = None
+        self._active_turn: bool = False
+        self._cancel_requested: bool = False
+        self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
+
+    async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn:
+        future: asyncio.Future[PromptReturn] = asyncio.get_running_loop().create_future()
+        try:
+            self._pending_queue.put_nowait((prompt, future))
+        except asyncio.QueueFull as err:
+            raise SessionBusyError("Session pending queue is full") from err
+
+        if not self._active_turn:
+            asyncio.create_task(self._consume_queue())
+
+        return await future
+
+    async def _consume_queue(self) -> None:
+        self._active_turn = True
+        try:
+            while not self._pending_queue.empty():
+                prompt, future = self._pending_queue.get_nowait()
+                self._cancel_requested = False
+                try:
+                    result = await self._run_turn(prompt)
+                    future.set_result(result)
+                except Exception as exc:
+                    future.set_exception(exc)
+        finally:
+            self._active_turn = False
+
+    async def _run_turn(self, prompt: str | list[ContentBlock]) -> PromptReturn:
+        user_node = UserPromptNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            prompt=prompt,
+        )
+        self._append_node(user_node)
+
+        partial_output = ""
+        for _ in range(MAX_TURN_ITERATIONS):
+            if self._cancel_requested:
+                self._freeze_tail()
+                return ("cancelled", partial_output)
+
+            result = await self.agent.backend.generate(self)
+
+            match result.finish_reason:
+                case "completed":
+                    assistant_node = AssistantResponseNode(
+                        id=str(uuid.uuid4()),
+                        prev=self.tail,
+                        text=result.output_text,
+                    )
+                    self._append_node(assistant_node)
+                    self._freeze_tail()
+                    await self.agent.client.update(
+                        self,
+                        SessionUpdate(
+                            type="agent_message_chunk",
+                            data={"text": result.output_text},
+                        ),
+                    )
+                    return ("end_turn", result.output_text)
+                case "tool_call":
+                    partial_output = await self._handle_tool_call(result, partial_output)
+                case "cancelled":
+                    self._freeze_tail()
+                    return ("cancelled", partial_output)
+                case _:
+                    raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
+
+        raise RuntimeError("Max turn iterations exceeded")
+
+    def _append_node(self, node: Node) -> None:
+        if self.tail is not None:
+            if hasattr(self.tail, "frozen") and not self.tail.frozen:
+                self.tail.frozen = True
+        self.tail = node
+
+    def _freeze_tail(self) -> None:
+        if self.tail is not None and hasattr(self.tail, "frozen"):
+            self.tail.frozen = True
+
+    async def cancel(self) -> None:
+        if not self._active_turn:
+            return
+        self._cancel_requested = True
+
+    async def fork(self) -> Session:
+        if self._active_turn:
+            raise RuntimeError("Cannot fork session with active turn")
+        self._freeze_tail()
+        new_session = SessionCore(
+            session_id=str(uuid.uuid4()),
+            cwd=self.cwd,
+            agent=self.agent,
+        )
+        new_session.tail = self.tail
+        return new_session
+
+    async def compress(self) -> None:
+        if self._active_turn:
+            raise RuntimeError("Cannot compress session with active turn")
+        if self.agent.compressor is None:
+            raise RuntimeError("No compressor configured")
+        new_head = await self.agent.compressor.compress(self.tail)
+        self.tail = new_head
+
+    def save(self) -> JSONValue:
+        chain: list[dict[str, JSONValue]] = []
+        node = self.tail
+        while node is not None:
+            chain.append(node.to_dict())
+            node = node.prev
+        chain.reverse()
+        return {"id": self.id, "cwd": self.cwd, "chain": chain}  # type: ignore[dict-item]
+
+    def _rebuild_tail(self, chain: list[Any]) -> None:
+        """Rebuild tail from serialized chain data."""
+        self.tail = _rebuild_chain(chain)
+
+    async def _handle_tool_call(self, result: BackendTurnResult, partial_output: str) -> str:
+        """Handle tool_call result and return updated partial_output."""
+        partial_output = result.output_text or partial_output
+        if result.output_text:
+            await self.agent.client.update(
+                self,
+                SessionUpdate(
+                    type="agent_message_chunk",
+                    data={"text": result.output_text},
+                ),
+            )
+
+        tool_call_node = self._create_tool_call_node(result)
+        await self.agent.client.update(
+            self,
+            SessionUpdate(
+                type="tool_call",
+                data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
+            ),
+        )
+
+        tool_result_node = self._create_tool_result_node()
+        await self._invoke_tools(result, tool_result_node)
+
+        return partial_output
+
+    def _create_tool_call_node(self, result: BackendTurnResult) -> ToolCallNode:
+        """Create and append a ToolCallNode."""
+        node = ToolCallNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            calls={
+                tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
+                for tc in result.tool_calls
+            },
+        )
+        self._append_node(node)
+        return node
+
+    def _create_tool_result_node(self) -> ToolResultNode:
+        """Create and append a ToolResultNode, then freeze tail."""
+        node = ToolResultNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            results={},
+        )
+        self._append_node(node)
+        self._freeze_tail()
+        return node
+
+    async def _invoke_tools(
+        self, result: BackendTurnResult, tool_result_node: ToolResultNode
+    ) -> None:
+        """Invoke tools and populate tool_result_node."""
+        pending_calls = {tc.call_id: tc for tc in result.tool_calls}
+        tasks = [self.agent.tools.invoke(tc.tool_name, **tc.arguments) for tc in result.tool_calls]
+        tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for tc, res in zip(result.tool_calls, tool_results, strict=True):
+            if self._cancel_requested and tc.call_id in pending_calls:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "cancelled",
+                    "content": "",
+                }
+                del pending_calls[tc.call_id]
+            elif isinstance(res, Exception):
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": str(res),
+                }
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "completed",
+                    "content": res,
+                }
+            await self.agent.client.update(
+                self,
+                SessionUpdate(
+                    type="tool_call_update",
+                    data={
+                        "call_id": tc.call_id,
+                        "status": tool_result_node.results[tc.call_id]["status"],
+                        "content": tool_result_node.results[tc.call_id]["content"],
+                    },
+                ),
+            )
+
+
+class AgentCore(Agent):
+    def __init__(
+        self,
+        client: Client,
+        backend: Backend,
+        tools: ToolProvider,
+        compressor: Compressor | None = None,
+    ) -> None:
+        self.client = client
+        self.backend = backend
+        self.tools = tools
+        self.compressor = compressor
+
+    async def new(self, cwd: str | None = None) -> Session:
+        session = SessionCore(
+            session_id=str(uuid.uuid4()),
+            cwd=cwd,
+            agent=self,
+        )
+        return session
+
+    async def load(self, data: JSONValue) -> Session:
+        if not isinstance(data, dict):
+            raise ValueError("Invalid session data: expected dict")
+        session_id = data.get("id")
+        if not isinstance(session_id, str):
+            raise ValueError("Session data missing 'id'")
+        session_cwd = data.get("cwd")
+        if session_cwd is not None and not isinstance(session_cwd, str):
+            raise ValueError("Session 'cwd' must be a string or null")
+        session = SessionCore(
+            session_id=session_id,
+            cwd=session_cwd,
+            agent=self,
+        )
+        chain = data.get("chain", [])
+        if isinstance(chain, list):
+            session._rebuild_tail(chain)
+        return session

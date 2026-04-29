@@ -1,0 +1,13 @@
+.codex
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+docs/log.md
+docs/review.md
+docs/tasks.md
+.coverage
+htmlcov/
