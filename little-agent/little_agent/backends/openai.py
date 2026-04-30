@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from little_agent.agent.nodes import (
     AssistantResponseNode,
     Node,
+    SummaryNode,
     ToolCallNode,
     ToolResultNode,
     UserPromptNode,
@@ -58,53 +59,70 @@ def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
     return functions
 
 
-def _chain_to_messages(tail: Node | None) -> list[dict[str, Any]]:
-    """Convert chain of nodes to OpenAI messages."""
+def _node_to_message(n: Node) -> list[dict[str, Any]]:
+    """Convert a single node to one or more OpenAI messages."""
+    if isinstance(n, UserPromptNode):
+        content = n.prompt if isinstance(n.prompt, str) else json.dumps(n.prompt)
+        return [{"role": "user", "content": content}]
+    if isinstance(n, AssistantResponseNode):
+        return [{"role": "assistant", "content": n.text}]
+    if isinstance(n, ToolCallNode):
+        tool_calls = [
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": call_data["tool_name"],
+                    "arguments": json.dumps(call_data["arguments"]),
+                },
+            }
+            for call_id, call_data in n.calls.items()
+        ]
+        return [{"role": "assistant", "tool_calls": tool_calls}]
+    if isinstance(n, ToolResultNode):
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": json.dumps(result),
+            }
+            for call_id, result in n.results.items()
+        ]
+    if isinstance(n, SummaryNode):
+        return [{"role": "system", "content": str(n.summary)}]
+    return []
+
+
+def _chain_to_messages(session: "SessionCore" | Node) -> list[dict[str, Any]]:
+    """Convert chain of nodes to OpenAI messages, injecting memory if present."""
     messages: list[dict[str, Any]] = []
-    node = tail
+    node = session.tail if hasattr(session, "tail") else session
     chain: list[Node] = []
     while node is not None:
         chain.append(node)
         node = node.prev
     chain.reverse()
 
+    system_injected = False
     for n in chain:
-        if isinstance(n, UserPromptNode):
-            if isinstance(n.prompt, str):
-                messages.append({"role": "user", "content": n.prompt})
+        for msg in _node_to_message(n):
+            if msg["role"] == "system":
+                if not system_injected:
+                    messages.insert(0, msg)
+                    system_injected = True
             else:
-                messages.append({"role": "user", "content": json.dumps(n.prompt)})
-        elif isinstance(n, AssistantResponseNode):
-            messages.append({"role": "assistant", "content": n.text})
-        elif isinstance(n, ToolCallNode):
-            tool_calls = []
-            for call_id, call_data in n.calls.items():
-                tool_calls.append(
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": call_data["tool_name"],
-                            "arguments": json.dumps(call_data["arguments"]),
-                        },
-                    }
-                )
-            messages.append({"role": "assistant", "tool_calls": tool_calls})
-        elif isinstance(n, ToolResultNode):
-            for call_id, result in n.results.items():
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": json.dumps(result),
-                    }
-                )
+                messages.append(msg)
+
+    # Inject memory if available on the session
+    if hasattr(session, "_memory_text"):
+        memory_text = getattr(session, "_memory_text", None)
+        if memory_text and not any(m.get("role") == "system" for m in messages):
+            messages.insert(0, {"role": "system", "content": memory_text})
+
     return messages
 
 
-def _accumulate_tool_call_delta(
-    tool_calls_acc: dict[int, dict[str, str]], tc_delta: Any
-) -> None:
+def _accumulate_tool_call_delta(tool_calls_acc: dict[int, dict[str, str]], tc_delta: Any) -> None:
     """Merge one streaming tool-call delta into the running accumulator."""
     idx = tc_delta.index
     if idx not in tool_calls_acc:
@@ -191,8 +209,8 @@ class OpenAIBackend:
         self, session: SessionCore
     ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""
-        tool_map = session.agent.tools.list()
-        messages = _chain_to_messages(session.tail)
+        tool_map = session.get_turn_tool_map()
+        messages = _chain_to_messages(session)
         tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
 
         logger.debug(

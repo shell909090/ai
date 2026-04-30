@@ -105,9 +105,13 @@ class CliClient(Client):
         kind: str,
         payload: dict[str, JSONValue],
     ) -> bool:
-        """Always grant permission."""
+        """Interactive permission prompt for CLI."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
-        return True
+        try:
+            answer = await asyncio.to_thread(input, f"[Allow {kind}? y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer.strip().lower() in ("y", "yes")
 
     async def _do_save(self, session: Session, path: Path) -> None:
         """Save session to file."""

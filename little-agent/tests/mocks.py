@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any
 
 from little_agent.agent.core import AgentCore
 from little_agent.agent.protocol import Session
@@ -144,6 +145,7 @@ class MockAgent:
         backend: MockBackend | None = None,
         tools: MockToolProvider | None = None,
         client: MockClient | None = None,
+        permissions: Any = None,
     ) -> None:
         self._backend = backend or MockBackend()
         self._tools = tools or MockToolProvider()
@@ -153,6 +155,7 @@ class MockAgent:
             client=self._client,
             backend=self._backend,
             tools=self._tools,
+            permissions=permissions,
         )
 
     async def new(self, cwd: str | None = None) -> Session:

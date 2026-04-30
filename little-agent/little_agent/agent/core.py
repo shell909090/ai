@@ -4,7 +4,8 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from little_agent.backends.protocol import BackendTurnResult
+from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
+from little_agent.tools.protocol import ToolMap
 from little_agent.types import ContentBlock, JSONValue, PromptReturn, SessionUpdate
 
 from .exceptions import SessionBusyError
@@ -21,11 +22,12 @@ from .protocol import Agent, Compressor, Session
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
+    from little_agent.permissions import PermissionManager
     from little_agent.tools.protocol import ToolProvider
 
 MAX_TURN_ITERATIONS = 10
 
-_PendingItem = tuple[str | list[ContentBlock], asyncio.Future[PromptReturn]]
+_PendingItem = tuple[str | list[ContentBlock], list[str] | None, asyncio.Future[PromptReturn]]
 
 
 class SessionCore(Session):
@@ -42,11 +44,22 @@ class SessionCore(Session):
         self._active_turn: bool = False
         self._cancel_requested: bool = False
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
+        self._turn_allowed_tools: list[str] | None = None
+        self._memory_text: str | None = None
 
-    async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn:
+    def get_turn_tool_map(self) -> ToolMap:
+        """Return tool map filtered by _turn_allowed_tools (None = all tools)."""
+        full_map = self.agent.tools.list()
+        if self._turn_allowed_tools is None:
+            return full_map
+        return {k: v for k, v in full_map.items() if k in self._turn_allowed_tools}
+
+    async def prompt(
+        self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
+    ) -> PromptReturn:
         future: asyncio.Future[PromptReturn] = asyncio.get_running_loop().create_future()
         try:
-            self._pending_queue.put_nowait((prompt, future))
+            self._pending_queue.put_nowait((prompt, allowed_tools, future))
         except asyncio.QueueFull as err:
             raise SessionBusyError("Session pending queue is full") from err
 
@@ -59,10 +72,10 @@ class SessionCore(Session):
     async def _consume_queue(self) -> None:
         try:
             while not self._pending_queue.empty():
-                prompt, future = self._pending_queue.get_nowait()
+                prompt, allowed_tools, future = self._pending_queue.get_nowait()
                 self._cancel_requested = False
                 try:
-                    result = await self._run_turn(prompt)
+                    result = await self._run_turn(prompt, allowed_tools)
                     if not future.done():
                         future.set_result(result)
                 except Exception as exc:
@@ -71,7 +84,17 @@ class SessionCore(Session):
         finally:
             self._active_turn = False
 
-    async def _run_turn(self, prompt: str | list[ContentBlock]) -> PromptReturn:
+    async def _run_turn(
+        self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
+    ) -> PromptReturn:
+        self._turn_allowed_tools = allowed_tools
+
+        # Inject memory before starting the turn
+        if self.agent.memory is not None:
+            self._memory_text = await self.agent.memory.recall()
+        else:
+            self._memory_text = None
+
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
@@ -85,42 +108,58 @@ class SessionCore(Session):
                 self._freeze_tail()
                 return ("cancelled", partial_output)
 
-            result: BackendTurnResult | None = None
-            async for item in self.agent.backend.generate(self):
-                if isinstance(item, BackendTurnResult):
-                    result = item
-                else:
-                    await self.agent.client.update(self, item)
-
-            if result is None:
-                raise RuntimeError("Backend returned no result")
+            result = await self._generate_backend_result()
 
             match result.finish_reason:
                 case "completed":
-                    assistant_node = AssistantResponseNode(
-                        id=str(uuid.uuid4()),
-                        prev=self.tail,
-                        text=result.output_text,
-                    )
-                    self._append_node(assistant_node)
-                    self._freeze_tail()
-                    await self.agent.client.update(
-                        self,
-                        SessionUpdate(
-                            type="agent_message_chunk",
-                            data={"text": result.output_text},
-                        ),
-                    )
-                    return ("end_turn", result.output_text)
+                    return await self._handle_completed(result)
                 case "tool_call":
                     partial_output = await self._handle_tool_call(result, partial_output)
                 case "cancelled":
                     self._freeze_tail()
+                    await self._update_memory()
                     return ("cancelled", partial_output)
                 case _:
                     raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
 
         raise RuntimeError("Max turn iterations exceeded")
+
+    async def _generate_backend_result(self) -> BackendTurnResult:
+        """Generate a single backend turn result."""
+        result: BackendTurnResult | None = None
+        async for item in self.agent.backend.generate(self):
+            if isinstance(item, BackendTurnResult):
+                result = item
+            else:
+                await self.agent.client.update(self, item)
+
+        if result is None:
+            raise RuntimeError("Backend returned no result")
+        return result
+
+    async def _handle_completed(self, result: BackendTurnResult) -> PromptReturn:
+        """Handle a completed turn result."""
+        assistant_node = AssistantResponseNode(
+            id=str(uuid.uuid4()),
+            prev=self.tail,
+            text=result.output_text,
+        )
+        self._append_node(assistant_node)
+        self._freeze_tail()
+        await self.agent.client.update(
+            self,
+            SessionUpdate(
+                type="agent_message_chunk",
+                data={"text": result.output_text},
+            ),
+        )
+        await self._update_memory()
+        return ("end_turn", result.output_text)
+
+    async def _update_memory(self) -> None:
+        """Update memory after a turn completes or is cancelled."""
+        if self.agent.memory is not None:
+            await self.agent.memory.remember(self)
 
     def _append_node(self, node: Node) -> None:
         if self.tail is not None:
@@ -220,23 +259,78 @@ class SessionCore(Session):
         self._append_node(node)
         return node
 
+    def _check_tool_allowed(
+        self,
+        tc: BackendToolCall,
+        allowed_names: set[str] | None,
+        tool_result_node: ToolResultNode,
+    ) -> bool:
+        """Check if a tool call is allowed; return True if it should proceed."""
+        if allowed_names is not None and tc.tool_name not in allowed_names:
+            tool_result_node.results[tc.call_id] = {
+                "status": "failed",
+                "content": f"Tool not in allowed list: {tc.tool_name}",
+            }
+            return False
+
+        if self.agent.permissions is not None:
+            perm_action = self.agent.permissions.check(tc.tool_name)
+            if perm_action == "deny":
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": "Permission denied",
+                }
+                return False
+            if perm_action == "ask":
+                return True  # handled asynchronously by caller
+        return True
+
     async def _invoke_tools(
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
         """Invoke tools and populate tool_result_node."""
         from little_agent.agent.context import current_session
 
+        allowed_names = (
+            set(self._turn_allowed_tools) if self._turn_allowed_tools is not None else None
+        )
+
+        allowed_calls = []
+        needs_permission: list[BackendToolCall] = []
+        for tc in result.tool_calls:
+            if not self._check_tool_allowed(tc, allowed_names, tool_result_node):
+                continue
+            if (
+                self.agent.permissions is not None
+                and self.agent.permissions.check(tc.tool_name) == "ask"
+            ):
+                needs_permission.append(tc)
+                continue
+            allowed_calls.append(tc)
+
+        for tc in needs_permission:
+            granted = await self.agent.client.request_permission(
+                self,
+                tc.tool_name,
+                {"arguments": tc.arguments},
+            )
+            if granted:
+                allowed_calls.append(tc)
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": "Permission denied",
+                }
+
         token = current_session.set(self)
         try:
-            pending_calls = {tc.call_id: tc for tc in result.tool_calls}
-            tasks = [
-                self.agent.tools.invoke(tc.tool_name, tc.arguments) for tc in result.tool_calls
-            ]
+            pending_calls = {tc.call_id: tc for tc in allowed_calls}
+            tasks = [self.agent.tools.invoke(tc.tool_name, tc.arguments) for tc in allowed_calls]
             tool_results = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             current_session.reset(token)
 
-        for tc, res in zip(result.tool_calls, tool_results, strict=True):
+        for tc, res in zip(allowed_calls, tool_results, strict=True):
             if self._cancel_requested and tc.call_id in pending_calls:
                 tool_result_node.results[tc.call_id] = {
                     "status": "cancelled",
@@ -253,6 +347,8 @@ class SessionCore(Session):
                     "status": "completed",
                     "content": res,
                 }
+
+        for tc in result.tool_calls:
             await self.agent.client.update(
                 self,
                 SessionUpdate(
@@ -273,11 +369,15 @@ class AgentCore(Agent):
         backend: Backend,
         tools: ToolProvider,
         compressor: Compressor | None = None,
+        permissions: PermissionManager | None = None,
+        memory: Any = None,
     ) -> None:
         self.client = client
         self.backend = backend
         self.tools = tools
         self.compressor = compressor
+        self.permissions = permissions
+        self.memory = memory
 
     async def new(self, cwd: str | None = None) -> Session:
         session = SessionCore(

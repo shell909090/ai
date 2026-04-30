@@ -29,6 +29,7 @@ class AcpClient(Client):
 
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
+        self._permission_futures: dict[str, asyncio.Future[bool]] = {}
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Forward session updates to stdout as JSON."""
@@ -47,9 +48,42 @@ class AcpClient(Client):
         kind: str,
         payload: dict[str, JSONValue],
     ) -> bool:
-        """Always grant permission (ACP permission flow not yet implemented)."""
+        """Send permission request via ACP and wait for response."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
-        return True
+        session_id = getattr(session, "id", None)
+        req_id = f"perm_{session_id}_{kind}_{id(payload)}"
+
+        _write_json(
+            {
+                "type": "session/request_permission",
+                "id": req_id,
+                "session_id": session_id,
+                "kind": kind,
+                "payload": payload,
+            }
+        )
+
+        # Wait for response with a timeout
+        try:
+            return await asyncio.wait_for(
+                self._wait_permission_response(req_id),
+                timeout=60.0,
+            )
+        except TimeoutError:
+            logger.warning("Permission request timed out: %s", req_id)
+            return False
+
+    async def _wait_permission_response(self, req_id: str) -> bool:
+        """Wait for a permission response matching req_id."""
+        # ACP client reads from stdin in run(); we need a way to receive
+        # responses. For simplicity, store a future and have run() resolve it.
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._permission_futures[req_id] = future
+        try:
+            return await future
+        finally:
+            self._permission_futures.pop(req_id, None)
 
     async def _handle_request(self, agent: Agent, msg: dict[str, Any]) -> dict[str, Any]:
         """Dispatch a single ACP request and return a response dict."""
@@ -140,5 +174,19 @@ class AcpClient(Client):
                 _write_json({"error": "Request must be a JSON object"})
                 continue
 
+            msg_type = msg.get("type", "")
+            if msg_type == "session/permission_response":
+                self._handle_permission_response(msg)
+                continue
+
             response = await self._handle_request(agent, msg)
             _write_json(response)
+
+    def _handle_permission_response(self, msg: dict[str, Any]) -> None:
+        """Resolve a pending permission future from a response message."""
+        req_id = msg.get("id", "")
+        future = self._permission_futures.get(req_id)
+        if future is None or future.done():
+            return
+        granted = bool(msg.get("granted", False))
+        future.set_result(granted)

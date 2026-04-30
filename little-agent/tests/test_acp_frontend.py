@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,11 +38,24 @@ async def test_acp_update_writes_json(capsys: pytest.CaptureFixture[str]) -> Non
 
 
 @pytest.mark.asyncio
-async def test_acp_request_permission_always_true() -> None:
-    """AcpClient.request_permission always returns True."""
+async def test_acp_request_permission_granted_by_default() -> None:
+    """AcpClient.request_permission sends request and returns True when responded."""
     client = AcpClient()
     mock_session = MagicMock()
-    result = await client.request_permission(mock_session, "bash", {})  # type: ignore[arg-type]
+    mock_session.id = "sess-1"
+
+    payload = {}
+    # Start permission request in background
+    perm_task = asyncio.create_task(
+        client.request_permission(mock_session, "bash", payload)  # type: ignore[arg-type]
+    )
+
+    # Simulate permission response with matching req_id
+    await asyncio.sleep(0.05)
+    req_id = f"perm_sess-1_bash_{id(payload)}"
+    client._handle_permission_response({"id": req_id, "granted": True})
+
+    result = await asyncio.wait_for(perm_task, timeout=1.0)
     assert result is True
 
 

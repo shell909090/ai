@@ -15,6 +15,7 @@ from little_agent.agent.nodes import (
     UserPromptNode,
 )
 from little_agent.backends.protocol import BackendTurnResult
+from little_agent.tools.protocol import ToolMap
 
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
@@ -50,6 +51,10 @@ class _CompressorSession:
 
     def _set_agent(self, agent: _CompressorAgent) -> None:
         self.agent = agent
+
+    def get_turn_tool_map(self) -> ToolMap:
+        """Return empty ToolMap — compressor sessions have no tools."""
+        return {}
 
 
 class _CompressorAgent:

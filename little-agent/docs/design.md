@@ -188,7 +188,11 @@ class Agent(Protocol):
 
 ```python
 class Session(Protocol):
-    async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn: ...
+    async def prompt(
+        self,
+        prompt: str | list[ContentBlock],
+        allowed_tools: list[str] | None = None,
+    ) -> PromptReturn: ...
     async def cancel(self) -> None: ...
     async def fork(self) -> "Session": ...
     async def compress(self) -> None: ...
@@ -203,8 +207,10 @@ class Session(Protocol):
 
 说明：
 
-1. 本期不接收 `allowed_tool_names` 参数；agent 对本轮可见全部已注册 tools。运行时动态 tool 选择能力推迟到后续版本，届时以新参数或 Session 级别的配置接入。
-2. `fork()` 不接收 `from_node_id`，避免把低频且复杂的节点选择暴露给调用方。
+1. `allowed_tools=None` 表示使用全部已注册 tool，向后兼容；传入列表时，本轮 backend 仅可见该子集，不在列表中的 tool 完全不出现在 tools 定义中。
+2. `SessionCore` 内部在 `_run_turn` 开始时将 `allowed_tools` 存入 `_turn_allowed_tools`，并通过 `get_turn_tool_map()` 方法返回过滤后的 `ToolMap`；backend 读取 `session.get_turn_tool_map()` 而非 `session.agent.tools.list()`。
+3. backend 返回的 `tool_calls` 若包含不在允许列表中的 tool，视为非法调用：以 `ToolInvokeError` 记录到 `ToolResultNode.results`（`status="failed"`，`content` 为"Tool not in allowed list"），不实际执行该 tool。
+4. `fork()` 不接收 `from_node_id`，避免把低频且复杂的节点选择暴露给调用方。
 3. `fork()` 的语义就是基于当前 session 状态进行浅拷贝式分叉。
 4. `compress()` 调用 agent 注入的 `Compressor`，把 session 的 tail 替换为压缩后的链头。
 5. `save()` 导出当前 session 状态；`load()` 由 agent 负责恢复。
@@ -613,7 +619,7 @@ class Compressor(Protocol):
 1. 若当前 session 已有活跃 turn：进入 pending 队列；队列满则抛 `SessionBusy`。否则立刻占据，标记"有活跃 turn"。
 2. 在当前尾部追加 `UserPromptNode`，旧尾若为可变类型先冻结。
 3. 进入主循环（循环上限 `MAX_TURN_ITERATIONS`，默认 10）：
-   1. 调用 `Backend.generate(session)` 得到 async iterator；遍历其产出：
+   1. 调用 `session.get_turn_tool_map()` 得到本轮可见 tool 子集（若 `allowed_tools` 为 None，则返回全部已注册 tool）。调用 `Backend.generate(session)` 得到 async iterator；backend 内部读取 `session.get_turn_tool_map()` 而非 `session.agent.tools.list()`；遍历其产出：
       - 遇到 `SessionUpdate`（`agent_message_chunk` / `thinking_chunk`）：立即通过 `client.update()` 转发给 frontend，实现逐 token 流式显示。
       - 遇到 `BackendTurnResult`：保存为 `result`，退出遍历循环。
    2. 若 `result.finish_reason == "completed"`：
@@ -623,7 +629,7 @@ class Compressor(Protocol):
       - 追加 `ToolCallNode`（冻结）。
       - 通过 `Client.update(session, tool_call)` 通知 frontend。
       - 追加 `ToolResultNode`（可变）。
-      - 并发调用 `ToolProvider.invoke(...)` 执行全部 tools（`asyncio.gather`）。
+      - 并发调用 `ToolProvider.invoke(...)` 执行全部 tools（`asyncio.gather`）。调用前先检查 tool name 是否在本轮允许列表内；不在列表中的 tool call 直接记录为失败（`status="failed"`，`content="Tool not in allowed list"`），不实际调用。
         - 正常完成：写入对应 `call_id` 的结果（`status = "completed"`）。
         - 抛出 `ToolInvokeError` / `ToolExecutionError`：捕获并写入失败结果（`status = "failed"`，`content` 为异常信息）。
         - tool 抛出的异常**绝不冒出 prompt turn**。

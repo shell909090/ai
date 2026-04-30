@@ -14,6 +14,7 @@ import yaml
 from little_agent.agent.core import AgentCore
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.cli import CliClient
+from little_agent.frontends.web import WebClient
 from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolProvider
@@ -123,6 +124,70 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
     )
 
 
+def _load_tools(config: dict[str, Any]) -> ToolManager:
+    """Load and register tool providers from config."""
+    tools = ToolManager()
+    providers = load_providers_from_config(config)
+    providers.append(BashToolProvider())
+    for provider in providers:
+        tools.register(provider)
+    return tools
+
+
+def _load_backend(config: dict[str, Any]) -> Any:
+    """Load primary backend from config."""
+    backends_config = config.get("backends")
+    if not isinstance(backends_config, dict):
+        raise ValueError("Config must contain a 'backends' section")
+    if "primary" not in backends_config:
+        raise ValueError("Config 'backends' must contain a 'primary' backend")
+
+    primary_cfg = backends_config["primary"]
+    if not isinstance(primary_cfg, dict):
+        raise ValueError("Config 'backends.primary' must be a mapping")
+    return _build_backend(primary_cfg, "primary"), backends_config
+
+
+def _load_compressor(backends_config: dict[str, Any]) -> Any:
+    """Load compressor from backends config if present."""
+    compressor_cfg = backends_config.get("compressor")
+    if isinstance(compressor_cfg, dict):
+        from little_agent.compressor import LLMCompressor
+
+        compressor_backend = _build_backend(compressor_cfg, "compressor")
+        return LLMCompressor(compressor_backend)
+    return None
+
+
+def _load_permissions(config: dict[str, Any]) -> Any:
+    """Load permission manager from config if present."""
+    permissions_cfg = config.get("permissions")
+    if isinstance(permissions_cfg, dict):
+        from little_agent.permissions import PermissionManager
+
+        return PermissionManager.from_config(permissions_cfg)
+    return None
+
+
+def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str, Any]) -> Any:
+    """Load memory system from config if present."""
+    memory_cfg = config.get("memory")
+    if isinstance(memory_cfg, dict):
+        from little_agent.memory import FileMemory
+
+        mem_type = memory_cfg.get("type", "file")
+        if mem_type == "file":
+            mem_path = memory_cfg.get("path", "memory.jsonl")
+            mem_backend_name = memory_cfg.get("backend", "primary")
+            mem_backend_cfg = backends_config.get(mem_backend_name)
+            if isinstance(mem_backend_cfg, dict):
+                mem_backend = _build_backend(mem_backend_cfg, mem_backend_name)
+                return FileMemory(backend=mem_backend, path=mem_path)
+            logger.warning("Memory backend '%s' not found, using primary", mem_backend_name)
+            return FileMemory(backend=backend, path=mem_path)
+    return None
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
@@ -137,34 +202,27 @@ def main() -> None:
     log_config = config.get("logging")
     setup_logging(log_config, args.loglevel)
 
-    tools = ToolManager()
+    tools = _load_tools(config)
+    backend, backends_config = _load_backend(config)
+    compressor = _load_compressor(backends_config)
+    permissions = _load_permissions(config)
+    memory = _load_memory(config, backend, backends_config)
 
-    providers = load_providers_from_config(config)
-    providers.append(BashToolProvider())
-    for provider in providers:
-        tools.register(provider)
+    frontend_type = config.get("frontend", {}).get("type", "cli")
 
-    backends_config = config.get("backends")
-    if not isinstance(backends_config, dict):
-        raise ValueError("Config must contain a 'backends' section")
-    if "primary" not in backends_config:
-        raise ValueError("Config 'backends' must contain a 'primary' backend")
+    if frontend_type == "web":
+        client: CliClient | WebClient = WebClient()
+    else:
+        client = CliClient()
 
-    primary_cfg = backends_config["primary"]
-    if not isinstance(primary_cfg, dict):
-        raise ValueError("Config 'backends.primary' must be a mapping")
-    backend = _build_backend(primary_cfg, "primary")
-
-    compressor_cfg = backends_config.get("compressor")
-    compressor = None
-    if isinstance(compressor_cfg, dict):
-        from little_agent.compressor import LLMCompressor
-
-        compressor_backend = _build_backend(compressor_cfg, "compressor")
-        compressor = LLMCompressor(compressor_backend)
-
-    client = CliClient()
-    agent = AgentCore(client=client, backend=backend, tools=tools, compressor=compressor)
+    agent = AgentCore(
+        client=client,
+        backend=backend,
+        tools=tools,
+        compressor=compressor,
+        permissions=permissions,
+        memory=memory,
+    )
 
     from little_agent.tools.task import TaskToolProvider
 

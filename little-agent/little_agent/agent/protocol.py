@@ -23,7 +23,9 @@ class Compressor(Protocol):
 class Session(Protocol):
     """Session protocol."""
 
-    async def prompt(self, prompt: str | list[ContentBlock]) -> PromptReturn: ...
+    async def prompt(
+        self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
+    ) -> PromptReturn: ...
 
     async def cancel(self) -> None: ...
 
