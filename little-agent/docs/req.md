@@ -30,15 +30,15 @@
 7. 至少一种本地插件式 tool 注册方式：通过配置文件注册 Python 模块暴露的 tool。
 8. 为未来扩展子进程方式注册 tool 预留设计空间。
 9. 日志配置支持 `logging.config.dictConfig`：允许通过配置文件自定义日志格式、级别、处理器等。
+10. Web UI
+11. 高级权限系统
+12. 高级记忆系统
+13. 运行时动态 tool 子集选择
+14. Backend streaming
 
 ### 3.2 本期不包含
 
-1. Web UI。
-2. HTTP API。
-3. 高级权限系统。
-4. 高级记忆系统。
-5. 运行时动态 tool 子集选择。
-6. Backend streaming。
+1. HTTP API。
 
 ## 4. 核心需求
 
