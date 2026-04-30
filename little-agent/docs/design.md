@@ -441,28 +441,28 @@ class BackendTurnResult:
     tool_calls: list[BackendToolCall]
     finish_reason: Literal["completed", "tool_call", "cancelled"]
     usage: dict[str, int] | None = None  # e.g. {"input_tokens": 100, "output_tokens": 50}
+    thinking_text: str | None = None     # accumulated reasoning text (if model supports it)
 ```
 
 ### 6.3 Backend 接口
 
 ```python
+from typing import AsyncIterator
+
 class Backend(Protocol):
-    async def generate(self, session: "Session") -> BackendTurnResult: ...
+    def generate(self, session: "Session") -> AsyncIterator[SessionUpdate | BackendTurnResult]: ...
 ```
 
 说明：
 
-1. backend 接收 `session` 对象，而不是单独的 `tail` 或 `cancel_event`。
-2. backend 负责读取 session 的链式历史，并转换为真实后端的输入。
-3. backend 负责把 session 当前可见的 tools 转换为 OpenAI 需要的工具定义。
-4. 本期 **backend 不做 streaming**；`generate()` 返回完整 `BackendTurnResult`。`agent_message_chunk` 由 agent 在拿到结果后一次性发出一次 update。
-5. 如果后续实现 streaming，再把输入输出都调整为 async generator 风格。
-6. 性能计数：每次 `generate()` 调用完成后，通过 INFO 级别日志输出性能指标，包括：
-   - input/output token 数（从 API 响应的 usage 字段提取）
-   - 执行时间（`generate()` 入口到出口的耗时）
-   - 缓存信息（如 OpenAI 的 `cached_tokens`，如有）
-7. DEBUG 日志：每次 `generate()` 调用前，在 DEBUG 级别记录完整的请求 payload（messages、tools 等），便于调试。
-8. 超时控制：`generate()` 应使用 `asyncio.wait_for` 或 httpx timeout 控制调用时长，超时后抛出 `TimeoutError` 或自定义异常，由上层处理。
+1. `generate()` 返回一个 `AsyncIterator`，先 yield 零到多个 `SessionUpdate`（类型为 `agent_message_chunk` 或 `thinking_chunk`），最后 yield 一个 `BackendTurnResult` 作为终止标记。
+2. 消费方（`AgentCore._run_turn`）遍历 iterator：遇到 `SessionUpdate` 时立即 `client.update()` 转发；遇到 `BackendTurnResult` 时退出循环，处理 `finish_reason`。
+3. backend 接收 `session` 对象，负责读取 session 的链式历史并转换为真实后端的输入，同时把 session 当前可见的 tools 转换为 OpenAI 需要的工具定义。
+4. `OpenAIBackend` 使用流式 API（`stream=True`），逐 chunk yield `agent_message_chunk` / `thinking_chunk` 更新，在流结束后 yield 最终的 `BackendTurnResult`。
+5. 性能计数：在 `BackendTurnResult` yield 前记录 INFO 级别日志，包括 input/output token 数、执行时间、缓存信息（如 `cached_tokens`）。
+6. DEBUG 日志：请求开始前记录完整 payload（messages、tools 等）。
+7. 超时控制：streaming 模式下对整个流设置超时，超时后关闭 stream 并抛出 `BackendTimeoutError`，由上层处理。
+8. `BackendTurnResult.thinking_text` 保留字段（用于非流式 fallback 或测试），流式模式下通常为 `None`（thinking 内容已通过 `thinking_chunk` 逐 chunk 发出）。
 
 ## 7. agent 模块内部数据结构
 
@@ -613,11 +613,12 @@ class Compressor(Protocol):
 1. 若当前 session 已有活跃 turn：进入 pending 队列；队列满则抛 `SessionBusy`。否则立刻占据，标记"有活跃 turn"。
 2. 在当前尾部追加 `UserPromptNode`，旧尾若为可变类型先冻结。
 3. 进入主循环（循环上限 `MAX_TURN_ITERATIONS`，默认 10）：
-   1. 调用 `Backend.generate(session)`。
-   2. 若 `finish_reason == "completed"`：
-      - 追加或更新 `AssistantResponseNode`，追加完冻结。
-      - 通过 `Client.update(session, agent_message_chunk)` 一次性发出最终文本（本期非 streaming）。
-      - 跳出循环，返回 `("end_turn", output_text)`。
+   1. 调用 `Backend.generate(session)` 得到 async iterator；遍历其产出：
+      - 遇到 `SessionUpdate`（`agent_message_chunk` / `thinking_chunk`）：立即通过 `client.update()` 转发给 frontend，实现逐 token 流式显示。
+      - 遇到 `BackendTurnResult`：保存为 `result`，退出遍历循环。
+   2. 若 `result.finish_reason == "completed"`：
+      - 追加 `AssistantResponseNode`（内容来自 `result.output_text`），冻结。
+      - 跳出主循环，返回 `("end_turn", output_text)`。
    3. 若 `finish_reason == "tool_call"`：
       - 追加 `ToolCallNode`（冻结）。
       - 通过 `Client.update(session, tool_call)` 通知 frontend。
@@ -780,11 +781,8 @@ logging:
 ## 11. 本期已知限制
 
 1. `ToolArgDef` 只支持顶层 object + 一层平铺标量字段，不支持嵌套、数组、枚举、默认值。未来会重新设计。
-2. Backend 不做 streaming；`agent_message_chunk` 一次性发出。
-3. 不做运行时动态 tool 子集选择；所有已注册 tool 对 agent 始终可见。后续版本再加入"启动时配置开关"与"运行时动态切换"。
-4. 不对并行 tool 调用设并发上限。未来可能加入。
-5. `save()`/`load()` 的详细 schema 本期不定；只确定需要序列化节点链表，其他字段随实现确定。
-6. `Client.request_permission()` 预留接口不启用。
+2. 不对并行 tool 调用设并发上限。未来可能加入。
+3. `save()`/`load()` 的详细 schema 本期不定；只确定需要序列化节点链表，其他字段随实现确定。
 
 ## 12. 当前结论
 

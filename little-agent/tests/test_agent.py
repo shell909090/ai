@@ -1,13 +1,14 @@
 """Tests for agent core and session."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 
 import pytest
 
 from little_agent.agent.core import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, SessionUpdate
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
@@ -184,9 +185,11 @@ async def test_cancel_during_tool_execution() -> None:
     """Test cancel during tool execution."""
     client = MockClient()
 
-    async def slow_generate(session: object) -> BackendTurnResult:
+    async def slow_generate(
+        session: object,
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         await asyncio.sleep(0.5)
-        return BackendTurnResult(
+        yield BackendTurnResult(
             output_text="",
             tool_calls=[BackendToolCall(call_id="c1", tool_name="echo", arguments={})],
             finish_reason="tool_call",
@@ -230,9 +233,11 @@ async def test_fork_during_active_turn_raises() -> None:
     """Test fork during active turn raises RuntimeError."""
     client = MockClient()
 
-    async def slow_generate(session: object) -> BackendTurnResult:
+    async def slow_generate(
+        session: object,
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         await asyncio.sleep(1.0)
-        return BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
+        yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
@@ -255,9 +260,11 @@ async def test_compress_during_active_turn_raises() -> None:
     """Test compress during active turn raises RuntimeError."""
     client = MockClient()
 
-    async def slow_generate(session: object) -> BackendTurnResult:
+    async def slow_generate(
+        session: object,
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         await asyncio.sleep(1.0)
-        return BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
+        yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]
@@ -280,9 +287,11 @@ async def test_pending_queue_full_raises() -> None:
     """Test pending queue full raises SessionBusyError."""
     client = MockClient()
 
-    async def slow_generate(session: object) -> BackendTurnResult:
+    async def slow_generate(
+        session: object,
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         await asyncio.sleep(2.0)
-        return BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
+        yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
     backend.generate = slow_generate  # type: ignore[method-assign]

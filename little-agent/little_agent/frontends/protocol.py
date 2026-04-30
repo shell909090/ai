@@ -2,26 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, SessionUpdate
 
 if TYPE_CHECKING:
     from little_agent.agent.protocol import Session
 
-
-@dataclass
-class SessionUpdate:
-    """Represents an update event to the client."""
-
-    type: Literal[
-        "agent_message_chunk",
-        "thinking_chunk",
-        "tool_call",
-        "tool_call_update",
-    ]
-    data: dict[str, JSONValue]
+__all__ = ["Client", "SessionUpdate"]
 
 
 class Client(Protocol):

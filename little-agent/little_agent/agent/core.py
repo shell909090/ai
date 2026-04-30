@@ -4,8 +4,8 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from little_agent.frontends.protocol import SessionUpdate
-from little_agent.types import ContentBlock, JSONValue, PromptReturn
+from little_agent.backends.protocol import BackendTurnResult
+from little_agent.types import ContentBlock, JSONValue, PromptReturn, SessionUpdate
 
 from .exceptions import SessionBusyError
 from .nodes import (
@@ -19,7 +19,7 @@ from .nodes import (
 from .protocol import Agent, Compressor, Session
 
 if TYPE_CHECKING:
-    from little_agent.backends.protocol import Backend, BackendTurnResult
+    from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
     from little_agent.tools.protocol import ToolProvider
 
@@ -85,16 +85,15 @@ class SessionCore(Session):
                 self._freeze_tail()
                 return ("cancelled", partial_output)
 
-            result = await self.agent.backend.generate(self)
+            result: BackendTurnResult | None = None
+            async for item in self.agent.backend.generate(self):
+                if isinstance(item, BackendTurnResult):
+                    result = item
+                else:
+                    await self.agent.client.update(self, item)
 
-            if result.thinking_text:
-                await self.agent.client.update(
-                    self,
-                    SessionUpdate(
-                        type="thinking_chunk",
-                        data={"text": result.thinking_text},
-                    ),
-                )
+            if result is None:
+                raise RuntimeError("Backend returned no result")
 
             match result.finish_reason:
                 case "completed":

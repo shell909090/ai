@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+from little_agent.types import SessionUpdate
 
 if TYPE_CHECKING:
     from little_agent.agent.core import SessionCore
@@ -32,4 +35,6 @@ class BackendTurnResult:
 class Backend(Protocol):
     """Backend protocol for LLM providers."""
 
-    async def generate(self, session: SessionCore) -> BackendTurnResult: ...
+    def generate(
+        self, session: SessionCore
+    ) -> AsyncIterator[SessionUpdate | BackendTurnResult]: ...

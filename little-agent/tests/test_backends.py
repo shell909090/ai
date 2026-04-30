@@ -1,6 +1,8 @@
 """Tests for backend request conversion."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +19,42 @@ from little_agent.backends.openai import (
     _chain_to_messages,
     _tool_map_to_openai_functions,
 )
+from little_agent.backends.protocol import BackendTurnResult
+from little_agent.types import SessionUpdate
 from tests.mocks import MockClient, MockToolProvider
+
+
+async def _collect(
+    gen: AsyncIterator[Any],
+) -> tuple[BackendTurnResult, list[SessionUpdate]]:
+    """Consume a generate() iterator, returning (result, updates)."""
+    updates: list[SessionUpdate] = []
+    result: BackendTurnResult | None = None
+    async for item in gen:
+        if isinstance(item, BackendTurnResult):
+            result = item
+        else:
+            updates.append(item)
+    assert result is not None
+    return result, updates
+
+
+class _FakeStream:
+    """Minimal fake OpenAI streaming response."""
+
+    def __init__(self, chunks: list[Any]) -> None:
+        self._chunks = chunks
+        self._pos = 0
+
+    def __aiter__(self) -> "_FakeStream":
+        return self
+
+    async def __anext__(self) -> Any:
+        if self._pos >= len(self._chunks):
+            raise StopAsyncIteration
+        chunk = self._chunks[self._pos]
+        self._pos += 1
+        return chunk
 
 
 def test_tool_map_to_openai_functions() -> None:
@@ -91,26 +128,41 @@ async def test_openai_backend_generate() -> None:
     tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
-    mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_choice.message.tool_calls = None
-    mock_choice.message.content = "Hello"
-    mock_response.choices = [mock_choice]
+    chunk1 = MagicMock()
+    chunk1.choices = [MagicMock()]
+    chunk1.choices[0].delta.content = "Hello"
+    chunk1.choices[0].delta.tool_calls = None
+    chunk1.choices[0].delta.reasoning_content = None
+    chunk1.choices[0].finish_reason = None
+    chunk1.usage = None
+
     mock_usage = MagicMock()
     mock_usage.prompt_tokens = 10
     mock_usage.completion_tokens = 5
-    mock_response.usage = mock_usage
-    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+    chunk2 = MagicMock()
+    chunk2.choices = [MagicMock()]
+    chunk2.choices[0].delta.content = None
+    chunk2.choices[0].delta.tool_calls = None
+    chunk2.choices[0].delta.reasoning_content = None
+    chunk2.choices[0].finish_reason = "stop"
+    chunk2.usage = mock_usage
+
+    fake_stream = _FakeStream([chunk1, chunk2])
+    backend._client.chat.completions.create = AsyncMock(return_value=fake_stream)  # type: ignore[method-assign]
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    result = await backend.generate(session)  # type: ignore[arg-type]
+    result, updates = await _collect(backend.generate(session))  # type: ignore[arg-type]
     assert result.finish_reason == "completed"
     assert result.output_text == "Hello"
     assert result.usage is not None
     assert result.usage["input_tokens"] == 10
     assert result.usage["output_tokens"] == 5
+
+    text_updates = [u for u in updates if u.type == "agent_message_chunk"]
+    assert len(text_updates) == 1
+    assert text_updates[0].data["text"] == "Hello"
 
 
 @pytest.mark.asyncio
@@ -120,26 +172,48 @@ async def test_openai_backend_generate_with_tool_calls() -> None:
     tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "c1"
-    mock_tool_call.function.name = "echo"
-    mock_tool_call.function.arguments = '{"text": "hello"}'
+    tc_delta1 = MagicMock()
+    tc_delta1.index = 0
+    tc_delta1.id = "c1"
+    tc_delta1.function.name = "echo"
+    tc_delta1.function.arguments = ""
 
-    mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_choice.message.tool_calls = [mock_tool_call]
-    mock_choice.message.content = None
-    mock_response.choices = [mock_choice]
+    chunk1 = MagicMock()
+    chunk1.choices = [MagicMock()]
+    chunk1.choices[0].delta.content = None
+    chunk1.choices[0].delta.tool_calls = [tc_delta1]
+    chunk1.choices[0].delta.reasoning_content = None
+    chunk1.choices[0].finish_reason = None
+    chunk1.usage = None
+
+    tc_delta2 = MagicMock()
+    tc_delta2.index = 0
+    tc_delta2.id = None
+    tc_delta2.function.name = None
+    tc_delta2.function.arguments = '{"text": "hello"}'
+
+    chunk2 = MagicMock()
+    chunk2.choices = [MagicMock()]
+    chunk2.choices[0].delta.content = None
+    chunk2.choices[0].delta.tool_calls = [tc_delta2]
+    chunk2.choices[0].delta.reasoning_content = None
+    chunk2.choices[0].finish_reason = "tool_calls"
+    chunk2.usage = None
+
     mock_usage = MagicMock()
     mock_usage.prompt_tokens = 20
     mock_usage.completion_tokens = 10
-    mock_response.usage = mock_usage
-    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+    chunk3 = MagicMock()
+    chunk3.choices = []
+    chunk3.usage = mock_usage
+
+    fake_stream = _FakeStream([chunk1, chunk2, chunk3])
+    backend._client.chat.completions.create = AsyncMock(return_value=fake_stream)  # type: ignore[method-assign]
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    result = await backend.generate(session)  # type: ignore[arg-type]
+    result, _ = await _collect(backend.generate(session))  # type: ignore[arg-type]
     assert result.finish_reason == "tool_call"
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_name == "echo"
@@ -195,7 +269,8 @@ async def test_openai_backend_timeout_raises_backend_timeout_error() -> None:
     session = await agent.new()
 
     with pytest.raises(BackendTimeoutError):
-        await backend.generate(session)  # type: ignore[arg-type]
+        async for _ in backend.generate(session):  # type: ignore[arg-type]
+            pass
 
 
 @pytest.mark.asyncio
@@ -205,18 +280,72 @@ async def test_openai_backend_generate_with_reasoning() -> None:
     tools = MockToolProvider()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
-    mock_response = MagicMock()
-    mock_choice = MagicMock()
-    mock_choice.message.tool_calls = None
-    mock_choice.message.content = "Final answer"
-    mock_choice.message.reasoning_content = "I think therefore I am"
-    mock_response.choices = [mock_choice]
-    mock_response.usage = None
-    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+    chunk1 = MagicMock()
+    chunk1.choices = [MagicMock()]
+    chunk1.choices[0].delta.content = None
+    chunk1.choices[0].delta.tool_calls = None
+    chunk1.choices[0].delta.reasoning_content = "I think therefore I am"
+    chunk1.choices[0].finish_reason = None
+    chunk1.usage = None
+
+    chunk2 = MagicMock()
+    chunk2.choices = [MagicMock()]
+    chunk2.choices[0].delta.content = "Final answer"
+    chunk2.choices[0].delta.tool_calls = None
+    chunk2.choices[0].delta.reasoning_content = None
+    chunk2.choices[0].finish_reason = "stop"
+    chunk2.usage = None
+
+    fake_stream = _FakeStream([chunk1, chunk2])
+    backend._client.chat.completions.create = AsyncMock(return_value=fake_stream)  # type: ignore[method-assign]
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    result = await backend.generate(session)  # type: ignore[arg-type]
+    result, updates = await _collect(backend.generate(session))  # type: ignore[arg-type]
     assert result.output_text == "Final answer"
     assert result.thinking_text == "I think therefore I am"
+
+    thinking_updates = [u for u in updates if u.type == "thinking_chunk"]
+    assert len(thinking_updates) == 1
+    assert thinking_updates[0].data["text"] == "I think therefore I am"
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_streams_content_chunks() -> None:
+    """Test that generate() yields agent_message_chunk updates as tokens arrive."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    chunks = []
+    for word in ["Hello", " ", "world"]:
+        c = MagicMock()
+        c.choices = [MagicMock()]
+        c.choices[0].delta.content = word
+        c.choices[0].delta.tool_calls = None
+        c.choices[0].delta.reasoning_content = None
+        c.choices[0].finish_reason = None
+        c.usage = None
+        chunks.append(c)
+
+    final_chunk = MagicMock()
+    final_chunk.choices = [MagicMock()]
+    final_chunk.choices[0].delta.content = None
+    final_chunk.choices[0].delta.tool_calls = None
+    final_chunk.choices[0].delta.reasoning_content = None
+    final_chunk.choices[0].finish_reason = "stop"
+    final_chunk.usage = None
+    chunks.append(final_chunk)
+
+    backend._client.chat.completions.create = AsyncMock(return_value=_FakeStream(chunks))  # type: ignore[method-assign]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    result, updates = await _collect(backend.generate(session))  # type: ignore[arg-type]
+    assert result.finish_reason == "completed"
+    assert result.output_text == "Hello world"
+    text_updates = [u for u in updates if u.type == "agent_message_chunk"]
+    assert len(text_updates) == 3
+    assert [u.data["text"] for u in text_updates] == ["Hello", " ", "world"]

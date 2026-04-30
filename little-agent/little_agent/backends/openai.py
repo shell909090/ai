@@ -6,7 +6,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import TYPE_CHECKING, Any, Literal
 
 from little_agent.agent.nodes import (
     AssistantResponseNode,
@@ -16,6 +17,7 @@ from little_agent.agent.nodes import (
     UserPromptNode,
 )
 from little_agent.tools.protocol import ToolMap
+from little_agent.types import SessionUpdate
 
 from .exceptions import BackendTimeoutError
 from .protocol import BackendToolCall, BackendTurnResult
@@ -100,6 +102,68 @@ def _chain_to_messages(tail: Node | None) -> list[dict[str, Any]]:
     return messages
 
 
+def _accumulate_tool_call_delta(
+    tool_calls_acc: dict[int, dict[str, str]], tc_delta: Any
+) -> None:
+    """Merge one streaming tool-call delta into the running accumulator."""
+    idx = tc_delta.index
+    if idx not in tool_calls_acc:
+        tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+    if tc_delta.id:
+        tool_calls_acc[idx]["id"] += tc_delta.id
+    if tc_delta.function:
+        if tc_delta.function.name:
+            tool_calls_acc[idx]["name"] += tc_delta.function.name
+        if tc_delta.function.arguments:
+            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+
+
+def _process_delta(
+    delta: Any,
+    text_chunks: list[str],
+    thinking_chunks: list[str],
+    tool_calls_acc: dict[int, dict[str, str]],
+) -> list[SessionUpdate]:
+    """Collect SessionUpdate events from one streaming delta."""
+    updates: list[SessionUpdate] = []
+    if delta.content:
+        text_chunks.append(delta.content)
+        updates.append(SessionUpdate(type="agent_message_chunk", data={"text": delta.content}))
+    reasoning = getattr(delta, "reasoning_content", None)
+    if reasoning:
+        thinking_chunks.append(reasoning)
+        updates.append(SessionUpdate(type="thinking_chunk", data={"text": reasoning}))
+    if delta.tool_calls:
+        for tc_delta in delta.tool_calls:
+            _accumulate_tool_call_delta(tool_calls_acc, tc_delta)
+    return updates
+
+
+def _extract_chunk_usage(usage_obj: Any) -> dict[str, int]:
+    """Extract token counts from a streaming chunk's usage object."""
+    usage: dict[str, int] = {
+        "input_tokens": usage_obj.prompt_tokens,
+        "output_tokens": usage_obj.completion_tokens,
+    }
+    if hasattr(usage_obj, "prompt_tokens_details") and usage_obj.prompt_tokens_details:
+        cached = getattr(usage_obj.prompt_tokens_details, "cached_tokens", None)
+        if cached is not None:
+            usage["cached_tokens"] = cached
+    return usage
+
+
+def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[BackendToolCall]:
+    """Build BackendToolCall list from accumulated streaming deltas."""
+    return [
+        BackendToolCall(
+            call_id=tc_data["id"],
+            tool_name=tc_data["name"],
+            arguments=json.loads(tc_data["arguments"]) if tc_data["arguments"] else {},
+        )
+        for tc_data in (tool_calls_acc[i] for i in sorted(tool_calls_acc.keys()))
+    ]
+
+
 class OpenAIBackend:
     """OpenAI backend implementation."""
 
@@ -119,82 +183,78 @@ class OpenAIBackend:
         self._model = model
         self._timeout = timeout
 
-    async def generate(self, session: SessionCore) -> BackendTurnResult:
-        """Generate a response from OpenAI."""
+    def generate(self, session: SessionCore) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
+        """Return async iterator streaming OpenAI response."""
+        return self._generate_stream(session)
+
+    async def _generate_stream(
+        self, session: SessionCore
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
+        """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""
         tool_map = session.agent.tools.list()
         messages = _chain_to_messages(session.tail)
         tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
 
         logger.debug(
-            "OpenAI request payload: model=%s messages=%s tools=%s", self._model, messages, tools
+            "OpenAI streaming request: model=%s messages=%s tools=%s",
+            self._model,
+            messages,
+            tools,
         )
 
         start_time = time.perf_counter()
         try:
-            response = await asyncio.wait_for(
+            stream = await asyncio.wait_for(
                 self._client.chat.completions.create(  # type: ignore[call-overload]
                     model=self._model,
                     messages=messages,
                     tools=tools,
                     tool_choice="auto" if tools else None,
+                    stream=True,
+                    stream_options={"include_usage": True},
                 ),
                 timeout=self._timeout,
             )
         except TimeoutError as e:
             raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
-        elapsed = time.perf_counter() - start_time
 
-        choice = response.choices[0]
-        message = choice.message
-
+        text_chunks: list[str] = []
+        thinking_chunks: list[str] = []
+        tool_calls_acc: dict[int, dict[str, str]] = {}
         usage: dict[str, int] | None = None
-        if response.usage:
-            usage = {
-                "input_tokens": response.usage.prompt_tokens,
-                "output_tokens": response.usage.completion_tokens,
-            }
-            if (
-                hasattr(response.usage, "prompt_tokens_details")
-                and response.usage.prompt_tokens_details
-            ):
-                cached = getattr(response.usage.prompt_tokens_details, "cached_tokens", None)
-                if cached is not None:
-                    usage["cached_tokens"] = cached
+        finish_reason_raw = "stop"
+
+        async for chunk in stream:
+            if chunk.choices:
+                delta = chunk.choices[0].delta
+                fr = chunk.choices[0].finish_reason
+                if fr is not None:
+                    finish_reason_raw = fr
+                for update in _process_delta(delta, text_chunks, thinking_chunks, tool_calls_acc):
+                    yield update
+            if chunk.usage:
+                usage = _extract_chunk_usage(chunk.usage)
+
+        elapsed = time.perf_counter() - start_time
+        finish_reason: Literal["completed", "tool_call", "cancelled"] = (
+            "tool_call" if finish_reason_raw == "tool_calls" else "completed"
+        )
 
         logger.info(
-            "OpenAI response: model=%s finish_reason=%s "
+            "OpenAI streaming response: model=%s finish_reason=%s "
             "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
             self._model,
-            choice.finish_reason,
+            finish_reason_raw,
             usage.get("input_tokens") if usage else None,
             usage.get("output_tokens") if usage else None,
             usage.get("cached_tokens") if usage else None,
             elapsed,
         )
 
-        thinking_text: str | None = getattr(message, "reasoning_content", None) or None
-
-        if message.tool_calls:
-            tool_calls = [
-                BackendToolCall(
-                    call_id=tc.id,
-                    tool_name=tc.function.name,
-                    arguments=json.loads(tc.function.arguments),
-                )
-                for tc in message.tool_calls
-            ]
-            return BackendTurnResult(
-                output_text=message.content or "",
-                tool_calls=tool_calls,
-                finish_reason="tool_call",
-                usage=usage,
-                thinking_text=thinking_text,
-            )
-
-        return BackendTurnResult(
-            output_text=message.content or "",
-            tool_calls=[],
-            finish_reason="completed",
+        yield BackendTurnResult(
+            output_text="".join(text_chunks),
+            tool_calls=_build_tool_calls(tool_calls_acc),
+            finish_reason=finish_reason,
             usage=usage,
-            thinking_text=thinking_text,
+            thinking_text="".join(thinking_chunks) or None,
         )

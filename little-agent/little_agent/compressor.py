@@ -14,6 +14,7 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
+from little_agent.backends.protocol import BackendTurnResult
 
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
@@ -117,5 +118,10 @@ class LLMCompressor:
         agent = _CompressorAgent(self._backend)
         session = _CompressorSession(self._backend, prompt)
         session._set_agent(agent)
-        result = await self._backend.generate(session)  # type: ignore[arg-type]
-        return result.output_text
+        final: BackendTurnResult | None = None
+        async for item in self._backend.generate(session):  # type: ignore[arg-type]
+            if isinstance(item, BackendTurnResult):
+                final = item
+        if final is None:
+            raise RuntimeError("Backend returned no result")
+        return final.output_text

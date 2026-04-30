@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator, AsyncIterator
+
 from little_agent.agent.core import AgentCore
 from little_agent.agent.protocol import Session
 from little_agent.backends.protocol import Backend, BackendTurnResult
-from little_agent.frontends.protocol import Client, SessionUpdate
+from little_agent.frontends.protocol import Client
 from little_agent.tools.exceptions import ToolExecutionError
 from little_agent.tools.protocol import ToolMap, ToolProvider
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, SessionUpdate
 
 
 class MockClient(Client):
@@ -44,18 +46,31 @@ class MockBackend(Backend):
         self._script = script
         self._index = 0
 
-    async def generate(self, session: object) -> BackendTurnResult:
-        """Return next scripted result."""
+    def generate(self, session: object) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
+        """Return async iterator for scripted results."""
+        return self._gen(session)
+
+    async def _gen(
+        self, session: object
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
+        """Async generator yielding the next scripted BackendTurnResult.
+
+        Mirrors real backend streaming: thinking_text is emitted as a
+        thinking_chunk update before the final BackendTurnResult.
+        """
         self.sessions.append(session)
         if self._index < len(self._script):
             result = self._script[self._index]
             self._index += 1
-            return result
-        return BackendTurnResult(
-            output_text="default",
-            tool_calls=[],
-            finish_reason="completed",
-        )
+            if result.thinking_text:
+                yield SessionUpdate(type="thinking_chunk", data={"text": result.thinking_text})
+            yield result
+        else:
+            yield BackendTurnResult(
+                output_text="default",
+                tool_calls=[],
+                finish_reason="completed",
+            )
 
 
 class MockToolProvider(ToolProvider):
