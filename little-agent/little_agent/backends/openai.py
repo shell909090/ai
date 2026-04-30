@@ -172,6 +172,8 @@ class OpenAIBackend:
             elapsed,
         )
 
+        thinking_text: str | None = getattr(message, "reasoning_content", None) or None
+
         if message.tool_calls:
             tool_calls = [
                 BackendToolCall(
@@ -186,6 +188,7 @@ class OpenAIBackend:
                 tool_calls=tool_calls,
                 finish_reason="tool_call",
                 usage=usage,
+                thinking_text=thinking_text,
             )
 
         return BackendTurnResult(
@@ -193,4 +196,5 @@ class OpenAIBackend:
             tool_calls=[],
             finish_reason="completed",
             usage=usage,
+            thinking_text=thinking_text,
         )

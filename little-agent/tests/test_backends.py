@@ -196,3 +196,27 @@ async def test_openai_backend_timeout_raises_backend_timeout_error() -> None:
 
     with pytest.raises(BackendTimeoutError):
         await backend.generate(session)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_generate_with_reasoning() -> None:
+    """Test OpenAI backend extracts reasoning_content into thinking_text."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.tool_calls = None
+    mock_choice.message.content = "Final answer"
+    mock_choice.message.reasoning_content = "I think therefore I am"
+    mock_response.choices = [mock_choice]
+    mock_response.usage = None
+    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    result = await backend.generate(session)  # type: ignore[arg-type]
+    assert result.output_text == "Final answer"
+    assert result.thinking_text == "I think therefore I am"

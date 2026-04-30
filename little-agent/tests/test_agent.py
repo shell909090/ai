@@ -501,3 +501,28 @@ async def test_save_load_round_trip() -> None:
     assert loaded_session.tail is not None  # type: ignore[attr-defined]
     assert loaded_session.tail.kind == "assistant_response"  # type: ignore[attr-defined]
     assert loaded_session.tail.text == "hello"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_thinking_chunk_emitted_when_thinking_text_present() -> None:
+    """Test thinking_chunk update is emitted when backend returns thinking_text."""
+    client = MockClient()
+    backend = MockBackend(
+        [
+            BackendTurnResult(
+                output_text="answer",
+                tool_calls=[],
+                finish_reason="completed",
+                thinking_text="I am thinking...",
+            ),
+        ]
+    )
+    tools = MockToolProvider()
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+    reason, text = await session.prompt("hi")
+    assert reason == "end_turn"
+    assert text == "answer"
+    thinking_updates = [u for u in client.updates if u.type == "thinking_chunk"]
+    assert len(thinking_updates) == 1
+    assert thinking_updates[0].data.get("text") == "I am thinking..."

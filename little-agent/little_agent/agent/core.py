@@ -87,6 +87,15 @@ class SessionCore(Session):
 
             result = await self.agent.backend.generate(self)
 
+            if result.thinking_text:
+                await self.agent.client.update(
+                    self,
+                    SessionUpdate(
+                        type="thinking_chunk",
+                        data={"text": result.thinking_text},
+                    ),
+                )
+
             match result.finish_reason:
                 case "completed":
                     assistant_node = AssistantResponseNode(
