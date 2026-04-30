@@ -156,11 +156,15 @@ def main() -> None:
     backend = _build_backend(primary_cfg, "primary")
 
     compressor_cfg = backends_config.get("compressor")
+    compressor = None
     if isinstance(compressor_cfg, dict):
-        _build_backend(compressor_cfg, "compressor")
+        from little_agent.compressor import LLMCompressor
+
+        compressor_backend = _build_backend(compressor_cfg, "compressor")
+        compressor = LLMCompressor(compressor_backend)
 
     client = CliClient()
-    agent = AgentCore(client=client, backend=backend, tools=tools)
+    agent = AgentCore(client=client, backend=backend, tools=tools, compressor=compressor)
 
     from little_agent.tools.task import TaskToolProvider
 
