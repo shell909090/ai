@@ -16,6 +16,7 @@ build:
 	uv run python -m py_compile little_agent/backends/exceptions.py
 	uv run python -m py_compile little_agent/backends/openai.py
 	uv run python -m py_compile little_agent/compressor.py
+	uv run python -m py_compile little_agent/frontends/acp.py
 	uv run python -m py_compile little_agent/frontends/cli.py
 	uv run python -m py_compile little_agent/tools/bash.py
 	uv run python -m py_compile little_agent/tools/manager.py
