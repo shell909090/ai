@@ -10,6 +10,18 @@ from little_agent.frontends.protocol import SessionUpdate
 from tests.mocks import MockAgent, MockToolProvider
 
 
+@pytest.fixture(autouse=True)
+def _isolate_readline():
+    """Replace readline with a mock so _setup_readline / write_history_file never touch
+    the user's real ~/.little_agent_history. Without this, every client.run test reads
+    and rewrites the history file, and because read_history_file appends rather than
+    replaces the in-memory list, the file grows exponentially across the suite and
+    thrashes the disk.
+    """
+    with patch.dict("sys.modules", {"readline": MagicMock()}):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_cli_client_collects_updates() -> None:
     """Test CliClient collects updates."""
@@ -92,9 +104,10 @@ async def test_cli_update_tool_call_update() -> None:
 
 @pytest.mark.asyncio
 async def test_cli_request_permission() -> None:
-    """Test CliClient.request_permission returns True."""
+    """Test CliClient.request_permission returns True when user answers 'y'."""
     client = CliClient()
-    result = await client.request_permission(None, "test", {})  # type: ignore[arg-type]
+    with patch("asyncio.to_thread", return_value="y"):
+        result = await client.request_permission(None, "test", {})  # type: ignore[arg-type]
     assert result is True
 
 
