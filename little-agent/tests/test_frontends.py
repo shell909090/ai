@@ -1,10 +1,11 @@
 """Tests for frontend clients."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from little_agent.frontends.cli import CliClient
+from little_agent.frontends.cli import CliClient, _setup_readline
 from little_agent.frontends.protocol import SessionUpdate
 from tests.mocks import MockAgent, MockToolProvider
 
@@ -38,7 +39,9 @@ async def test_cli_update_tool_call() -> None:
 async def test_cli_update_tool_call_truncated() -> None:
     """Test CliClient.update truncates long tool_call arguments."""
     client = CliClient()
-    args = {"line1": "a", "line2": "b", "line3": "c", "line4": "d", "line5": "e"}
+    from little_agent.types import JSONValue
+
+    args: dict[str, JSONValue] = {"line1": "a", "line2": "b", "line3": "c", "line4": "d", "line5": "e"}
     update = SessionUpdate(
         type="tool_call",
         data={"calls": {"c1": {"tool_name": "echo", "arguments": args}}},
@@ -151,10 +154,10 @@ async def test_cli_run_prompt_error() -> None:
     """Test CliClient.run handles exception during prompt."""
     client = CliClient()
     agent = MockAgent()
-    agent._agent.new = AsyncMock(return_value=MagicMock())
+    agent._agent.new = AsyncMock(return_value=MagicMock())  # type: ignore[method-assign]
     session = await agent._agent.new()
     session.prompt = AsyncMock(side_effect=ValueError("bad prompt"))
-    agent.new = AsyncMock(return_value=session)
+    agent.new = AsyncMock(return_value=session)  # type: ignore[method-assign]
 
     with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
         with patch("builtins.print") as mock_print:
@@ -177,7 +180,7 @@ async def test_cli_run_new() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cli_run_save_and_load(tmp_path) -> None:
+async def test_cli_run_save_and_load(tmp_path: Path) -> None:
     """Test CliClient.run handles /save and /load."""
     client = CliClient()
     agent = MockAgent()
@@ -254,13 +257,42 @@ async def test_cli_run_cancelled() -> None:
     """Test CliClient.run prints [Cancelled] when prompt returns cancelled."""
     client = CliClient()
     agent = MockAgent()
-    agent._agent.new = AsyncMock(return_value=MagicMock())
+    agent._agent.new = AsyncMock(return_value=MagicMock())  # type: ignore[method-assign]
     session = await agent._agent.new()
     session.prompt = AsyncMock(return_value=("cancelled", ""))
-    agent.new = AsyncMock(return_value=session)
+    agent.new = AsyncMock(return_value=session)  # type: ignore[method-assign]
 
     with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
         with patch("builtins.print") as mock_print:
             await client.run(agent)
 
     mock_print.assert_any_call("[Cancelled]")
+
+
+def test_setup_readline_does_not_raise() -> None:
+    """_setup_readline completes without error on all platforms."""
+    result = _setup_readline()
+    # Returns a Path if readline is available, None otherwise
+    from pathlib import Path
+
+    assert result is None or isinstance(result, Path)
+
+
+@pytest.mark.asyncio
+async def test_cli_run_backend_timeout_error() -> None:
+    """Test CliClient.run prints [Timeout] on BackendTimeoutError."""
+    from little_agent.backends.exceptions import BackendTimeoutError
+
+    client = CliClient()
+    agent = MockAgent()
+    agent._agent.new = AsyncMock(return_value=MagicMock())  # type: ignore[method-assign]
+    session = await agent._agent.new()
+    session.prompt = AsyncMock(side_effect=BackendTimeoutError("timed out after 60s"))
+    agent.new = AsyncMock(return_value=session)  # type: ignore[method-assign]
+
+    with patch("asyncio.to_thread", side_effect=["hello", "/quit"]):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+
+    printed = [str(call.args[0]) for call in mock_print.call_args_list]
+    assert any("[Timeout]" in p for p in printed)

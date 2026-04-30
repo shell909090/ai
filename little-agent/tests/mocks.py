@@ -75,7 +75,7 @@ class MockToolProvider(ToolProvider):
         """Return tool map."""
         return self._tools.copy()
 
-    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue:
+    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
         """Return preset response or error."""
         if name in self._errors:
             raise ValueError(f"Tool {name} failed")
@@ -108,7 +108,7 @@ class BuiltinToolProvider(ToolProvider):
         """Return built-in tools."""
         return self._tools.copy()
 
-    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue:
+    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
         """Invoke a built-in tool."""
         if name == "echo":
             return kwargs.get("text", "")
@@ -133,16 +133,12 @@ class MockAgent:
         self._backend = backend or MockBackend()
         self._tools = tools or MockToolProvider()
         self._client = client or MockClient()
+        self.tools: ToolProvider = self._tools
         self._agent = AgentCore(
             client=self._client,
             backend=self._backend,
             tools=self._tools,
         )
-
-    @property
-    def tools(self) -> MockToolProvider:
-        """Return the tool provider."""
-        return self._tools
 
     async def new(self, cwd: str | None = None) -> Session:
         """Create a new mock session."""

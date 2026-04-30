@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from little_agent.backends.exceptions import BackendTimeoutError
 from little_agent.types import JSONValue
 
 from .protocol import Client, SessionUpdate
@@ -16,6 +17,40 @@ if TYPE_CHECKING:
     from little_agent.agent.protocol import Agent, Session
 
 logger = logging.getLogger(__name__)
+
+_SLASH_COMMANDS = [
+    "/cancel",
+    "/exit",
+    "/fork",
+    "/list-tools",
+    "/load",
+    "/new",
+    "/quit",
+    "/save",
+]
+
+
+def _setup_readline() -> Path | None:
+    """Configure readline history and tab completion. Returns history file path or None."""
+    try:
+        import readline
+
+        history_file = Path.home() / ".little_agent_history"
+        try:
+            readline.read_history_file(str(history_file))
+        except FileNotFoundError:
+            pass
+
+        def completer(text: str, state: int) -> str | None:
+            options = [c for c in _SLASH_COMMANDS if c.startswith(text)]
+            return options[state] if state < len(options) else None
+
+        readline.set_completer_delims("")
+        readline.set_completer(completer)
+        readline.parse_and_bind("tab: complete")
+        return history_file
+    except ImportError:
+        return None
 
 
 class CliClient(Client):
@@ -135,33 +170,49 @@ class CliClient(Client):
                 print(f"Unknown command: {stripped}")
                 return session, True
 
+    async def _do_prompt(self, session: Session, user_input: str) -> None:
+        """Send user input to the session and handle the result."""
+        try:
+            stop_reason, text = await session.prompt(user_input)
+            if stop_reason == "cancelled":
+                print("[Cancelled]")
+            else:
+                logger.debug("Turn completed: %s", text)
+        except BackendTimeoutError as e:
+            print(f"[Timeout] {e}")
+        except Exception as e:
+            logger.exception("Error during prompt")
+            print(f"[Error] {e}")
+
     async def run(self, agent: Agent) -> None:
         """Run the CLI interactive loop."""
+        history_file = _setup_readline()
         session = await agent.new()
         print("Little Agent CLI. Commands: /new /save <path> /load <path> /cancel /fork /quit")
-        while True:
-            try:
-                user_input = await asyncio.to_thread(input, "> ")
-            except (EOFError, KeyboardInterrupt):
-                print("\nGoodbye!")
-                break
-
-            stripped = user_input.strip()
-            if not stripped:
-                continue
-
-            if stripped.startswith("/"):
-                session, should_continue = await self._handle_command(agent, session, stripped)
-                if not should_continue:
+        try:
+            while True:
+                try:
+                    user_input = await asyncio.to_thread(input, "> ")
+                except (EOFError, KeyboardInterrupt):
+                    print("\nGoodbye!")
                     break
-                continue
 
-            try:
-                stop_reason, text = await session.prompt(user_input)
-                if stop_reason == "cancelled":
-                    print("[Cancelled]")
-                else:
-                    logger.debug("Turn completed: %s", text)
-            except Exception as e:
-                logger.exception("Error during prompt")
-                print(f"[Error] {e}")
+                stripped = user_input.strip()
+                if not stripped:
+                    continue
+
+                if stripped.startswith("/"):
+                    session, should_continue = await self._handle_command(agent, session, stripped)
+                    if not should_continue:
+                        break
+                    continue
+
+                await self._do_prompt(session, user_input)
+        finally:
+            if history_file is not None:
+                try:
+                    import readline
+
+                    readline.write_history_file(str(history_file))
+                except Exception:
+                    pass

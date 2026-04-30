@@ -7,6 +7,7 @@ import pytest
 from little_agent.agent.core import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
+from little_agent.types import JSONValue
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
@@ -220,8 +221,8 @@ async def test_fork_shares_history() -> None:
     session = await agent.new()
     await session.prompt("hi")
     new_session = await session.fork()
-    assert new_session.id != session.id
-    assert new_session.tail is not None
+    assert new_session.id != session.id  # type: ignore[attr-defined]
+    assert new_session.tail is not None  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -365,7 +366,9 @@ async def test_cancel_when_not_active() -> None:
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     await session.cancel()
-    assert not session.save().get("chain")
+    saved = session.save()
+    assert isinstance(saved, dict)
+    assert not saved.get("chain")
 
 
 @pytest.mark.asyncio
@@ -375,8 +378,10 @@ async def test_compress_with_compressor() -> None:
     backend = MockBackend()
     tools = MockToolProvider()
 
+    from little_agent.agent.nodes import Node
+
     class FakeCompressor:
-        async def compress(self, head):
+        async def compress(self, head: Node | None) -> Node | None:
             return head
 
     agent = AgentCore(client=client, backend=backend, tools=tools, compressor=FakeCompressor())
@@ -411,9 +416,9 @@ async def test_save_returns_dict_with_chain() -> None:
     await session.prompt("hi")
     result = session.save()
     assert isinstance(result, dict)
-    assert result["id"] == session.id
+    assert result["id"] == session.id  # type: ignore[attr-defined]
     assert "chain" in result
-    assert len(result["chain"]) == 2
+    assert len(result["chain"]) == 2  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -424,8 +429,8 @@ async def test_agent_load() -> None:
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.load({"id": "test-id", "cwd": "/tmp"})
-    assert session.id == "test-id"
-    assert session.cwd == "/tmp"
+    assert session.id == "test-id"  # type: ignore[attr-defined]
+    assert session.cwd == "/tmp"  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -457,7 +462,7 @@ async def test_agent_load_with_chain() -> None:
     backend = MockBackend()
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
-    data = {
+    data: JSONValue = {
         "id": "test-id",
         "cwd": "/tmp",
         "chain": [
@@ -466,13 +471,13 @@ async def test_agent_load_with_chain() -> None:
         ],
     }
     session = await agent.load(data)
-    assert session.id == "test-id"
-    assert session.tail is not None
-    assert session.tail.kind == "assistant_response"
-    assert session.tail.text == "hi"
-    assert session.tail.prev is not None
-    assert session.tail.prev.kind == "user_prompt"
-    assert session.tail.prev.prompt == "hello"
+    assert session.id == "test-id"  # type: ignore[attr-defined]
+    assert session.tail is not None  # type: ignore[attr-defined]
+    assert session.tail.kind == "assistant_response"  # type: ignore[attr-defined]
+    assert session.tail.text == "hi"  # type: ignore[attr-defined]
+    assert session.tail.prev is not None  # type: ignore[attr-defined]
+    assert session.tail.prev.kind == "user_prompt"  # type: ignore[attr-defined]
+    assert session.tail.prev.prompt == "hello"  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -491,8 +496,8 @@ async def test_save_load_round_trip() -> None:
     saved = session.save()
 
     loaded_session = await agent.load(saved)
-    assert loaded_session.id == session.id
-    assert loaded_session.cwd == session.cwd
-    assert loaded_session.tail is not None
-    assert loaded_session.tail.kind == "assistant_response"
-    assert loaded_session.tail.text == "hello"
+    assert loaded_session.id == session.id  # type: ignore[attr-defined]
+    assert loaded_session.cwd == session.cwd  # type: ignore[attr-defined]
+    assert loaded_session.tail is not None  # type: ignore[attr-defined]
+    assert loaded_session.tail.kind == "assistant_response"  # type: ignore[attr-defined]
+    assert loaded_session.tail.text == "hello"  # type: ignore[attr-defined]

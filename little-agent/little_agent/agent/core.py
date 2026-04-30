@@ -214,9 +214,17 @@ class SessionCore(Session):
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
         """Invoke tools and populate tool_result_node."""
-        pending_calls = {tc.call_id: tc for tc in result.tool_calls}
-        tasks = [self.agent.tools.invoke(tc.tool_name, **tc.arguments) for tc in result.tool_calls]
-        tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+        from little_agent.agent.context import current_session
+
+        token = current_session.set(self)
+        try:
+            pending_calls = {tc.call_id: tc for tc in result.tool_calls}
+            tasks = [
+                self.agent.tools.invoke(tc.tool_name, tc.arguments) for tc in result.tool_calls
+            ]
+            tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            current_session.reset(token)
 
         for tc, res in zip(result.tool_calls, tool_results, strict=True):
             if self._cancel_requested and tc.call_id in pending_calls:

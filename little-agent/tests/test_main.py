@@ -1,11 +1,13 @@
 """Tests for main entry point."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from little_agent.main import (
+    _build_backend,
     load_config,
     main,
     setup_logging,
@@ -51,18 +53,28 @@ def test_setup_logging_config_with_level_override() -> None:
 def test_load_config() -> None:
     """Test load_config reads YAML file."""
     with patch("builtins.open", MagicMock()):
-        with patch("yaml.safe_load", return_value={"backend": {"type": "openai"}}):
+        with patch("yaml.safe_load", return_value={"backends": {"primary": {"type": "openai"}}}):
             result = load_config(Path("config.yaml"))
-            assert result == {"backend": {"type": "openai"}}
+            assert result == {"backends": {"primary": {"type": "openai"}}}
 
 
-def test_main_success() -> None:
-    """Test main successful execution."""
-    mock_config = {
-        "backend": {"type": "openai", "model": "gpt-4", "api_key_env": "OPENAI_API_KEY"},
+def _mock_config(primary_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    primary = {
+        "type": "openai",
+        "model": "gpt-4",
+        "api_key_env": "OPENAI_API_KEY",
+        **(primary_overrides or {}),
+    }
+    return {
+        "backends": {"primary": primary},
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
+
+
+def test_main_success() -> None:
+    """Test main successful execution with backends config."""
+    mock_config = _mock_config()
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -84,12 +96,8 @@ def test_main_success() -> None:
 
 
 def test_main_unsupported_backend_raises() -> None:
-    """Test main raises ValueError for unsupported backend."""
-    mock_config = {
-        "backend": {"type": "unsupported"},
-        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
-    }
+    """Test main raises ValueError for unsupported backend type."""
+    mock_config = _mock_config({"type": "unsupported"})
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -99,8 +107,8 @@ def test_main_unsupported_backend_raises() -> None:
                     main()
 
 
-def test_main_missing_backend_raises() -> None:
-    """Test main raises ValueError when backend section is missing."""
+def test_main_missing_backends_raises() -> None:
+    """Test main raises ValueError when backends section is missing."""
     mock_config = {
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
@@ -110,14 +118,14 @@ def test_main_missing_backend_raises() -> None:
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                 mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
-                with pytest.raises(ValueError, match="Config must contain a 'backend' section"):
+                with pytest.raises(ValueError, match="Config must contain a 'backends' section"):
                     main()
 
 
-def test_main_missing_backend_type_raises() -> None:
-    """Test main raises ValueError when backend type is missing."""
+def test_main_missing_primary_raises() -> None:
+    """Test main raises ValueError when primary backend is missing."""
     mock_config = {
-        "backend": {"model": "gpt-4"},
+        "backends": {"compressor": {"type": "openai", "api_key": "k"}},
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
         "tools": {"providers": []},
     }
@@ -126,36 +134,27 @@ def test_main_missing_backend_type_raises() -> None:
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                 mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
-                with pytest.raises(
-                    ValueError, match="Config 'backend' must contain a 'type' field"
-                ):
+                with pytest.raises(ValueError, match="'primary'"):
                     main()
 
 
 def test_main_missing_api_key_raises() -> None:
     """Test main raises ValueError when no API key configured."""
-    mock_config = {
-        "backend": {"type": "openai", "api_key_env": "MISSING_KEY"},
-        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
-    }
+    mock_config = _mock_config({"api_key_env": "MISSING_KEY"})
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value=None):
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                     mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
-                    with pytest.raises(ValueError, match="No API key found"):
+                    with pytest.raises(ValueError, match="No API key for backend 'primary'"):
                         main()
 
 
 def test_main_api_key_from_config() -> None:
     """Test main uses api_key directly from config."""
-    mock_config = {
-        "backend": {"type": "openai", "api_key": "direct-key"},
-        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
-    }
+    mock_config = _mock_config({"api_key": "direct-key"})
+    del mock_config["backends"]["primary"]["api_key_env"]
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -173,21 +172,13 @@ def test_main_api_key_from_config() -> None:
                         main()
 
                     mock_backend_cls.assert_called_once_with(
-                        model="gpt-4", api_key="direct-key", base_url=None
+                        model="gpt-4", api_key="direct-key", base_url=None, timeout=60.0
                     )
 
 
 def test_main_api_key_priority_over_env() -> None:
     """Test config api_key takes priority over api_key_env."""
-    mock_config = {
-        "backend": {
-            "type": "openai",
-            "api_key": "direct-key",
-            "api_key_env": "OPENAI_API_KEY",
-        },
-        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
-    }
+    mock_config = _mock_config({"api_key": "direct-key", "api_key_env": "OPENAI_API_KEY"})
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -206,21 +197,13 @@ def test_main_api_key_priority_over_env() -> None:
                             main()
 
                         mock_backend_cls.assert_called_once_with(
-                            model="gpt-4", api_key="direct-key", base_url=None
+                            model="gpt-4", api_key="direct-key", base_url=None, timeout=60.0
                         )
 
 
 def test_main_base_url_passthrough() -> None:
     """Test base_url from config is passed to OpenAIBackend."""
-    mock_config = {
-        "backend": {
-            "type": "openai",
-            "api_key": "test-key",
-            "base_url": "http://localhost:8080/v1",
-        },
-        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
-    }
+    mock_config = _mock_config({"api_key": "test-key", "base_url": "http://localhost:8080/v1"})
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -241,4 +224,62 @@ def test_main_base_url_passthrough() -> None:
                         model="gpt-4",
                         api_key="test-key",
                         base_url="http://localhost:8080/v1",
+                        timeout=60.0,
                     )
+
+
+def test_build_backend_openai() -> None:
+    """Test _build_backend constructs OpenAIBackend correctly."""
+    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        _build_backend({"type": "openai", "model": "gpt-4", "api_key": "k"}, "primary")
+        mock_cls.assert_called_once_with(model="gpt-4", api_key="k", base_url=None, timeout=60.0)
+
+
+def test_build_backend_unsupported_type_raises() -> None:
+    """Test _build_backend raises for unsupported backend type."""
+    with pytest.raises(ValueError, match="Unsupported backend type"):
+        _build_backend({"type": "anthropic", "api_key": "k"}, "primary")
+
+
+def test_build_backend_missing_type_raises() -> None:
+    """Test _build_backend raises when type is missing."""
+    with pytest.raises(ValueError, match="must contain a 'type' field"):
+        _build_backend({"api_key": "k"}, "primary")
+
+
+def test_build_backend_no_api_key_raises() -> None:
+    """Test _build_backend raises when API key is not available."""
+    with patch("os.environ.get", return_value=None):
+        with pytest.raises(ValueError, match="No API key for backend 'primary'"):
+            _build_backend({"type": "openai", "api_key_env": "MISSING_KEY"}, "primary")
+
+
+def test_main_with_compressor_backend() -> None:
+    """Test main constructs compressor backend when present in config."""
+    mock_config = {
+        "backends": {
+            "primary": {"type": "openai", "api_key": "pk"},
+            "compressor": {"type": "openai", "api_key": "ck", "model": "gpt-3.5-turbo"},
+        },
+        "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
+        "tools": {"providers": []},
+    }
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+                with patch("little_agent.main.CliClient") as mock_client_cls:
+                    mock_client = MagicMock()
+                    mock_client.run = AsyncMock(return_value=None)
+                    mock_client_cls.return_value = mock_client
+                    mock_backend_cls.return_value = MagicMock()
+
+                    with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                        mock_parse.return_value = MagicMock(
+                            config=Path("config.yaml"), loglevel=None
+                        )
+                        main()
+
+                    # Both primary and compressor backends are constructed
+                    assert mock_backend_cls.call_count == 2

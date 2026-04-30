@@ -1,9 +1,14 @@
 """Tool manager implementation."""
 
+from typing import cast
+
 from little_agent.types import JSONValue
 
 from .exceptions import ToolInvokeError
 from .protocol import ToolMap, ToolProvider
+
+# Names reserved by the ToolProvider Protocol; never treated as tool methods.
+_RESERVED = frozenset({"list", "invoke"})
 
 
 class ToolManager:
@@ -25,9 +30,18 @@ class ToolManager:
         """Return all registered tools."""
         return self._tools.copy()
 
-    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue:
-        """Invoke a tool by name."""
+    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
+        """Invoke a tool by name.
+
+        Fast path: if the provider exposes a method whose name matches the tool
+        name (and the name is not a reserved Protocol method), call it directly,
+        skipping the provider's own invoke() dispatch layer.
+        """
         provider = self._index.get(name)
-        if provider is not None:
-            return await provider.invoke(name, **kwargs)
-        raise ToolInvokeError(f"Tool '{name}' not found")
+        if provider is None:
+            raise ToolInvokeError(f"Tool '{name}' not found")
+        if name not in _RESERVED:
+            method = getattr(provider, name, None)
+            if callable(method):
+                return cast(JSONValue, await method(**kwargs))
+        return await provider.invoke(name, kwargs)

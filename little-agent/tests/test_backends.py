@@ -1,5 +1,6 @@
 """Tests for backend request conversion."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -99,12 +100,12 @@ async def test_openai_backend_generate() -> None:
     mock_usage.prompt_tokens = 10
     mock_usage.completion_tokens = 5
     mock_response.usage = mock_usage
-    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)
+    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    result = await backend.generate(session)
+    result = await backend.generate(session)  # type: ignore[arg-type]
     assert result.finish_reason == "completed"
     assert result.output_text == "Hello"
     assert result.usage is not None
@@ -133,12 +134,12 @@ async def test_openai_backend_generate_with_tool_calls() -> None:
     mock_usage.prompt_tokens = 20
     mock_usage.completion_tokens = 10
     mock_response.usage = mock_usage
-    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)
+    backend._client.chat.completions.create = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
 
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    result = await backend.generate(session)
+    result = await backend.generate(session)  # type: ignore[arg-type]
     assert result.finish_reason == "tool_call"
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_name == "echo"
@@ -162,3 +163,36 @@ def test_openai_backend_no_base_url() -> None:
     with patch("openai.AsyncOpenAI") as mock_async_openai:
         OpenAIBackend(model="gpt-4", api_key="test-key")
         mock_async_openai.assert_called_once_with(api_key="test-key")
+
+
+def test_openai_backend_default_timeout() -> None:
+    """Test OpenAIBackend has 60s default timeout."""
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+    assert backend._timeout == 60.0
+
+
+def test_openai_backend_custom_timeout() -> None:
+    """Test OpenAIBackend stores custom timeout."""
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", timeout=30.0)
+    assert backend._timeout == 30.0
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_timeout_raises_backend_timeout_error() -> None:
+    """Test that a timed-out API call raises BackendTimeoutError."""
+    from little_agent.backends.exceptions import BackendTimeoutError
+
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", timeout=0.001)
+
+    async def slow_create(**_: object) -> None:
+        await asyncio.sleep(10)
+
+    backend._client.chat.completions.create = slow_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    with pytest.raises(BackendTimeoutError):
+        await backend.generate(session)  # type: ignore[arg-type]

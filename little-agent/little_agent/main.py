@@ -94,6 +94,35 @@ def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
     return providers
 
 
+def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
+    """Build an OpenAIBackend from a named backend config dict."""
+    backend_type = cfg.get("type")
+    if not backend_type:
+        raise ValueError(f"Backend '{name}' must contain a 'type' field")
+    if backend_type != "openai":
+        raise ValueError(f"Unsupported backend type: {backend_type}")
+
+    api_key: str | None = cfg.get("api_key")
+    if not api_key:
+        api_key_env: str = cfg.get("api_key_env", "OPENAI_API_KEY")
+        api_key = os.environ.get(api_key_env)
+        if not api_key:
+            raise ValueError(
+                f"No API key for backend '{name}': 'api_key' not set "
+                f"and environment variable '{api_key_env}' not found"
+            )
+
+    timeout_raw = cfg.get("timeout", 60.0)
+    timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 60.0
+
+    return OpenAIBackend(
+        model=cfg.get("model", "gpt-4"),
+        api_key=api_key,
+        base_url=cfg.get("base_url"),
+        timeout=timeout,
+    )
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
@@ -115,33 +144,28 @@ def main() -> None:
     for provider in providers:
         tools.register(provider)
 
-    backend_config = config.get("backend")
-    if not isinstance(backend_config, dict):
-        raise ValueError("Config must contain a 'backend' section")
-    backend_type = backend_config.get("type")
-    if not backend_type:
-        raise ValueError("Config 'backend' must contain a 'type' field")
-    if backend_type != "openai":
-        raise ValueError(f"Unsupported backend type: {backend_type}")
+    backends_config = config.get("backends")
+    if not isinstance(backends_config, dict):
+        raise ValueError("Config must contain a 'backends' section")
+    if "primary" not in backends_config:
+        raise ValueError("Config 'backends' must contain a 'primary' backend")
 
-    api_key = backend_config.get("api_key")
-    if not api_key:
-        api_key_env = backend_config.get("api_key_env", "OPENAI_API_KEY")
-        api_key = os.environ.get(api_key_env)
-        if not api_key:
-            raise ValueError(
-                f"No API key found: config 'api_key' not set "
-                f"and environment variable {api_key_env} not set"
-            )
+    primary_cfg = backends_config["primary"]
+    if not isinstance(primary_cfg, dict):
+        raise ValueError("Config 'backends.primary' must be a mapping")
+    backend = _build_backend(primary_cfg, "primary")
 
-    backend = OpenAIBackend(
-        model=backend_config.get("model", "gpt-4"),
-        api_key=api_key,
-        base_url=backend_config.get("base_url"),
-    )
+    compressor_cfg = backends_config.get("compressor")
+    if isinstance(compressor_cfg, dict):
+        _build_backend(compressor_cfg, "compressor")
 
     client = CliClient()
     agent = AgentCore(client=client, backend=backend, tools=tools)
+
+    from little_agent.tools.task import TaskToolProvider
+
+    tools.register(TaskToolProvider(agent))
+
     asyncio.run(client.run(agent))
 
 

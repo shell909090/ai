@@ -1,0 +1,268 @@
+"""Built-in task tool provider for creating sub-tasks (sub-sessions)."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from little_agent.tools.protocol import ToolMap, ToolProvider
+from little_agent.types import JSONValue
+
+if TYPE_CHECKING:
+    from little_agent.agent.core import AgentCore, SessionCore
+    from little_agent.agent.protocol import Session
+
+logger = logging.getLogger(__name__)
+
+TASK_TIMEOUT = 300.0
+
+
+@dataclass
+class _TaskSpec:
+    task_id: int | None
+    depends: list[int]
+    kwargs: dict[str, JSONValue]
+    result_future: asyncio.Future[JSONValue]
+
+
+class _FilteredProvider:
+    """Wraps a ToolProvider exposing only the allowed tool names."""
+
+    def __init__(self, provider: ToolProvider, allowed: set[str]) -> None:
+        self._provider = provider
+        self._allowed = allowed
+
+    def list(self) -> ToolMap:
+        return {k: v for k, v in self._provider.list().items() if k in self._allowed}
+
+    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
+        if name not in self._allowed:
+            from little_agent.tools.exceptions import ToolInvokeError
+
+            raise ToolInvokeError(f"Tool '{name}' is not available in this sub-task")
+        return await self._provider.invoke(name, kwargs)
+
+
+def _spec_label(spec: _TaskSpec) -> str:
+    """Return a human-readable label for a task spec."""
+    return f"id={spec.task_id}" if spec.task_id is not None else "anon"
+
+
+def _launch_ready_tasks(
+    unstarted: list[_TaskSpec],
+    completed: dict[int, JSONValue],
+    running: dict[asyncio.Task[JSONValue], _TaskSpec],
+    execute: Any,
+) -> None:
+    """Start all tasks whose dependencies are satisfied."""
+    for spec in [s for s in unstarted if all(d in completed for d in s.depends)]:
+        unstarted.remove(spec)
+        logger.info("Task %s starting", _spec_label(spec))
+        running[asyncio.create_task(execute(spec))] = spec
+
+
+def _fail_unresolvable(unstarted: list[_TaskSpec]) -> None:
+    """Fail all remaining unstarted tasks due to unresolvable dependencies."""
+    for spec in unstarted:
+        logger.info(
+            "Task %s failed: unresolvable dependency %s",
+            _spec_label(spec),
+            spec.depends,
+        )
+        if not spec.result_future.done():
+            spec.result_future.set_result(
+                {"status": "failed", "output": f"unresolvable dependency: {spec.depends}"}
+            )
+
+
+def _collect_done_tasks(
+    done: set[asyncio.Task[JSONValue]],
+    running: dict[asyncio.Task[JSONValue], _TaskSpec],
+    completed: dict[int, JSONValue],
+) -> None:
+    """Process finished tasks and record results."""
+    for task in done:
+        spec = running.pop(task)
+        try:
+            result: JSONValue = task.result()
+        except Exception as e:
+            result = {"status": "failed", "output": str(e)}
+        status = result.get("status") if isinstance(result, dict) else "unknown"
+        logger.info("Task %s finished (status=%s)", _spec_label(spec), status)
+        if spec.task_id is not None:
+            completed[spec.task_id] = result
+        if not spec.result_future.done():
+            spec.result_future.set_result(result)
+
+
+class TaskToolProvider:
+    """Provides the built-in create_task tool for spawning sub-sessions."""
+
+    _TOOLS: ToolMap = {
+        "create_task": (
+            "Create a sub-task with its own session and execute it",
+            [
+                ("prompt", "string", "The prompt for the sub-task", True),
+                ("id", "integer", "Optional sub-task identifier", False),
+                ("depends", "array", "Optional list of dependency task IDs", False),
+                ("tools", "array", "Optional list of allowed tool names (default: all)", False),
+                (
+                    "inheritance",
+                    "boolean",
+                    "If true, inherit conversation history via fork",
+                    False,
+                ),
+            ],
+        )
+    }
+
+    def __init__(self, agent: AgentCore) -> None:
+        self._agent = agent
+        self._pending: list[_TaskSpec] = []
+        self._scheduler: asyncio.Task[None] | None = None
+
+    def list(self) -> ToolMap:
+        return self._TOOLS.copy()
+
+    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
+        if name != "create_task":
+            raise ValueError(f"Unknown tool: {name}")
+        return await self.create_task(**kwargs)
+
+    def _build_sub_tools(self, tool_names: Sequence[str] | None) -> Any:
+        from little_agent.tools.manager import ToolManager
+
+        all_names = set(self._agent.tools.list().keys())
+        all_names.discard("create_task")
+        allowed = (set(tool_names) & all_names) if tool_names is not None else all_names
+
+        filtered = _FilteredProvider(self._agent.tools, allowed)
+        sub_mgr = ToolManager()
+        sub_mgr.register(filtered)
+        return sub_mgr
+
+    async def _fork_for_inheritance(self, session: SessionCore) -> Session:
+        from little_agent.agent.core import AgentCore
+        from little_agent.agent.core import SessionCore as SessionCoreImpl
+
+        node = session.tail
+        while node is not None and hasattr(node, "frozen"):
+            node = node.prev
+        fork_tail = node.prev if node is not None else None
+
+        sub_tools = self._build_sub_tools(None)
+        sub_agent = AgentCore(
+            client=self._agent.client,
+            backend=self._agent.backend,
+            tools=sub_tools,
+        )
+        sub_session = SessionCoreImpl(
+            session_id=str(uuid.uuid4()),
+            cwd=session.cwd,
+            agent=sub_agent,
+        )
+        sub_session.tail = fork_tail
+        return sub_session
+
+    async def create_task(self, **kwargs: JSONValue) -> JSONValue:
+        # Registration is fully synchronous so that all create_task coroutines
+        # launched by the same asyncio.gather complete registration before the
+        # scheduler (appended to the event-loop queue after these coroutines)
+        # starts running.
+        task_id_raw = kwargs.get("id")
+        task_id = int(task_id_raw) if isinstance(task_id_raw, (int, float)) else None
+
+        depends_raw = kwargs.get("depends")
+        depends = (
+            [int(d) for d in depends_raw if isinstance(d, (int, float))]
+            if isinstance(depends_raw, list)
+            else []
+        )
+
+        spec = _TaskSpec(
+            task_id=task_id,
+            depends=depends,
+            kwargs=dict(kwargs),
+            result_future=asyncio.get_running_loop().create_future(),
+        )
+        self._pending.append(spec)
+
+        if self._scheduler is None or self._scheduler.done():
+            self._scheduler = asyncio.create_task(self._run_scheduler())
+
+        return await spec.result_future
+
+    async def _run_scheduler(self) -> None:
+        """Run registered tasks in topological order."""
+        specs = list(self._pending)
+        self._pending.clear()
+
+        completed: dict[int, JSONValue] = {}
+        running: dict[asyncio.Task[JSONValue], _TaskSpec] = {}
+        unstarted = list(specs)
+
+        try:
+            while unstarted or running:
+                _launch_ready_tasks(unstarted, completed, running, self._execute)
+                if not running:
+                    _fail_unresolvable(unstarted)
+                    break
+                done, _ = await asyncio.wait(running.keys(), return_when=asyncio.FIRST_COMPLETED)
+                _collect_done_tasks(done, running, completed)
+
+        except Exception as e:
+            for spec in [*unstarted, *running.values()]:
+                if not spec.result_future.done():
+                    spec.result_future.set_result(
+                        {"status": "failed", "output": f"scheduler error: {e}"}
+                    )
+            raise
+
+    async def _execute(self, spec: _TaskSpec) -> JSONValue:
+        """Run the actual sub-session for one task spec."""
+        kwargs = spec.kwargs
+        prompt = kwargs.get("prompt")
+        if not isinstance(prompt, str):
+            return {"status": "failed", "output": "prompt must be a string"}
+
+        tool_names_raw = kwargs.get("tools")
+        tool_names: list[str] | None = None
+        if isinstance(tool_names_raw, list):
+            tool_names = [str(t) for t in tool_names_raw]
+
+        inheritance = bool(kwargs.get("inheritance", False))
+
+        if inheritance:
+            from little_agent.agent.context import current_session
+
+            session = current_session.get()
+            if session is None:
+                return {
+                    "status": "failed",
+                    "output": "inheritance=true but no current session context",
+                }
+            sub_session = await self._fork_for_inheritance(session)
+        else:
+            from little_agent.agent.core import AgentCore
+
+            sub_tools = self._build_sub_tools(tool_names)
+            sub_agent = AgentCore(
+                client=self._agent.client,
+                backend=self._agent.backend,
+                tools=sub_tools,
+            )
+            sub_session = await sub_agent.new()
+
+        try:
+            stop_reason, output = await asyncio.wait_for(
+                sub_session.prompt(prompt), timeout=TASK_TIMEOUT
+            )
+            return {"status": "completed", "stop_reason": stop_reason, "output": output}
+        except TimeoutError:
+            return {"status": "timeout", "output": f"Sub-task timed out after {TASK_TIMEOUT}s"}
+        except Exception as e:
+            return {"status": "failed", "output": str(e)}

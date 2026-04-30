@@ -325,6 +325,23 @@ class ToolProvider(Protocol):
 2. 由于 `ToolMap` 是字典结构，聚合时可以直接 `tools.update(provider.list())`。
 3. 这种设计支持 Chain of Responsibility 模式：可以在 `ToolManager` 外再包一层 filter、logger、权限检查等装饰层，只要外层也实现 `ToolProvider` 即可注入 Agent。
 
+快速分发约定（可选）
+
+`ToolManager.invoke()` 在调用 `provider.invoke()` 前，会先检查 provider 是否存在与 tool 同名的方法：
+
+- 若存在且可调用，直接调用该方法，跳过 `provider.invoke()` 的分发层。
+- `list` 和 `invoke` 这两个名称被保留，永远不走快速路径（避免与 Protocol 方法冲突）。
+- 这是一条**约定**，不修改 `ToolProvider` Protocol 接口，provider 无需实现任何额外接口。
+
+快速路径方法的签名约定：
+
+```python
+async def <tool_name>(self, **kwargs: JSONValue) -> JSONValue:
+    ...
+```
+
+优先为每个 tool 定义对应方法，`invoke()` 只做兜底分发（处理动态注册的 tool 或不想显式定义方法的场景）。
+
 ### 5.5 tools 模块内部实现边界
 
 `tools` 模块内部可以继续拆实现，但不向外暴露为一级模块接口：

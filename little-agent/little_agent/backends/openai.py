@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -16,6 +17,7 @@ from little_agent.agent.nodes import (
 )
 from little_agent.tools.protocol import ToolMap
 
+from .exceptions import BackendTimeoutError
 from .protocol import BackendToolCall, BackendTurnResult
 
 if TYPE_CHECKING:
@@ -101,7 +103,13 @@ def _chain_to_messages(tail: Node | None) -> list[dict[str, Any]]:
 class OpenAIBackend:
     """OpenAI backend implementation."""
 
-    def __init__(self, model: str, api_key: str, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str | None = None,
+        timeout: float = 60.0,
+    ) -> None:
         import openai
 
         if base_url is not None:
@@ -109,6 +117,7 @@ class OpenAIBackend:
         else:
             self._client = openai.AsyncOpenAI(api_key=api_key)
         self._model = model
+        self._timeout = timeout
 
     async def generate(self, session: SessionCore) -> BackendTurnResult:
         """Generate a response from OpenAI."""
@@ -121,12 +130,18 @@ class OpenAIBackend:
         )
 
         start_time = time.perf_counter()
-        response = await self._client.chat.completions.create(  # type: ignore[call-overload]
-            model=self._model,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto" if tools else None,
-        )
+        try:
+            response = await asyncio.wait_for(
+                self._client.chat.completions.create(  # type: ignore[call-overload]
+                    model=self._model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto" if tools else None,
+                ),
+                timeout=self._timeout,
+            )
+        except TimeoutError as e:
+            raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
         elapsed = time.perf_counter() - start_time
 
         choice = response.choices[0]
