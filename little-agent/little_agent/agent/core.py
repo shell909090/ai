@@ -51,21 +51,23 @@ class SessionCore(Session):
             raise SessionBusyError("Session pending queue is full") from err
 
         if not self._active_turn:
+            self._active_turn = True
             asyncio.create_task(self._consume_queue())
 
         return await future
 
     async def _consume_queue(self) -> None:
-        self._active_turn = True
         try:
             while not self._pending_queue.empty():
                 prompt, future = self._pending_queue.get_nowait()
                 self._cancel_requested = False
                 try:
                     result = await self._run_turn(prompt)
-                    future.set_result(result)
+                    if not future.done():
+                        future.set_result(result)
                 except Exception as exc:
-                    future.set_exception(exc)
+                    if not future.done():
+                        future.set_exception(exc)
         finally:
             self._active_turn = False
 
@@ -183,6 +185,7 @@ class SessionCore(Session):
 
         tool_result_node = self._create_tool_result_node()
         await self._invoke_tools(result, tool_result_node)
+        self._freeze_tail()
 
         return partial_output
 
@@ -200,14 +203,13 @@ class SessionCore(Session):
         return node
 
     def _create_tool_result_node(self) -> ToolResultNode:
-        """Create and append a ToolResultNode, then freeze tail."""
+        """Create and append a ToolResultNode."""
         node = ToolResultNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
             results={},
         )
         self._append_node(node)
-        self._freeze_tail()
         return node
 
     async def _invoke_tools(

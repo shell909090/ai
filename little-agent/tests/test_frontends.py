@@ -41,7 +41,13 @@ async def test_cli_update_tool_call_truncated() -> None:
     client = CliClient()
     from little_agent.types import JSONValue
 
-    args: dict[str, JSONValue] = {"line1": "a", "line2": "b", "line3": "c", "line4": "d", "line5": "e"}
+    args: dict[str, JSONValue] = {
+        "line1": "a",
+        "line2": "b",
+        "line3": "c",
+        "line4": "d",
+        "line5": "e",
+    }
     update = SessionUpdate(
         type="tool_call",
         data={"calls": {"c1": {"tool_name": "echo", "arguments": args}}},
