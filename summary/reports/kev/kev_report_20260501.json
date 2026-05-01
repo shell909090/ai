@@ -1,0 +1,664 @@
+{
+  "generated_at_utc": "2026-05-01T04:58:12.313384+00:00",
+  "window_days": 31,
+  "inventory_count": 0,
+  "kev_entries_in_window": 31,
+  "report_count": 31,
+  "rows": [
+    {
+      "cve_id": "CVE-2026-41940",
+      "date_added": "2026-04-30",
+      "kev_vendor_project": "WebPros",
+      "kev_product": "cPanel & WHM and WP2 (WordPress Squared)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-03",
+      "kev_notes": "https://support.cpanel.net/hc/en-us/articles/40073787579671-cPanel-WHM-Security-Update-04-28-2026 ; https://docs.cpanel.net/release-notes/release-notes/ ; https://docs.wpsquared.com/changelogs/versions/changelog/#13617 ; https://nvd.nist.gov/vuln/detail/CVE-2026-41940\"",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "86.0.41",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "110.0.97",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "118.0.63",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "126.0.54",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "130.0.19",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "132.0.29",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "134.0.20",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:cpanel",
+          "ecosystem": "cpe",
+          "min_safe_version": "136.0.5",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "86.0.41",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "110.0.97",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "118.0.63",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "126.0.54",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "130.0.19",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "132.0.29",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "134.0.20",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:whm",
+          "ecosystem": "cpe",
+          "min_safe_version": "136.0.5",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cpanel:wp_squared",
+          "ecosystem": "cpe",
+          "min_safe_version": "136.1.7",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-1708",
+      "date_added": "2026-04-28",
+      "kev_vendor_project": "ConnectWise",
+      "kev_product": "ScreenConnect",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-12",
+      "kev_notes": "https://www.connectwise.com/company/trust/security-bulletins/connectwise-screenconnect-23.9.8 ; https://nvd.nist.gov/vuln/detail/CVE-2024-1708",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "connectwise:screenconnect",
+          "ecosystem": "cpe",
+          "min_safe_version": "23.9.8",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-32202",
+      "date_added": "2026-04-28",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Windows",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-12",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-32202 ; https://nvd.nist.gov/vuln/detail/CVE-2026-32202",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:windows_10_1607",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.14393.9060",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_10_1809",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.17763.8644",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_10_21h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.19044.7184",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_10_22h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.19045.7184",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_11_23h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.22631.6936",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_11_24h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.26100.8246",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_11_25h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.26200.8246",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_11_26h1",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.28000.1836",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2012",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2016",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.14393.9060",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2019",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.17763.8644",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2022",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.20348.5020",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2022_23h2",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.25398.2274",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2025",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.26100.32690",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-29635",
+      "date_added": "2026-04-24",
+      "kev_vendor_project": "D-Link",
+      "kev_product": "DIR-823X",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-08",
+      "kev_notes": "https://supportannouncement.us.dlink.com/security/publication.aspx?name=SAP10469 ; https://nvd.nist.gov/vuln/detail/CVE-2025-29635",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "dlink:dir-823x_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-7399",
+      "date_added": "2026-04-24",
+      "kev_vendor_project": "Samsung",
+      "kev_product": "MagicINFO 9 Server",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-08",
+      "kev_notes": "https://security.samsungtv.com/securityUpdates ; https://nvd.nist.gov/vuln/detail/CVE-2024-7399",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "samsung:magicinfo_9_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "21.1050.0",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-57728",
+      "date_added": "2026-04-24",
+      "kev_vendor_project": "SimpleHelp",
+      "kev_product": "SimpleHelp",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-08",
+      "kev_notes": "https://simple-help.com/kb---security-vulnerabilities-01-2025#security-vulnerabilities-in-simplehelp-5-5-7-and-earlier ; https://nvd.nist.gov/vuln/detail/CVE-2024-57728",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "simple-help:simplehelp",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.5.8",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-57726",
+      "date_added": "2026-04-24",
+      "kev_vendor_project": "SimpleHelp",
+      "kev_product": "SimpleHelp",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-08",
+      "kev_notes": "https://simple-help.com/kb---security-vulnerabilities-01-2025#security-vulnerabilities-in-simplehelp-5-5-7-and-earlier ; https://nvd.nist.gov/vuln/detail/CVE-2024-57726",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "simple-help:simplehelp",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.5.8",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-39987",
+      "date_added": "2026-04-23",
+      "kev_vendor_project": "Marimo",
+      "kev_product": "Marimo",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-07",
+      "kev_notes": "https://github.com/marimo-team/marimo/security/advisories/GHSA-2679-6mx9-h9xc ; https://nvd.nist.gov/vuln/detail/CVE-2026-39987",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "coreweave:marimo",
+          "ecosystem": "cpe",
+          "min_safe_version": "0.23.0",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-33825",
+      "date_added": "2026-04-22",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Defender",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-06",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-33825 ; https://nvd.nist.gov/vuln/detail/CVE-2026-33825",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:defender_antimalware_platform",
+          "ecosystem": "cpe",
+          "min_safe_version": "4.18.26030.3011",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20122",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN Manger",
+      "kev_required_action": "Please adhere to CISA’s guidelines to assess exposure and mitigate risks associated with Cisco SD-WAN devices as outlines in CISA’s Emergency Directive 26-03 (URL listed below in Notes) and CISA’s “Hunt & Hardening Guidance for Cisco SD-WAN Devices (URL listed below in Notes). Adhere to the applicable BOD 22-01 guidance for cloud services or discontinue use of the product if mitigations are not available.",
+      "kev_due_date": "2026-04-23",
+      "kev_notes": "CISA Mitigation Instructions: https://www.cisa.gov/news-events/directives/ed-26-03-mitigate-vulnerabilities-cisco-sd-wan-systems ; https://www.cisa.gov/news-events/directives/supplemental-direction-ed-26-03-hunt-and-hardening-guidance-cisco-sd-wan-systems ; https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-authbp-qwCX8D4v ; https://nvd.nist.gov/vuln/detail/CVE-2026-20122",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.9.8.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.5.3",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.4.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.18.2.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20133",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN Manager",
+      "kev_required_action": "Please adhere to CISA’s guidelines to assess exposure and mitigate risks associated with Cisco SD-WAN devices as outlines in CISA’s Emergency Directive 26-03 (URL listed below in Notes) and CISA’s “Hunt & Hardening Guidance for Cisco SD-WAN Devices (URL listed below in Notes). Adhere to the applicable BOD 22-01 guidance for cloud services or discontinue use of the product if mitigations are not available.",
+      "kev_due_date": "2026-04-23",
+      "kev_notes": "CISA Mitigation Instructions: https://www.cisa.gov/news-events/directives/ed-26-03-mitigate-vulnerabilities-cisco-sd-wan-systems ; https://www.cisa.gov/news-events/directives/supplemental-direction-ed-26-03-hunt-and-hardening-guidance-cisco-sd-wan-systems ; https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-authbp-qwCX8D4v ; https://nvd.nist.gov/vuln/detail/CVE-2026-20133",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-2749",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Kentico",
+      "kev_product": "Kentico Xperience",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-04",
+      "kev_notes": "https://devnet.kentico.com/download/hotfixes ; https://nvd.nist.gov/vuln/detail/CVE-2025-2749",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2023-27351",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "PaperCut",
+      "kev_product": "NG/MF",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-04",
+      "kev_notes": "https://www.papercut.com/kb/Main/PO-1216-and-PO-1219 ; https://nvd.nist.gov/vuln/detail/CVE-2023-27351",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-48700",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Synacor",
+      "kev_product": "Zimbra Collaboration Suite (ZCS)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-23",
+      "kev_notes": "https://wiki.zimbra.com/wiki/Zimbra_Security_Advisories ; https://nvd.nist.gov/vuln/detail/CVE-2025-48700",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "synacor:zimbra_collaboration_suite",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "synacor:zimbra_collaboration_suite",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.1.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "synacor:zimbra_collaboration_suite",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20128",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN Manager",
+      "kev_required_action": "Please adhere to CISA’s guidelines to assess exposure and mitigate risks associated with Cisco SD-WAN devices as outlines in CISA’s Emergency Directive 26-03 (URL listed below in Notes) and CISA’s “Hunt & Hardening Guidance for Cisco SD-WAN Devices (URL listed below in Notes). Adhere to the applicable BOD 22-01 guidance for cloud services or discontinue use of the product if mitigations are not available.",
+      "kev_due_date": "2026-04-23",
+      "kev_notes": "CISA Mitigation Instructions: https://www.cisa.gov/news-events/directives/ed-26-03-mitigate-vulnerabilities-cisco-sd-wan-systems ; https://www.cisa.gov/news-events/directives/supplemental-direction-ed-26-03-hunt-and-hardening-guidance-cisco-sd-wan-systems ; https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-authbp-qwCX8D4v ; https://nvd.nist.gov/vuln/detail/CVE-2026-20128",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-32975",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "Quest",
+      "kev_product": "KACE Systems Management Appliance (SMA)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-04",
+      "kev_notes": "https://support.quest.com/kb/4379499/quest-response-to-kace-sma-vulnerabilities-cve-2025-32975-cve-2025-32976-cve-2025-32977-cve-2025-32978 ; https://nvd.nist.gov/vuln/detail/CVE-2025-32975",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2024-27199",
+      "date_added": "2026-04-20",
+      "kev_vendor_project": "JetBrains",
+      "kev_product": "TeamCity",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-04",
+      "kev_notes": "https://www.jetbrains.com/privacy-security/issues-fixed/ ; https://blog.jetbrains.com/teamcity/2024/03/additional-critical-security-issues-affecting-teamcity-on-premises-cve-2024-27198-and-cve-2024-27199-update-to-2023-11-4-now/ ; https://nvd.nist.gov/vuln/detail/CVE-2024-27199",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-34197",
+      "date_added": "2026-04-16",
+      "kev_vendor_project": "Apache",
+      "kev_product": "ActiveMQ",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-30",
+      "kev_notes": "https://activemq.apache.org/security-advisories.data/CVE-2026-34197-announcement.txt ; https://nvd.nist.gov/vuln/detail/CVE-2026-34197",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2009-0238",
+      "date_added": "2026-04-14",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Office",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-28",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/securitybulletins/2009/ms09-009 ; https://nvd.nist.gov/vuln/detail/CVE-2009-0238",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-32201",
+      "date_added": "2026-04-14",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint Server",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-28",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-32201 ; https://nvd.nist.gov/vuln/detail/CVE-2026-32201",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "16.0.19725.20210",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2012-1854",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Visual Basic for Applications (VBA)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/securitybulletins/2012/ms12-046 ; https://nvd.nist.gov/vuln/detail/CVE-2012-1854",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-60710",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Windows",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2025-60710 ; https://nvd.nist.gov/vuln/detail/CVE-2025-60710",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2023-21529",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Exchange Server",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-21529 ; https://nvd.nist.gov/vuln/detail/CVE-2023-21529",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:exchange_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2023-36424",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Windows",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2023-36424 ; https://nvd.nist.gov/vuln/detail/CVE-2023-36424",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2020-9715",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Adobe",
+      "kev_product": "Acrobat",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://helpx.adobe.com/security/products/acrobat/apsb20-48.html ; https://nvd.nist.gov/vuln/detail/CVE-2020-9715",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-21643",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Fortinet",
+      "kev_product": "FortiClient EMS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-16",
+      "kev_notes": "https://fortiguard.fortinet.com/psirt/FG-IR-25-1142 ; https://nvd.nist.gov/vuln/detail/CVE-2026-21643",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-34621",
+      "date_added": "2026-04-13",
+      "kev_vendor_project": "Adobe",
+      "kev_product": "Acrobat and Reader",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-27",
+      "kev_notes": "https://helpx.adobe.com/security/products/acrobat/apsb26-43.html ; https://nvd.nist.gov/vuln/detail/CVE-2026-34621",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-1340",
+      "date_added": "2026-04-08",
+      "kev_vendor_project": "Ivanti",
+      "kev_product": "Endpoint Manager Mobile (EPMM)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-11",
+      "kev_notes": "Please adhere to Ivanti's guidelines to assess exposure and mitigate risks. Check for signs of potential compromise on all internet accessible Ivanti products affected by this vulnerability. Apply any final mitigations provided by the vendor as soon as possible. For more information please see: https://hub.ivanti.com/s/article/Security-Advisory-Ivanti-Endpoint-Manager-Mobile-EPMM-CVE-2026-1281-CVE-2026-1340?language=en_US ; https://support.mobileiron.com/mi/vsp/AB1786671/ivanti-security-update-1761642-1.1.0S-5.noarch.rpm ; https://support.mobileiron.com/mi/vsp/AB1786671/ivanti-security-update-1761642-1.1.0L-5.noarch.rpm ; https://nvd.nist.gov/vuln/detail/CVE-2026-1340",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-35616",
+      "date_added": "2026-04-06",
+      "kev_vendor_project": "Fortinet",
+      "kev_product": "FortiClient EMS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-09",
+      "kev_notes": "Please adhere to Fortinet's guidelines to assess exposure and mitigate risks. Check for signs of potential compromise on all internet accessible Fortinet products affected by this vulnerability. Apply any final mitigations provided by the vendor as soon as they become available. For more information please see: https://fortiguard.fortinet.com/psirt/FG-IR-26-099 ; https://nvd.nist.gov/vuln/detail/CVE-2026-35616",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-3502",
+      "date_added": "2026-04-02",
+      "kev_vendor_project": "TrueConf",
+      "kev_product": "Client",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-16",
+      "kev_notes": "https://trueconf.com/blog/update/trueconf-8-5 ; https://trueconf.com/downloads/windows.html ; https://nvd.nist.gov/vuln/detail/CVE-2026-3502",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "trueconf:trueconf",
+          "ecosystem": "cpe",
+          "min_safe_version": "8.5.3.884",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-5281",
+      "date_added": "2026-04-01",
+      "kev_vendor_project": "Google",
+      "kev_product": "Dawn",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-04-15",
+      "kev_notes": "This vulnerability affects an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://chromereleases.googleblog.com/2026/03/stable-channel-update-for-desktop_31.html ; https://nvd.nist.gov/vuln/detail/CVE-2026-5281",
+      "matched_local_software": [],
+      "affected_software": []
+    }
+  ]
+}
