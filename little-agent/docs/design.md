@@ -125,7 +125,7 @@ class SessionUpdate:
 1. `SessionUpdate` 是 client/frontend 观察到的事件。
 2. `agent_message_chunk` 是模型最终输出的显示内容；`thinking_chunk` 是模型的思考过程（如 reasoning）。CLI 中两者分离输出，显示内容直接打印，思考内容可折叠或前缀标注。
 3. 每条消息在输出前 strip 前后空白字符。
-4. 当前先主要实现 `update()`；`request_permission()` 先留接口，不在本期真正启用。
+4. `request_permission()` 已启用：权限系统已实现，CLI/ACP/Web 三端均接入真实的权限确认流程。
 5. `prompt()` 失败时不返回 `failed`，而是直接抛异常，遵循 Python 风格。
 
 ### 4.3 Client 接口
@@ -163,6 +163,8 @@ class Agent(Protocol):
         backend: Backend,
         tools: ToolProvider,
         compressor: "Compressor | None" = None,
+        permissions: "PermissionManager | None" = None,
+        memory: "Memory | None" = None,
     ) -> None: ...
 
     async def new(self, cwd: str | None = None) -> "Session": ...
@@ -181,8 +183,10 @@ class Agent(Protocol):
 2. `new()` 与 `load()` 不重复接收 `client` 参数。
 3. 如需不同 client，应创建不同 agent 实例。
 4. `compressor` 为可选注入；不注入时 `Session.compress()` 抛异常。
-5. `tools` 参数类型为 `ToolProvider`。Agent 运行时只关心"能列出工具、能调用工具"，不关心对方是单个 provider 还是聚合后的 `ToolManager`。
-6. backends支持多个，agent只持有一个backend，即名字为primary的那个。compressor在构造的时候，会根据配置，决定使用同一个backend，还是获得另一个。
+5. `permissions` 为可选注入；注入时每个 tool 调用前检查权限规则（allow/deny/ask）。
+6. `memory` 为可选注入；注入时每轮 `_run_turn` 开始前 `recall()` 注入记忆，结束后 `remember()` 更新记忆。
+7. `tools` 参数类型为 `ToolProvider`。Agent 运行时只关心"能列出工具、能调用工具"，不关心对方是单个 provider 还是聚合后的 `ToolManager`。
+8. backends支持多个，agent只持有一个backend，即名字为primary的那个。compressor在构造的时候，会根据配置，决定使用同一个backend，还是获得另一个。
 
 ### 4.5 Session 接口
 

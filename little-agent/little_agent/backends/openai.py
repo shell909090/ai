@@ -113,12 +113,6 @@ def _chain_to_messages(session: "SessionCore" | Node) -> list[dict[str, Any]]:
             else:
                 messages.append(msg)
 
-    # Inject memory if available on the session
-    if hasattr(session, "_memory_text"):
-        memory_text = getattr(session, "_memory_text", None)
-        if memory_text and not any(m.get("role") == "system" for m in messages):
-            messages.insert(0, {"role": "system", "content": memory_text})
-
     return messages
 
 

@@ -1,6 +1,4 @@
-.PHONY: fmt lint build unittest test install dev run docker-build docker-unittest docker-test
-
-DOCKER_IMAGE ?= little-agent-test
+.PHONY: fmt lint build unittest test install dev run
 
 fmt:
 	uv run ruff format little_agent tests
@@ -37,12 +35,3 @@ dev:
 
 run:
 	uv run python -m little_agent.main --config .config.yaml
-
-docker-build:
-	docker build -t $(DOCKER_IMAGE) .
-
-docker-unittest: docker-build
-	docker run --rm $(DOCKER_IMAGE) uv run pytest tests/ -v --timeout=60
-
-docker-test: docker-build
-	docker run --rm $(DOCKER_IMAGE) uv run pytest tests/ --cov=little_agent --cov-report=term-missing --timeout=60

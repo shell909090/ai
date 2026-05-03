@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.core import AgentCore, SessionCore
+from little_agent.agent.nodes import AssistantResponseNode, UserPromptNode
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.task import TASK_TIMEOUT, TaskToolProvider
@@ -76,7 +77,12 @@ async def test_create_task_timeout(simple_agent: AgentCore) -> None:
     """create_task returns timeout when asyncio.wait_for raises TimeoutError."""
     provider = TaskToolProvider(simple_agent)
 
-    with patch("little_agent.tools.task.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+    def _raise_timeout(coro: object, **_: object) -> None:
+        if asyncio.iscoroutine(coro):
+            coro.close()
+        raise TimeoutError
+
+    with patch("little_agent.tools.task.asyncio.wait_for", side_effect=_raise_timeout):
         result = await provider.invoke("create_task", {"prompt": "test"})
 
     assert isinstance(result, dict)
@@ -89,7 +95,12 @@ async def test_create_task_exception(simple_agent: AgentCore) -> None:
     """create_task returns failed when sub-session raises an unexpected error."""
     provider = TaskToolProvider(simple_agent)
 
-    with patch("little_agent.tools.task.asyncio.wait_for", side_effect=RuntimeError("boom")):
+    def _raise_runtime(coro: object, **_: object) -> None:
+        if asyncio.iscoroutine(coro):
+            coro.close()
+        raise RuntimeError("boom")
+
+    with patch("little_agent.tools.task.asyncio.wait_for", side_effect=_raise_runtime):
         result = await provider.invoke("create_task", {"prompt": "test"})
 
     assert isinstance(result, dict)
@@ -128,3 +139,81 @@ def test_build_sub_tools_filter_by_names(simple_agent: AgentCore) -> None:
     assert "echo" in sub_tools.list()
     assert "add" not in sub_tools.list()
     assert "create_task" not in sub_tools.list()
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_tail_none(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance with tail=None returns session with tail=None."""
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+    session.tail = None
+
+    sub = await provider._fork_for_inheritance(session)
+
+    assert sub.tail is None
+    assert sub.id != session.id
+    assert sub.cwd == session.cwd
+    assert sub.agent is not None
+    assert sub.agent is not session.agent
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_tail_no_frozen(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance with tail lacking frozen uses tail as fork point."""
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+    node = UserPromptNode(id="n1", prev=None, prompt="hi")
+    session.tail = node
+
+    sub = await provider._fork_for_inheritance(session)
+
+    assert sub.tail is node
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_skips_frozen_nodes(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance skips nodes that have a frozen attribute."""
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+
+    # Create a chain: tail(frozen=True) -> prev(frozen=True) -> head(no frozen)
+    head = UserPromptNode(id="head", prev=None, prompt="hi")
+    mid = AssistantResponseNode(id="mid", prev=head, text="mid", frozen=True)
+    tail = AssistantResponseNode(id="tail", prev=mid, text="tail", frozen=True)
+    session.tail = tail
+
+    sub = await provider._fork_for_inheritance(session)
+
+    assert sub.tail is head
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_partial_frozen(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance stops at first node without frozen attribute."""
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+
+    # Chain: tail(frozen=True) -> prev(no frozen) -> older(frozen=True)
+    older = AssistantResponseNode(id="older", prev=None, text="older", frozen=True)
+    prev = UserPromptNode(id="prev", prev=older, prompt="hi")
+    tail = AssistantResponseNode(id="tail", prev=prev, text="tail", frozen=True)
+    session.tail = tail
+
+    sub = await provider._fork_for_inheritance(session)
+
+    assert sub.tail is prev
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance returns None when all nodes have frozen."""
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+
+    n1 = AssistantResponseNode(id="n1", prev=None, text="n1", frozen=True)
+    n2 = AssistantResponseNode(id="n2", prev=n1, text="n2", frozen=True)
+    session.tail = n2
+
+    sub = await provider._fork_for_inheritance(session)
+
+    assert sub.tail is None

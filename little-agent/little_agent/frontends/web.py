@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+AGENT_KEY: web.AppKey[Agent] = web.AppKey("agent")
+CLIENT_KEY: web.AppKey[WebClient] = web.AppKey("client")
+
 
 class WebClient(Client):
     """Web client that pushes updates via WebSocket and handles permission requests."""
@@ -131,7 +134,7 @@ class WebClient(Client):
                         continue
 
                     # Handle other client messages via agent
-                    agent: Agent = request.app["agent"]
+                    agent = request.app[AGENT_KEY]
                     response = await self._handle_client_message(agent, data)
                     await ws.send_json(response)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
@@ -187,8 +190,8 @@ class WebClient(Client):
     async def run(self, agent: Agent) -> None:
         """Run the web server."""
         app = web.Application()
-        app["agent"] = agent
-        app["client"] = self
+        app[AGENT_KEY] = agent
+        app[CLIENT_KEY] = self
 
         static_dir = Path(__file__).parent / "static"
         if static_dir.exists():

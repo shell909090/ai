@@ -12,11 +12,11 @@ from tests.mocks import MockAgent, MockToolProvider
 
 @pytest.fixture(autouse=True)
 def _isolate_readline():
-    """Replace readline with a mock so _setup_readline / write_history_file never touch
-    the user's real ~/.little_agent_history. Without this, every client.run test reads
-    and rewrites the history file, and because read_history_file appends rather than
-    replaces the in-memory list, the file grows exponentially across the suite and
-    thrashes the disk.
+    """Mock readline to avoid touching the real history file.
+
+    Without this, every client.run test reads and rewrites the history file, and because
+    read_history_file appends rather than replaces the in-memory list, the file grows
+    exponentially across the suite and thrashes the disk.
     """
     with patch.dict("sys.modules", {"readline": MagicMock()}):
         yield

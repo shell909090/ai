@@ -152,7 +152,7 @@ class TaskToolProvider:
         node = session.tail
         while node is not None and hasattr(node, "frozen"):
             node = node.prev
-        fork_tail = node.prev if node is not None else None
+        fork_tail = node if node is not None else None
 
         sub_tools = self._build_sub_tools(None)
         sub_agent = AgentCore(

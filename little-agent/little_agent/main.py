@@ -13,11 +13,13 @@ import yaml
 
 from little_agent.agent.core import AgentCore
 from little_agent.backends.openai import OpenAIBackend
+from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.cli import CliClient
 from little_agent.frontends.web import WebClient
 from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolProvider
+from little_agent.tools.task import TaskToolProvider
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +115,15 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
                 f"and environment variable '{api_key_env}' not found"
             )
 
+    model = cfg.get("model")
+    if not model:
+        raise ValueError(f"Backend '{name}' must contain a 'model' field")
+
     timeout_raw = cfg.get("timeout", 60.0)
     timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 60.0
 
     return OpenAIBackend(
-        model=cfg.get("model", "gpt-4"),
+        model=str(model),
         api_key=api_key,
         base_url=cfg.get("base_url"),
         timeout=timeout,
@@ -211,7 +217,9 @@ def main() -> None:
     frontend_type = config.get("frontend", {}).get("type", "cli")
 
     if frontend_type == "web":
-        client: CliClient | WebClient = WebClient()
+        client: CliClient | WebClient | AcpClient = WebClient()
+    elif frontend_type == "acp":
+        client = AcpClient()
     else:
         client = CliClient()
 
@@ -223,8 +231,6 @@ def main() -> None:
         permissions=permissions,
         memory=memory,
     )
-
-    from little_agent.tools.task import TaskToolProvider
 
     tools.register(TaskToolProvider(agent))
 

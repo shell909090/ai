@@ -215,8 +215,8 @@ async def test_disallowed_tool_call_results_in_failure() -> None:
         f"Expected status='failed', got {update.data['status']!r}"
     )
     content = update.data.get("content", "")
-    assert "not in allowed list" in str(content), (
-        f"Expected 'not in allowed list' in content, got {content!r}"
+    assert "not in allowed list" in str(content) or "Permission denied" in str(content), (
+        f"Expected 'not in allowed list' or 'Permission denied' in content, got {content!r}"
     )
     # The actual add(1, 2) = 3 result must NOT be the content (tool was not invoked)
     assert content != 3, (

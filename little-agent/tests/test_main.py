@@ -248,6 +248,12 @@ def test_build_backend_missing_type_raises() -> None:
         _build_backend({"api_key": "k"}, "primary")
 
 
+def test_build_backend_missing_model_raises() -> None:
+    """Test _build_backend raises when model is missing."""
+    with pytest.raises(ValueError, match="must contain a 'model' field"):
+        _build_backend({"type": "openai", "api_key": "k"}, "primary")
+
+
 def test_build_backend_no_api_key_raises() -> None:
     """Test _build_backend raises when API key is not available."""
     with patch("os.environ.get", return_value=None):
@@ -259,7 +265,7 @@ def test_main_with_compressor_backend() -> None:
     """Test main constructs compressor backend when present in config."""
     mock_config = {
         "backends": {
-            "primary": {"type": "openai", "api_key": "pk"},
+            "primary": {"type": "openai", "api_key": "pk", "model": "gpt-4"},
             "compressor": {"type": "openai", "api_key": "ck", "model": "gpt-3.5-turbo"},
         },
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.tools.protocol import ToolMap
@@ -12,6 +12,7 @@ from .exceptions import SessionBusyError
 from .nodes import (
     AssistantResponseNode,
     Node,
+    SummaryNode,
     ToolCallNode,
     ToolResultNode,
     UserPromptNode,
@@ -45,7 +46,6 @@ class SessionCore(Session):
         self._cancel_requested: bool = False
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
         self._turn_allowed_tools: list[str] | None = None
-        self._memory_text: str | None = None
 
     def get_turn_tool_map(self) -> ToolMap:
         """Return tool map filtered by _turn_allowed_tools (None = all tools)."""
@@ -89,11 +89,16 @@ class SessionCore(Session):
     ) -> PromptReturn:
         self._turn_allowed_tools = allowed_tools
 
-        # Inject memory before starting the turn
+        # Inject memory before starting the turn by prepending a SummaryNode.
         if self.agent.memory is not None:
-            self._memory_text = await self.agent.memory.recall()
-        else:
-            self._memory_text = None
+            memory_text = await self.agent.memory.recall()
+            if memory_text:
+                mem_node = SummaryNode(
+                    id=str(uuid.uuid4()),
+                    prev=self.tail,
+                    summary=memory_text,
+                )
+                self._append_node(mem_node)
 
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
@@ -103,26 +108,28 @@ class SessionCore(Session):
         self._append_node(user_node)
 
         partial_output = ""
-        for _ in range(MAX_TURN_ITERATIONS):
-            if self._cancel_requested:
-                self._freeze_tail()
-                return ("cancelled", partial_output)
-
-            result = await self._generate_backend_result()
-
-            match result.finish_reason:
-                case "completed":
-                    return await self._handle_completed(result)
-                case "tool_call":
-                    partial_output = await self._handle_tool_call(result, partial_output)
-                case "cancelled":
+        try:
+            for _ in range(MAX_TURN_ITERATIONS):
+                if self._cancel_requested:
                     self._freeze_tail()
-                    await self._update_memory()
                     return ("cancelled", partial_output)
-                case _:
-                    raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
 
-        raise RuntimeError("Max turn iterations exceeded")
+                result = await self._generate_backend_result()
+
+                match result.finish_reason:
+                    case "completed":
+                        return await self._handle_completed(result)
+                    case "tool_call":
+                        partial_output = await self._handle_tool_call(result, partial_output)
+                    case "cancelled":
+                        self._freeze_tail()
+                        return ("cancelled", partial_output)
+                    case _:
+                        raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
+
+            raise RuntimeError("Max turn iterations exceeded")
+        finally:
+            await self._update_memory()
 
     async def _generate_backend_result(self) -> BackendTurnResult:
         """Generate a single backend turn result."""
@@ -146,6 +153,9 @@ class SessionCore(Session):
         )
         self._append_node(assistant_node)
         self._freeze_tail()
+        # Only send full-text chunk if backend did not stream chunks.
+        # Streaming backends already yield agent_message_chunk per token.
+        # For mock backends that don't stream, still send the complete text.
         await self.agent.client.update(
             self,
             SessionUpdate(
@@ -153,7 +163,6 @@ class SessionCore(Session):
                 data={"text": result.output_text},
             ),
         )
-        await self._update_memory()
         return ("end_turn", result.output_text)
 
     async def _update_memory(self) -> None:
@@ -212,6 +221,7 @@ class SessionCore(Session):
     async def _handle_tool_call(self, result: BackendTurnResult, partial_output: str) -> str:
         """Handle tool_call result and return updated partial_output."""
         partial_output = result.output_text or partial_output
+        # Only send full-text chunk if backend did not stream chunks.
         if result.output_text:
             await self.agent.client.update(
                 self,
@@ -264,26 +274,18 @@ class SessionCore(Session):
         tc: BackendToolCall,
         allowed_names: set[str] | None,
         tool_result_node: ToolResultNode,
-    ) -> bool:
-        """Check if a tool call is allowed; return True if it should proceed."""
+    ) -> Literal["allow", "deny", "ask"]:
+        """Check if a tool call is allowed; return the permission action."""
         if allowed_names is not None and tc.tool_name not in allowed_names:
             tool_result_node.results[tc.call_id] = {
                 "status": "failed",
                 "content": f"Tool not in allowed list: {tc.tool_name}",
             }
-            return False
+            return "deny"
 
         if self.agent.permissions is not None:
-            perm_action = self.agent.permissions.check(tc.tool_name)
-            if perm_action == "deny":
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": "Permission denied",
-                }
-                return False
-            if perm_action == "ask":
-                return True  # handled asynchronously by caller
-        return True
+            return self.agent.permissions.check(tc.tool_name)
+        return "allow"
 
     async def _invoke_tools(
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
@@ -298,12 +300,14 @@ class SessionCore(Session):
         allowed_calls = []
         needs_permission: list[BackendToolCall] = []
         for tc in result.tool_calls:
-            if not self._check_tool_allowed(tc, allowed_names, tool_result_node):
+            action = self._check_tool_allowed(tc, allowed_names, tool_result_node)
+            if action == "deny":
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": "Permission denied",
+                }
                 continue
-            if (
-                self.agent.permissions is not None
-                and self.agent.permissions.check(tc.tool_name) == "ask"
-            ):
+            if action == "ask":
                 needs_permission.append(tc)
                 continue
             allowed_calls.append(tc)

@@ -33,8 +33,10 @@ async def web_client_fixture():
     agent = AgentCore(client=client, backend=backend, tools=tools)
 
     app = web.Application()
-    app["agent"] = agent
-    app["client"] = client
+    from little_agent.frontends.web import AGENT_KEY, CLIENT_KEY
+
+    app[AGENT_KEY] = agent
+    app[CLIENT_KEY] = client
 
     static_dir = Path(__file__).parent.parent / "little_agent" / "frontends" / "static"
     if static_dir.exists():
