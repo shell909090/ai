@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from little_agent.backends.exceptions import BackendTimeoutError
 from little_agent.types import JSONValue
@@ -28,6 +28,8 @@ _SLASH_COMMANDS = [
     "/quit",
     "/save",
 ]
+
+_ChunkType = Literal["thinking", "agent"]
 
 
 def _setup_readline() -> Path | None:
@@ -58,12 +60,18 @@ class CliClient(Client):
 
     def __init__(self) -> None:
         self._updates: list[SessionUpdate] = []
+        self._buffer_type: _ChunkType | None = None
+        self._buffer_parts: list[str] = []
 
-    def _print_message(self, prefix: str, text: str) -> None:
-        """Print a message with prefix after stripping whitespace."""
-        stripped = text.strip()
-        if stripped:
-            print(f"[{prefix}] {stripped}")
+    def _flush_buffer(self) -> None:
+        """Flush buffered content chunks as a single coalesced message."""
+        if self._buffer_type is not None:
+            text = "".join(self._buffer_parts).strip()
+            if text:
+                prefix = "Agent" if self._buffer_type == "agent" else "Thinking"
+                print(f"[{prefix}] {text}")
+        self._buffer_type = None
+        self._buffer_parts = []
 
     def _print_tool_call(self, call_id: str, call_data: dict[str, Any]) -> None:
         """Print a tool call with truncated arguments."""
@@ -78,26 +86,33 @@ class CliClient(Client):
         print(args_text)
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
-        """Handle session update."""
+        """Handle session update with buffering for consecutive same-type chunks."""
         self._updates.append(update)
-        if update.type == "agent_message_chunk":
-            self._print_message("Agent", str(update.data.get("text", "")))
-        elif update.type == "thinking_chunk":
-            self._print_message("Thinking", str(update.data.get("text", "")))
-        elif update.type == "tool_call":
-            calls = update.data.get("calls", {})
-            if not isinstance(calls, dict):
-                raise ValueError("tool_call update 'calls' must be a dict")
-            for call_id, call_data in calls.items():
-                if not isinstance(call_data, dict):
-                    raise ValueError(f"tool_call update call_data for {call_id} must be a dict")
-                self._print_tool_call(call_id, call_data)
-        elif update.type == "tool_call_update":
-            call_id_raw = update.data.get("call_id", "")
-            status_raw = update.data.get("status", "")
-            call_id = call_id_raw if isinstance(call_id_raw, str) else str(call_id_raw)
-            status = status_raw if isinstance(status_raw, str) else str(status_raw)
-            print(f"[ToolResult] {call_id}: {status}")
+        if update.type in ("agent_message_chunk", "thinking_chunk"):
+            chunk_type: _ChunkType = "agent" if update.type == "agent_message_chunk" else "thinking"
+            text = str(update.data.get("text", ""))
+            if chunk_type != self._buffer_type:
+                self._flush_buffer()
+                self._buffer_type = chunk_type
+            if chunk_type == "agent" and text == "".join(self._buffer_parts):
+                return
+            self._buffer_parts.append(text)
+        else:
+            self._flush_buffer()
+            if update.type == "tool_call":
+                calls = update.data.get("calls", {})
+                if not isinstance(calls, dict):
+                    raise ValueError("tool_call update 'calls' must be a dict")
+                for call_id, call_data in calls.items():
+                    if not isinstance(call_data, dict):
+                        raise ValueError(f"tool_call update call_data for {call_id} must be a dict")
+                    self._print_tool_call(call_id, call_data)
+            elif update.type == "tool_call_update":
+                call_id_raw = update.data.get("call_id", "")
+                status_raw = update.data.get("status", "")
+                call_id = call_id_raw if isinstance(call_id_raw, str) else str(call_id_raw)
+                status = status_raw if isinstance(status_raw, str) else str(status_raw)
+                print(f"[ToolResult] {call_id}: {status}")
 
     async def request_permission(
         self,
@@ -178,13 +193,16 @@ class CliClient(Client):
         """Send user input to the session and handle the result."""
         try:
             stop_reason, text = await session.prompt(user_input)
+            self._flush_buffer()
             if stop_reason == "cancelled":
                 print("[Cancelled]")
             else:
                 logger.debug("Turn completed: %s", text)
         except BackendTimeoutError as e:
+            self._flush_buffer()
             print(f"[Timeout] {e}")
         except Exception as e:
+            self._flush_buffer()
             logger.exception("Error during prompt")
             print(f"[Error] {e}")
 

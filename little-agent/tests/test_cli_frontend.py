@@ -72,7 +72,7 @@ def session() -> _MockSession:
 
 
 def test_update_agent_message_chunk(client: CliClient, session: _MockSession) -> None:
-    """update() prints agent message chunk."""
+    """update() buffers agent message chunk; _flush_buffer emits it."""
     with patch("builtins.print") as mock_print:
         asyncio.run(
             client.update(
@@ -80,11 +80,14 @@ def test_update_agent_message_chunk(client: CliClient, session: _MockSession) ->
                 SessionUpdate(type="agent_message_chunk", data={"text": "hello"}),
             )
         )
-    mock_print.assert_called_once_with("[Agent] hello")
+    mock_print.assert_not_called()
+    with patch("builtins.print") as mock_print2:
+        client._flush_buffer()
+    mock_print2.assert_called_once_with("[Agent] hello")
 
 
 def test_update_thinking_chunk(client: CliClient, session: _MockSession) -> None:
-    """update() prints thinking chunk."""
+    """update() buffers thinking chunk; _flush_buffer emits it."""
     with patch("builtins.print") as mock_print:
         asyncio.run(
             client.update(
@@ -92,7 +95,10 @@ def test_update_thinking_chunk(client: CliClient, session: _MockSession) -> None
                 SessionUpdate(type="thinking_chunk", data={"text": "thinking..."}),
             )
         )
-    mock_print.assert_called_once_with("[Thinking] thinking...")
+    mock_print.assert_not_called()
+    with patch("builtins.print") as mock_print2:
+        client._flush_buffer()
+    mock_print2.assert_called_once_with("[Thinking] thinking...")
 
 
 def test_update_tool_call(client: CliClient, session: _MockSession) -> None:
@@ -135,6 +141,199 @@ def test_update_invalid_tool_call_type(client: CliClient, session: _MockSession)
                 SessionUpdate(type="tool_call", data={"calls": "not-a-dict"}),
             )
         )
+
+
+# --- Chunk coalescing tests ---
+
+
+def test_coalesce_consecutive_agent_chunks(client: CliClient, session: _MockSession) -> None:
+    """Consecutive agent_message_chunks are coalesced into a single output."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "Hello "}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "World"}),
+            )
+        )
+        client._flush_buffer()
+    mock_print.assert_called_once_with("[Agent] Hello World")
+
+
+def test_coalesce_consecutive_thinking_chunks(client: CliClient, session: _MockSession) -> None:
+    """Consecutive thinking_chunks are coalesced into a single output."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="thinking_chunk", data={"text": "I am "}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="thinking_chunk", data={"text": "thinking..."}),
+            )
+        )
+        client._flush_buffer()
+    mock_print.assert_called_once_with("[Thinking] I am thinking...")
+
+
+def test_flush_on_type_switch_thinking_to_agent(client: CliClient, session: _MockSession) -> None:
+    """Switching from thinking to agent flushes previous buffer first."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="thinking_chunk", data={"text": "think"}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "answer"}),
+            )
+        )
+        client._flush_buffer()
+    print_calls = [c[0][0] for c in mock_print.call_args_list]
+    assert print_calls == ["[Thinking] think", "[Agent] answer"]
+
+
+def test_flush_on_type_switch_agent_to_thinking(client: CliClient, session: _MockSession) -> None:
+    """Switching from agent to thinking flushes previous buffer first."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "part1"}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="thinking_chunk", data={"text": "think"}),
+            )
+        )
+        client._flush_buffer()
+    print_calls = [c[0][0] for c in mock_print.call_args_list]
+    assert print_calls == ["[Agent] part1", "[Thinking] think"]
+
+
+def test_tool_call_flushes_buffer(client: CliClient, session: _MockSession) -> None:
+    """tool_call update flushes buffered content before printing tool info."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="thinking_chunk", data={"text": "think"}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(
+                    type="tool_call",
+                    data={"calls": {"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}}},
+                ),
+            )
+        )
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Thinking] think" in calls
+    assert any("ToolCall" in c for c in calls)
+    thinking_idx = calls.index("[Thinking] think")
+    tool_idx = next(i for i, c in enumerate(calls) if "ToolCall" in c)
+    assert thinking_idx < tool_idx
+
+
+def test_tool_call_update_flushes_buffer(client: CliClient, session: _MockSession) -> None:
+    """tool_call_update flushes buffered content before printing result."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "part"}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(
+                    type="tool_call_update",
+                    data={"call_id": "c1", "status": "completed"},
+                ),
+            )
+        )
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Agent] part" in calls
+    assert "[ToolResult] c1: completed" in calls
+
+
+def test_duplicate_agent_chunk_detected_and_skipped(
+    client: CliClient, session: _MockSession
+) -> None:
+    """Full output_text duplicate from _handle_completed is skipped."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "Hello "}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "World"}),
+            )
+        )
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "Hello World"}),
+            )
+        )
+        client._flush_buffer()
+    mock_print.assert_called_once_with("[Agent] Hello World")
+
+
+def test_non_streaming_agent_chunk_passes_through(client: CliClient, session: _MockSession) -> None:
+    """Non-streaming backend's single agent_message_chunk is not falsely skipped."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "complete response"}),
+            )
+        )
+        client._flush_buffer()
+    mock_print.assert_called_once_with("[Agent] complete response")
+
+
+def test_flush_empty_buffer_is_noop(client: CliClient, session: _MockSession) -> None:
+    """_flush_buffer on empty buffer does not print."""
+    with patch("builtins.print") as mock_print:
+        client._flush_buffer()
+    mock_print.assert_not_called()
+
+
+def test_flush_clears_buffer(client: CliClient, session: _MockSession) -> None:
+    """_flush_buffer clears buffer; second flush is a no-op."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(type="agent_message_chunk", data={"text": "hi"}),
+            )
+        )
+        client._flush_buffer()
+    assert mock_print.call_count == 1
+    with patch("builtins.print") as mock_print2:
+        client._flush_buffer()
+    mock_print2.assert_not_called()
 
 
 # --- request_permission() tests ---
@@ -301,7 +500,31 @@ async def test_do_prompt_cancelled(client: CliClient) -> None:
 
 @pytest.mark.asyncio
 async def test_do_prompt_timeout(client: CliClient, session: _MockSession) -> None:
-    """_do_prompt handles BackendTimeoutError."""
+    """_do_prompt handles BackendTimeoutError and flushes buffered content."""
+
+    async def _timeout_prompt(text: str) -> tuple[str, str]:
+        raise BackendTimeoutError("backend timeout")
+
+    session.prompt = _timeout_prompt  # type: ignore[method-assign]
+    # Simulate some buffered content from partial streaming
+    with patch("builtins.print"):
+        await client.update(
+            session,
+            SessionUpdate(type="agent_message_chunk", data={"text": "partial"}),
+        )
+    with patch("builtins.print") as mock_print:
+        await client._do_prompt(session, "hello")
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Agent] partial" in calls
+    assert any("Timeout" in c for c in calls)
+    # Verify buffer was cleared: second flush should be no-op
+    assert client._buffer_type is None
+    assert client._buffer_parts == []
+
+
+@pytest.mark.asyncio
+async def test_do_prompt_timeout_empty_buffer(client: CliClient, session: _MockSession) -> None:
+    """_do_prompt flush on timeout is no-op when buffer is empty."""
 
     async def _timeout_prompt(text: str) -> tuple[str, str]:
         raise BackendTimeoutError("backend timeout")
@@ -313,16 +536,22 @@ async def test_do_prompt_timeout(client: CliClient, session: _MockSession) -> No
 
 
 @pytest.mark.asyncio
-async def test_do_prompt_error(client: CliClient, session: _MockSession) -> None:
-    """_do_prompt handles generic exceptions."""
+async def test_do_prompt_error_flushes_buffer(client: CliClient, session: _MockSession) -> None:
+    """_do_prompt handles Exception and flushes buffered content."""
 
     async def _error_prompt(text: str) -> tuple[str, str]:
         raise RuntimeError("boom")
 
     session.prompt = _error_prompt  # type: ignore[method-assign]
+    with patch("builtins.print"):
+        await client.update(
+            session,
+            SessionUpdate(type="thinking_chunk", data={"text": "think"}),
+        )
     with patch("builtins.print") as mock_print:
         await client._do_prompt(session, "hello")
     calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Thinking] think" in calls
     assert any("[Error]" in c for c in calls)
 
 

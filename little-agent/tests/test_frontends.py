@@ -74,22 +74,28 @@ async def test_cli_update_tool_call_truncated() -> None:
 
 @pytest.mark.asyncio
 async def test_cli_update_thinking_chunk() -> None:
-    """Test CliClient.update with thinking_chunk prints correctly."""
+    """thinking_chunk is buffered; _flush_buffer emits stripped output."""
     client = CliClient()
     update = SessionUpdate(type="thinking_chunk", data={"text": "  thinking...  "})
     with patch("builtins.print") as mock_print:
         await client.update(None, update)  # type: ignore[arg-type]
-    mock_print.assert_called_once_with("[Thinking] thinking...")
+    mock_print.assert_not_called()
+    with patch("builtins.print") as mock_print2:
+        client._flush_buffer()
+    mock_print2.assert_called_once_with("[Thinking] thinking...")
 
 
 @pytest.mark.asyncio
 async def test_cli_update_agent_message_strip() -> None:
-    """Test CliClient.update strips whitespace from agent_message_chunk."""
+    """agent_message_chunk is buffered; _flush_buffer emits stripped output."""
     client = CliClient()
     update = SessionUpdate(type="agent_message_chunk", data={"text": "  hello  "})
     with patch("builtins.print") as mock_print:
         await client.update(None, update)  # type: ignore[arg-type]
-    mock_print.assert_called_once_with("[Agent] hello")
+    mock_print.assert_not_called()
+    with patch("builtins.print") as mock_print2:
+        client._flush_buffer()
+    mock_print2.assert_called_once_with("[Agent] hello")
 
 
 @pytest.mark.asyncio
