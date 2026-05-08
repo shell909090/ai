@@ -473,6 +473,7 @@ class Backend(Protocol):
 6. DEBUG 日志：请求开始前记录完整 payload（messages、tools 等）。
 7. 超时控制：streaming 模式下对整个流设置超时，超时后关闭 stream 并抛出 `BackendTimeoutError`，由上层处理。
 8. `BackendTurnResult.thinking_text` 保留字段（用于非流式 fallback 或测试），流式模式下通常为 `None`（thinking 内容已通过 `thinking_chunk` 逐 chunk 发出）。
+9. `<think>` 标签处理：部分模型（如 DeepSeek-R1）不使用 `reasoning_content` 字段，而是在 `content` 中以 `<think>...</think>` 标签包裹思考内容。`OpenAIBackend` 在 streaming 过程中维护一个状态机，将标签前的内容作为 `agent_message_chunk` 立刻 emit，标签内的内容作为 `thinking_chunk` 逐 chunk emit，标签后恢复 `agent_message_chunk`。维护最多 8 字节的 lookahead buffer 处理跨 chunk 的标签截断；流结束时 flush 残余 buffer（未闭合的 `<think>` 按 `thinking_chunk` 处理）。`reasoning_content` 路径不受影响。
 
 ## 7. agent 模块内部数据结构
 

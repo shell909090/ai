@@ -130,17 +130,73 @@ def _accumulate_tool_call_delta(tool_calls_acc: dict[int, dict[str, str]], tc_de
             tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
 
 
+_OPEN_TAG = "<think>"
+_CLOSE_TAG = "</think>"
+
+
+class ThinkTagParser:
+    """Streaming parser that detects <think>...</think> tags and routes content."""
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._thinking = False
+
+    def feed(self, text: str) -> list[SessionUpdate]:
+        """Feed a text chunk; returns list of SessionUpdates to emit immediately."""
+        self._buf += text
+        return self._flush_safe()
+
+    def _emit_type(self) -> Literal["agent_message_chunk", "thinking_chunk"]:
+        return "thinking_chunk" if self._thinking else "agent_message_chunk"
+
+    def flush(self) -> list[SessionUpdate]:
+        """Flush remaining buffer at stream end; returns any pending SessionUpdates."""
+        if not self._buf:
+            return []
+        updates = [SessionUpdate(type=self._emit_type(), data={"text": self._buf})]
+        self._buf = ""
+        return updates
+
+    def _flush_safe(self) -> list[SessionUpdate]:
+        updates: list[SessionUpdate] = []
+        while self._buf:
+            tag = _CLOSE_TAG if self._thinking else _OPEN_TAG
+            idx = self._buf.find(tag)
+            if idx != -1:
+                # Complete tag found: emit content before it, discard tag, switch mode.
+                before = self._buf[:idx]
+                if before:
+                    updates.append(SessionUpdate(type=self._emit_type(), data={"text": before}))
+                self._buf = self._buf[idx + len(tag) :]
+                self._thinking = not self._thinking
+            else:
+                # No complete tag; retain a lookahead suffix to guard cross-chunk boundaries.
+                lookahead = len(tag) - 1
+                safe_len = len(self._buf) - lookahead
+                if safe_len <= 0:
+                    break
+                safe = self._buf[:safe_len]
+                updates.append(SessionUpdate(type=self._emit_type(), data={"text": safe}))
+                self._buf = self._buf[safe_len:]
+                break
+        return updates
+
+
 def _process_delta(
     delta: Any,
-    text_chunks: list[str],
     thinking_chunks: list[str],
     tool_calls_acc: dict[int, dict[str, str]],
-) -> list[SessionUpdate]:
-    """Collect SessionUpdate events from one streaming delta."""
+) -> tuple[str | None, list[SessionUpdate]]:
+    """Collect raw content and SessionUpdate events from one streaming delta.
+
+    Returns (raw_content, updates) where raw_content is the delta.content string
+    (if any) to be fed through ThinkTagParser by the caller, and updates contains
+    any thinking/tool events ready to emit directly.
+    """
+    raw_content: str | None = None
     updates: list[SessionUpdate] = []
     if delta.content:
-        text_chunks.append(delta.content)
-        updates.append(SessionUpdate(type="agent_message_chunk", data={"text": delta.content}))
+        raw_content = delta.content
     reasoning = getattr(delta, "reasoning_content", None)
     if reasoning:
         thinking_chunks.append(reasoning)
@@ -148,6 +204,20 @@ def _process_delta(
     if delta.tool_calls:
         for tc_delta in delta.tool_calls:
             _accumulate_tool_call_delta(tool_calls_acc, tc_delta)
+    return raw_content, updates
+
+
+def _drain_parser(
+    updates: list[SessionUpdate],
+    text_chunks: list[str],
+    thinking_chunks: list[str],
+) -> list[SessionUpdate]:
+    """Route parser output into accumulators; return same updates for yielding."""
+    for u in updates:
+        if u.type == "agent_message_chunk":
+            text_chunks.append(u.data["text"])  # type: ignore[arg-type]
+        else:
+            thinking_chunks.append(u.data["text"])  # type: ignore[arg-type]
     return updates
 
 
@@ -235,6 +305,7 @@ class OpenAIBackend:
         tool_calls_acc: dict[int, dict[str, str]] = {}
         usage: dict[str, int] | None = None
         finish_reason_raw = "stop"
+        parser = ThinkTagParser()
 
         async for chunk in stream:
             if chunk.choices:
@@ -242,10 +313,19 @@ class OpenAIBackend:
                 fr = chunk.choices[0].finish_reason
                 if fr is not None:
                     finish_reason_raw = fr
-                for update in _process_delta(delta, text_chunks, thinking_chunks, tool_calls_acc):
+                raw_content, direct_updates = _process_delta(delta, thinking_chunks, tool_calls_acc)
+                for update in direct_updates:
                     yield update
+                if raw_content:
+                    for update in _drain_parser(
+                        parser.feed(raw_content), text_chunks, thinking_chunks
+                    ):
+                        yield update
             if chunk.usage:
                 usage = _extract_chunk_usage(chunk.usage)
+
+        for update in _drain_parser(parser.flush(), text_chunks, thinking_chunks):
+            yield update
 
         elapsed = time.perf_counter() - start_time
         finish_reason: Literal["completed", "tool_call", "cancelled"] = (

@@ -347,5 +347,7 @@ async def test_openai_backend_streams_content_chunks() -> None:
     assert result.finish_reason == "completed"
     assert result.output_text == "Hello world"
     text_updates = [u for u in updates if u.type == "agent_message_chunk"]
-    assert len(text_updates) == 3
-    assert [u.data["text"] for u in text_updates] == ["Hello", " ", "world"]
+    # ThinkTagParser holds a lookahead buffer so small chunks may be merged;
+    # assert content is correct rather than exact chunk count.
+    assert len(text_updates) >= 1
+    assert "".join(str(u.data["text"]) for u in text_updates) == "Hello world"
