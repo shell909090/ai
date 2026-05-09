@@ -20,6 +20,7 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
+from ._utils import _log_streaming_request, _log_streaming_response
 from .exceptions import BackendTimeoutError, ContextOverflowError
 from .protocol import BackendToolCall, BackendTurnResult
 
@@ -282,12 +283,7 @@ class AnthropicBackend:
             messages = _chain_to_messages(session)
             tools = _tool_map_to_anthropic_tools(tool_map) if tool_map else None
 
-            logger.debug(
-                "Anthropic streaming request: model=%s messages=%s tools=%s",
-                self._model,
-                messages,
-                tools,
-            )
+            _log_streaming_request(logger, "Anthropic", self._model, messages, tools)
 
             start_time = time.perf_counter()
             stream = await self._open_stream(messages, tools)
@@ -338,15 +334,8 @@ class AnthropicBackend:
                 "tool_call" if finish_reason_raw == "tool_use" else "completed"
             )
 
-            logger.info(
-                "Anthropic streaming response: model=%s finish_reason=%s "
-                "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
-                self._model,
-                finish_reason_raw,
-                usage.get("input_tokens") if usage else None,
-                usage.get("output_tokens") if usage else None,
-                usage.get("cached_tokens") if usage else None,
-                elapsed,
+            _log_streaming_response(
+                logger, "Anthropic", self._model, finish_reason_raw, usage, elapsed
             )
 
             yield BackendTurnResult(

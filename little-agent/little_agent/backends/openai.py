@@ -20,6 +20,7 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
+from ._utils import _log_streaming_request, _log_streaming_response
 from .exceptions import BackendTimeoutError, ContextOverflowError
 from .protocol import BackendToolCall, BackendTurnResult
 
@@ -331,12 +332,7 @@ class OpenAIBackend:
             messages = _chain_to_messages(session)
             tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
 
-            logger.debug(
-                "OpenAI streaming request: model=%s messages=%s tools=%s",
-                self._model,
-                messages,
-                tools,
-            )
+            _log_streaming_request(logger, "OpenAI", self._model, messages, tools)
 
             start_time = time.perf_counter()
             stream = await self._open_stream(messages, tools)
@@ -375,15 +371,8 @@ class OpenAIBackend:
                 "tool_call" if finish_reason_raw == "tool_calls" else "completed"
             )
 
-            logger.info(
-                "OpenAI streaming response: model=%s finish_reason=%s "
-                "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
-                self._model,
-                finish_reason_raw,
-                usage.get("input_tokens") if usage else None,
-                usage.get("output_tokens") if usage else None,
-                usage.get("cached_tokens") if usage else None,
-                elapsed,
+            _log_streaming_response(
+                logger, "OpenAI", self._model, finish_reason_raw, usage, elapsed
             )
 
             yield BackendTurnResult(

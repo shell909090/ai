@@ -121,7 +121,8 @@ class SessionCore(Session):
         try:
             for _ in range(MAX_TURN_ITERATIONS):
                 if self._cancel_requested:
-                    self._freeze_tail()
+                    assert self.tail is not None
+                    self.tail.freeze()
                     return ("cancelled", partial_output)
 
                 result, _overflow_retried = await self._backend_result_with_retry(_overflow_retried)
@@ -133,7 +134,8 @@ class SessionCore(Session):
                     case "tool_call":
                         partial_output = await self._handle_tool_call(result, partial_output)
                     case "cancelled":
-                        self._freeze_tail()
+                        assert self.tail is not None
+                        self.tail.freeze()
                         return ("cancelled", partial_output)
                     case _:
                         raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
@@ -234,7 +236,7 @@ class SessionCore(Session):
             text=result.output_text,
         )
         self._append_node(assistant_node)
-        self._freeze_tail()
+        assistant_node.freeze()
         # Only send full-text chunk if backend did not stream chunks.
         # Streaming backends already yield agent_message_chunk per token.
         # For mock backends that don't stream, still send the complete text.
@@ -254,13 +256,8 @@ class SessionCore(Session):
 
     def _append_node(self, node: Node) -> None:
         if self.tail is not None:
-            if hasattr(self.tail, "frozen") and not self.tail.frozen:
-                self.tail.frozen = True
+            self.tail.freeze()
         self.tail = node
-
-    def _freeze_tail(self) -> None:
-        if self.tail is not None and hasattr(self.tail, "frozen"):
-            self.tail.frozen = True
 
     async def cancel(self) -> None:
         """Cancel the active turn and any running post-turn compress."""
@@ -274,7 +271,8 @@ class SessionCore(Session):
         """Fork into a new session sharing the frozen history."""
         if self._active_turn:
             raise RuntimeError("Cannot fork session with active turn")
-        self._freeze_tail()
+        if self.tail is not None:
+            self.tail.freeze()
         new_session = SessionCore(
             session_id=str(uuid.uuid4()),
             cwd=self.cwd,

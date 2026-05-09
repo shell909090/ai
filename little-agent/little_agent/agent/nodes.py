@@ -22,6 +22,9 @@ class Node:
         """Serialize node to dict."""
         return {"kind": self.kind, "id": self.id}
 
+    def freeze(self) -> None:
+        """Freeze this node (no-op for nodes without mutable state)."""
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
         """Deserialize node from dict."""
@@ -55,6 +58,10 @@ class AssistantResponseNode(Node):
     kind: ClassVar[str] = "assistant_response"
     text: str = ""
     frozen: bool = False
+
+    def freeze(self) -> None:
+        """Mark this node as frozen, preventing further text appends."""
+        self.frozen = True
 
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)
@@ -96,6 +103,10 @@ class ToolResultNode(Node):
     kind: ClassVar[str] = "tool_result"
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     frozen: bool = False
+
+    def freeze(self) -> None:
+        """Mark this node as frozen, preventing further result additions."""
+        self.frozen = True
 
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)

@@ -1,42 +1,103 @@
 # little-agent
 
-A minimal agent system with CLI frontend.
+A lightweight, extensible agent framework for building conversational AI applications.
+
+[中文说明](README.cn.md)
 
 ## Introduction
 
-little-agent is a lightweight, extensible agent framework designed for building conversational AI applications. It features:
+little-agent features:
 
-- **Inverted chain architecture** for session history management
-- **Protocol-based design** for easy extension of backends, frontends, and tools
-- **Async/await** pattern with asyncio for concurrent operations
-- **OpenAI backend** with function calling support
-- **CLI frontend** with interactive loop
+- **Inverted chain architecture** for efficient session history management and compression
+- **Protocol-based design** — backends, frontends, and tools are all swappable
+- **Multiple LLM backends** — OpenAI-compatible APIs and Anthropic Claude
+- **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)
+- **MCP tool support** — connect external tool servers via Model Context Protocol
+- **Permission system** — per-tool allow/deny/ask rules
+- **Memory** — persist and recall facts across sessions
+- **Auto-compression** — automatically summarize history when context window fills up
 
 ## Installation
 
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd little-agent
 
-# Install dependencies
+# Install runtime dependencies
 make install
 
-# Or install with dev dependencies
+# Install with dev dependencies
 make dev
 ```
 
 ## Usage
 
-Create a `config.yaml` file:
+### Minimal config (OpenAI)
 
 ```yaml
-backend:
-  type: openai
-  model: gpt-4
-  api_key: "sk-your-api-key"          # direct key (takes priority)
-  # api_key_env: OPENAI_API_KEY       # OR read from environment variable
-  # base_url: https://api.openai.com/v1  # optional custom endpoint
+backends:
+  primary:
+    type: openai
+    model: gpt-4o
+    api_key: "sk-your-api-key"       # or omit and set OPENAI_API_KEY env var
+
+frontend:
+  type: cli                          # cli | web | acp
+```
+
+### Anthropic backend
+
+```yaml
+backends:
+  primary:
+    type: anthropic
+    model: claude-opus-4-5
+    api_key: "sk-ant-..."            # or set ANTHROPIC_API_KEY env var
+    system: "You are a helpful assistant."   # optional system prompt
+```
+
+### Full config example
+
+```yaml
+backends:
+  primary:
+    type: openai
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY      # read key from environment variable
+    base_url: https://api.openai.com/v1   # optional; override for proxies
+    timeout: 60.0
+    max_concurrency: 1
+    context_window: 128000
+  compressor:                        # separate backend used for compression
+    type: openai
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+
+frontend:
+  type: cli                          # cli | web | acp
+
+agent:
+  R: 0.7                             # compress when token ratio exceeds this (0 < R ≤ 1)
+
+compressor:
+  keep_turns: 5                      # keep this many recent turns verbatim
+  compressed_window: 0.2             # target compressed size as fraction of context_window
+
+permissions:
+  default: allow                     # allow | deny | ask
+  rules:
+    - tool: bash
+      action: ask                    # prompt user before running bash commands
+    - tool: dangerous_tool
+      action: deny
+
+memory:
+  type: file
+  path: memory.jsonl
+  backend: primary                   # which backend to use for memory summarisation
+
+tools:
+  providers: []                      # list of MCP server configs
 
 logging:
   version: 1
@@ -53,47 +114,53 @@ logging:
     "":
       level: INFO
       handlers: [console]
-
-tools:
-  providers: []
 ```
 
-Set your OpenAI API key (if using `api_key_env`):
+### Running
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+uv run python -m little_agent.main --config config.yaml
+
+# Override log level at runtime
+uv run python -m little_agent.main --config config.yaml --loglevel DEBUG
 ```
 
-Run the CLI:
+### CLI commands
 
-```bash
-little-agent --config config.yaml
-```
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a new session |
+| `/fork` | Fork the current session |
+| `/save <path>` | Save session to file |
+| `/load <path>` | Load session from file |
+| `/list-tools` | List available tools |
+| `/cancel` | Cancel the running turn |
+| `/quit` or `/exit` | Exit |
 
 ## Development
 
 ```bash
-# Format code
-make fmt
+make fmt          # format with ruff
+make lint         # ruff check + mypy --strict
+make build        # compile-check all .py files
+make unittest     # run tests
+make test         # tests + coverage report
 
-# Run linter
-make lint
-
-# Run tests
-make test
-
-# Run all checks
-make fmt lint build test
+make fmt lint build test   # run everything
 ```
 
 ## Architecture
 
-The project follows a protocol-based architecture:
-
-- `little_agent/agent/` - Core agent and session logic
-- `little_agent/backends/` - LLM backend implementations
-- `little_agent/frontends/` - User interface implementations
-- `little_agent/tools/` - Tool providers and management
+```
+little_agent/
+  agent/          # AgentCore, SessionCore, node chain, compression
+  backends/       # OpenAI and Anthropic streaming backends
+  frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
+  tools/          # BashTool, TaskTool, MCP tool manager
+  permissions.py  # per-tool permission rules
+  memory.py       # file-based session memory
+  main.py         # config loading and entry point
+```
 
 ## Author
 

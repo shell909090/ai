@@ -1,42 +1,103 @@
 # little-agent
 
-一个极简的 Agent 系统，带有 CLI 前端。
+轻量级、可扩展的 Agent 框架，用于构建对话式 AI 应用。
+
+[English](README.md)
 
 ## 简介
 
-little-agent 是一个轻量级、可扩展的 Agent 框架，用于构建对话式 AI 应用。其特性包括：
+little-agent 的主要特性：
 
-- **倒链架构** 管理会话历史
-- **基于协议的设计** 便于扩展后端、前端和工具
-- **Async/await** 异步模式
-- **OpenAI 后端** 支持函数调用
-- **CLI 前端** 交互式循环
+- **倒链架构** — 高效管理会话历史，支持自动压缩
+- **基于协议的设计** — 后端、前端、工具均可独立替换
+- **多 LLM 后端** — 支持 OpenAI 兼容 API 和 Anthropic Claude
+- **多前端** — 交互式 CLI、WebSocket（ACP）、HTTP/WebSocket（Web）
+- **MCP 工具支持** — 通过 Model Context Protocol 连接外部工具服务器
+- **权限系统** — 对每个工具配置 allow/deny/ask 策略
+- **记忆** — 跨会话持久化并召回知识
+- **自动压缩** — 上下文窗口接近上限时自动总结历史
 
 ## 安装
 
 ```bash
-# 克隆仓库
 git clone <repository-url>
 cd little-agent
 
-# 安装依赖
+# 安装运行时依赖
 make install
 
-# 或安装开发依赖
+# 安装开发依赖
 make dev
 ```
 
 ## 使用
 
-创建 `config.yaml` 文件：
+### 最简配置（OpenAI）
 
 ```yaml
-backend:
-  type: openai
-  model: gpt-4
-  api_key: "sk-your-api-key"          # 直接填写密钥（优先级更高）
-  # api_key_env: OPENAI_API_KEY       # 或从环境变量读取
-  # base_url: https://api.openai.com/v1  # 可选，自定义 API 端点
+backends:
+  primary:
+    type: openai
+    model: gpt-4o
+    api_key: "sk-your-api-key"       # 或省略，改设 OPENAI_API_KEY 环境变量
+
+frontend:
+  type: cli                          # cli | web | acp
+```
+
+### Anthropic 后端
+
+```yaml
+backends:
+  primary:
+    type: anthropic
+    model: claude-opus-4-5
+    api_key: "sk-ant-..."            # 或设置 ANTHROPIC_API_KEY 环境变量
+    system: "You are a helpful assistant."   # 可选系统提示词
+```
+
+### 完整配置示例
+
+```yaml
+backends:
+  primary:
+    type: openai
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY      # 从环境变量读取密钥
+    base_url: https://api.openai.com/v1   # 可选，代理时覆盖
+    timeout: 60.0
+    max_concurrency: 1
+    context_window: 128000
+  compressor:                        # 压缩专用后端（可选）
+    type: openai
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+
+frontend:
+  type: cli                          # cli | web | acp
+
+agent:
+  R: 0.7                             # token 占用率超过该值时触发压缩（0 < R ≤ 1）
+
+compressor:
+  keep_turns: 5                      # 保留最近若干轮不压缩
+  compressed_window: 0.2             # 压缩目标大小占 context_window 的比例
+
+permissions:
+  default: allow                     # allow | deny | ask
+  rules:
+    - tool: bash
+      action: ask                    # 执行 bash 前询问用户
+    - tool: dangerous_tool
+      action: deny
+
+memory:
+  type: file
+  path: memory.jsonl
+  backend: primary                   # 用于记忆总结的后端
+
+tools:
+  providers: []                      # MCP 服务器配置列表
 
 logging:
   version: 1
@@ -53,47 +114,53 @@ logging:
     "":
       level: INFO
       handlers: [console]
-
-tools:
-  providers: []
 ```
 
-设置 OpenAI API 密钥（如果使用 `api_key_env`）：
+### 运行
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+uv run python -m little_agent.main --config config.yaml
+
+# 临时覆盖日志级别
+uv run python -m little_agent.main --config config.yaml --loglevel DEBUG
 ```
 
-运行 CLI：
+### CLI 命令
 
-```bash
-little-agent --config config.yaml
-```
+| 命令 | 说明 |
+|------|------|
+| `/new` | 开始新会话 |
+| `/fork` | 分叉当前会话 |
+| `/save <路径>` | 保存会话到文件 |
+| `/load <路径>` | 从文件加载会话 |
+| `/list-tools` | 列出可用工具 |
+| `/cancel` | 取消正在运行的轮次 |
+| `/quit` 或 `/exit` | 退出 |
 
 ## 开发
 
 ```bash
-# 格式化代码
-make fmt
+make fmt          # 使用 ruff 格式化
+make lint         # ruff 检查 + mypy --strict
+make build        # 编译检查所有 .py 文件
+make unittest     # 运行测试
+make test         # 测试 + 覆盖率报告
 
-# 运行静态检查
-make lint
-
-# 运行测试
-make test
-
-# 运行全部检查
-make fmt lint build test
+make fmt lint build test   # 一键全部执行
 ```
 
 ## 架构
 
-项目采用基于协议的架构：
-
-- `little_agent/agent/` - 核心 Agent 和会话逻辑
-- `little_agent/backends/` - LLM 后端实现
-- `little_agent/frontends/` - 用户界面实现
-- `little_agent/tools/` - 工具提供者和管理
+```
+little_agent/
+  agent/          # AgentCore、SessionCore、节点链、压缩
+  backends/       # OpenAI 和 Anthropic 流式后端
+  frontends/      # CLI、Web（HTTP+WebSocket）、ACP（WebSocket）
+  tools/          # BashTool、TaskTool、MCP 工具管理
+  permissions.py  # 工具权限规则
+  memory.py       # 基于文件的会话记忆
+  main.py         # 配置加载与入口
+```
 
 ## 作者
 
