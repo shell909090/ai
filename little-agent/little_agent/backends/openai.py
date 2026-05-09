@@ -20,7 +20,7 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from .exceptions import BackendTimeoutError
+from .exceptions import BackendTimeoutError, ContextOverflowError
 from .protocol import BackendToolCall, BackendTurnResult
 
 if TYPE_CHECKING:
@@ -246,6 +246,21 @@ def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[Backend
     ]
 
 
+_CONTEXT_OVERFLOW_SUBSTRINGS = (
+    "maximum context length",
+    "context window",
+    "context length",
+    "context_length_exceeded",
+)
+
+
+def _is_context_overflow(e: Any) -> bool:
+    if getattr(e, "code", None) == "context_length_exceeded":
+        return True
+    msg = str(e).lower()
+    return any(sub in msg for sub in _CONTEXT_OVERFLOW_SUBSTRINGS)
+
+
 class OpenAIBackend:
     """OpenAI backend implementation."""
 
@@ -255,6 +270,8 @@ class OpenAIBackend:
         api_key: str,
         base_url: str | None = None,
         timeout: float = 60.0,
+        max_concurrency: int = 1,
+        context_window: int = 128000,
     ) -> None:
         import openai
 
@@ -264,29 +281,22 @@ class OpenAIBackend:
             self._client = openai.AsyncOpenAI(api_key=api_key)
         self._model = model
         self._timeout = timeout
+        self._sem = asyncio.Semaphore(max_concurrency)
+        self.context_window = context_window
 
     def generate(self, session: SessionCore) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
         """Return async iterator streaming OpenAI response."""
         return self._generate_stream(session)
 
-    async def _generate_stream(
-        self, session: SessionCore
-    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
-        """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""
-        tool_map = session.get_turn_tool_map()
-        messages = _chain_to_messages(session)
-        tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
+    async def _open_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> Any:
+        import openai
 
-        logger.debug(
-            "OpenAI streaming request: model=%s messages=%s tools=%s",
-            self._model,
-            messages,
-            tools,
-        )
-
-        start_time = time.perf_counter()
         try:
-            stream = await asyncio.wait_for(
+            return await asyncio.wait_for(
                 self._client.chat.completions.create(  # type: ignore[call-overload]
                     model=self._model,
                     messages=messages,
@@ -299,54 +309,79 @@ class OpenAIBackend:
             )
         except TimeoutError as e:
             raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
+        except openai.BadRequestError as e:
+            if _is_context_overflow(e):
+                raise ContextOverflowError(str(e)) from e
+            raise
 
-        text_chunks: list[str] = []
-        thinking_chunks: list[str] = []
-        tool_calls_acc: dict[int, dict[str, str]] = {}
-        usage: dict[str, int] | None = None
-        finish_reason_raw = "stop"
-        parser = ThinkTagParser()
+    async def _generate_stream(
+        self, session: SessionCore
+    ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
+        """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""
+        async with self._sem:
+            tool_map = session.get_turn_tool_map()
+            messages = _chain_to_messages(session)
+            tools = _tool_map_to_openai_functions(tool_map) if tool_map else None
 
-        async for chunk in stream:
-            if chunk.choices:
-                delta = chunk.choices[0].delta
-                fr = chunk.choices[0].finish_reason
-                if fr is not None:
-                    finish_reason_raw = fr
-                raw_content, direct_updates = _process_delta(delta, thinking_chunks, tool_calls_acc)
-                for update in direct_updates:
-                    yield update
-                if raw_content:
-                    for update in _drain_parser(
-                        parser.feed(raw_content), text_chunks, thinking_chunks
-                    ):
+            logger.debug(
+                "OpenAI streaming request: model=%s messages=%s tools=%s",
+                self._model,
+                messages,
+                tools,
+            )
+
+            start_time = time.perf_counter()
+            stream = await self._open_stream(messages, tools)
+
+            text_chunks: list[str] = []
+            thinking_chunks: list[str] = []
+            tool_calls_acc: dict[int, dict[str, str]] = {}
+            usage: dict[str, int] | None = None
+            finish_reason_raw = "stop"
+            parser = ThinkTagParser()
+
+            async for chunk in stream:
+                if chunk.choices:
+                    delta = chunk.choices[0].delta
+                    fr = chunk.choices[0].finish_reason
+                    if fr is not None:
+                        finish_reason_raw = fr
+                    raw_content, direct_updates = _process_delta(
+                        delta, thinking_chunks, tool_calls_acc
+                    )
+                    for update in direct_updates:
                         yield update
-            if chunk.usage:
-                usage = _extract_chunk_usage(chunk.usage)
+                    if raw_content:
+                        for update in _drain_parser(
+                            parser.feed(raw_content), text_chunks, thinking_chunks
+                        ):
+                            yield update
+                if chunk.usage:
+                    usage = _extract_chunk_usage(chunk.usage)
 
-        for update in _drain_parser(parser.flush(), text_chunks, thinking_chunks):
-            yield update
+            for update in _drain_parser(parser.flush(), text_chunks, thinking_chunks):
+                yield update
 
-        elapsed = time.perf_counter() - start_time
-        finish_reason: Literal["completed", "tool_call", "cancelled"] = (
-            "tool_call" if finish_reason_raw == "tool_calls" else "completed"
-        )
+            elapsed = time.perf_counter() - start_time
+            finish_reason: Literal["completed", "tool_call", "cancelled"] = (
+                "tool_call" if finish_reason_raw == "tool_calls" else "completed"
+            )
 
-        logger.info(
-            "OpenAI streaming response: model=%s finish_reason=%s "
-            "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
-            self._model,
-            finish_reason_raw,
-            usage.get("input_tokens") if usage else None,
-            usage.get("output_tokens") if usage else None,
-            usage.get("cached_tokens") if usage else None,
-            elapsed,
-        )
+            logger.info(
+                "OpenAI streaming response: model=%s finish_reason=%s "
+                "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
+                self._model,
+                finish_reason_raw,
+                usage.get("input_tokens") if usage else None,
+                usage.get("output_tokens") if usage else None,
+                usage.get("cached_tokens") if usage else None,
+                elapsed,
+            )
 
-        yield BackendTurnResult(
-            output_text="".join(text_chunks),
-            tool_calls=_build_tool_calls(tool_calls_acc),
-            finish_reason=finish_reason,
-            usage=usage,
-            thinking_text="".join(thinking_chunks) or None,
-        )
+            yield BackendTurnResult(
+                output_text="".join(text_chunks),
+                tool_calls=_build_tool_calls(tool_calls_acc),
+                finish_reason=finish_reason,
+                usage=usage,
+                thinking_text="".join(thinking_chunks) or None,
+            )

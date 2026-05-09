@@ -172,7 +172,12 @@ def test_main_api_key_from_config() -> None:
                         main()
 
                     mock_backend_cls.assert_called_once_with(
-                        model="gpt-4", api_key="direct-key", base_url=None, timeout=60.0
+                        model="gpt-4",
+                        api_key="direct-key",
+                        base_url=None,
+                        timeout=60.0,
+                        max_concurrency=1,
+                        context_window=128000,
                     )
 
 
@@ -197,7 +202,12 @@ def test_main_api_key_priority_over_env() -> None:
                             main()
 
                         mock_backend_cls.assert_called_once_with(
-                            model="gpt-4", api_key="direct-key", base_url=None, timeout=60.0
+                            model="gpt-4",
+                            api_key="direct-key",
+                            base_url=None,
+                            timeout=60.0,
+                            max_concurrency=1,
+                            context_window=128000,
                         )
 
 
@@ -225,6 +235,8 @@ def test_main_base_url_passthrough() -> None:
                         api_key="test-key",
                         base_url="http://localhost:8080/v1",
                         timeout=60.0,
+                        max_concurrency=1,
+                        context_window=128000,
                     )
 
 
@@ -233,7 +245,43 @@ def test_build_backend_openai() -> None:
     with patch("little_agent.main.OpenAIBackend") as mock_cls:
         mock_cls.return_value = MagicMock()
         _build_backend({"type": "openai", "model": "gpt-4", "api_key": "k"}, "primary")
-        mock_cls.assert_called_once_with(model="gpt-4", api_key="k", base_url=None, timeout=60.0)
+        mock_cls.assert_called_once_with(
+            model="gpt-4",
+            api_key="k",
+            base_url=None,
+            timeout=60.0,
+            max_concurrency=1,
+            context_window=128000,
+        )
+
+
+def test_build_backend_default_max_concurrency_and_context_window() -> None:
+    """Default cfg yields max_concurrency=1 and context_window=128000."""
+    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        _build_backend({"type": "openai", "model": "gpt-4", "api_key": "k"}, "primary")
+        kwargs = mock_cls.call_args.kwargs
+        assert kwargs["max_concurrency"] == 1
+        assert kwargs["context_window"] == 128000
+
+
+def test_build_backend_explicit_max_concurrency_and_context_window() -> None:
+    """Explicit max_concurrency and context_window in cfg are passed through."""
+    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        _build_backend(
+            {
+                "type": "openai",
+                "model": "gpt-4",
+                "api_key": "k",
+                "max_concurrency": 4,
+                "context_window": 64000,
+            },
+            "primary",
+        )
+        kwargs = mock_cls.call_args.kwargs
+        assert kwargs["max_concurrency"] == 4
+        assert kwargs["context_window"] == 64000
 
 
 def test_build_backend_unsupported_type_raises() -> None:

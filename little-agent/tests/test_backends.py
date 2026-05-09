@@ -1,10 +1,13 @@
 """Tests for backend request conversion."""
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+import openai
 import pytest
 
 from little_agent.agent.core import AgentCore
@@ -14,6 +17,7 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
+from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.openai import (
     OpenAIBackend,
     _chain_to_messages,
@@ -351,3 +355,206 @@ async def test_openai_backend_streams_content_chunks() -> None:
     # assert content is correct rather than exact chunk count.
     assert len(text_updates) >= 1
     assert "".join(str(u.data["text"]) for u in text_updates) == "Hello world"
+
+
+def _make_bad_request_error(message: str, code: str | None = None) -> openai.BadRequestError:
+    """Build an openai.BadRequestError with optional `code` attribute."""
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    err = openai.BadRequestError(message=message, response=response, body=None)
+    if code is not None:
+        err.code = code
+    return err
+
+
+def _make_finish_chunk() -> Any:
+    """Build a minimal finish-reason chunk that closes the stream."""
+    chunk = MagicMock()
+    chunk.choices = [MagicMock()]
+    chunk.choices[0].delta.content = None
+    chunk.choices[0].delta.tool_calls = None
+    chunk.choices[0].delta.reasoning_content = None
+    chunk.choices[0].finish_reason = "stop"
+    chunk.usage = None
+    return chunk
+
+
+def test_openai_backend_default_context_window() -> None:
+    """Default context_window is 128000."""
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+    assert backend.context_window == 128000
+
+
+def test_openai_backend_custom_context_window() -> None:
+    """Custom context_window is exposed as attribute."""
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", context_window=64000)
+    assert backend.context_window == 64000
+
+
+def test_openai_backend_default_max_concurrency() -> None:
+    """Default max_concurrency=1 constructs without error."""
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+    assert backend is not None
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_semaphore_serializes_with_max_concurrency_1() -> None:
+    """With max_concurrency=1, two concurrent generate() calls run serially."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=1)
+
+    sleep_seconds = 0.05
+
+    async def slow_create(**_: object) -> Any:
+        await asyncio.sleep(sleep_seconds)
+        return _FakeStream([_make_finish_chunk()])
+
+    backend._client.chat.completions.create = slow_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session1 = await agent.new()
+    session2 = await agent.new()
+
+    async def run(session: Any) -> float:
+        await _collect(backend.generate(session))
+        return time.perf_counter()
+
+    start = time.perf_counter()
+    end1, end2 = await asyncio.gather(run(session1), run(session2))
+    diff = abs(end2 - end1)
+    total = max(end1, end2) - start
+    assert diff >= 0.04, f"expected serialized completions, diff={diff}"
+    assert total >= sleep_seconds * 2 - 0.01
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_semaphore_allows_parallel_with_max_concurrency_2() -> None:
+    """With max_concurrency=2, two concurrent generate() calls overlap."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=2)
+
+    sleep_seconds = 0.05
+
+    async def slow_create(**_: object) -> Any:
+        await asyncio.sleep(sleep_seconds)
+        return _FakeStream([_make_finish_chunk()])
+
+    backend._client.chat.completions.create = slow_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session1 = await agent.new()
+    session2 = await agent.new()
+
+    start = time.perf_counter()
+    await asyncio.gather(
+        _collect(backend.generate(session1)),
+        _collect(backend.generate(session2)),
+    )
+    elapsed = time.perf_counter() - start
+    assert elapsed < sleep_seconds * 1.8, f"expected parallel execution, elapsed={elapsed}"
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_overflow_error_by_code() -> None:
+    """BadRequestError with code='context_length_exceeded' maps to ContextOverflowError."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    err = _make_bad_request_error("some msg", code="context_length_exceeded")
+
+    async def raising_create(**_: object) -> Any:
+        raise err
+
+    backend._client.chat.completions.create = raising_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    with pytest.raises(ContextOverflowError):
+        async for _ in backend.generate(session):  # type: ignore[arg-type]
+            pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "This model's maximum context length is 4096 tokens.",
+        "Input exceeds the context window allowed.",
+        "Request rejected: context length too large.",
+    ],
+)
+async def test_openai_backend_overflow_error_by_message_pattern(message: str) -> None:
+    """BadRequestError with overflow-pattern message maps to ContextOverflowError."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    err = _make_bad_request_error(message)
+
+    async def raising_create(**_: object) -> Any:
+        raise err
+
+    backend._client.chat.completions.create = raising_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    with pytest.raises(ContextOverflowError):
+        async for _ in backend.generate(session):  # type: ignore[arg-type]
+            pass
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_non_overflow_bad_request_reraises() -> None:
+    """Non-overflow BadRequestError propagates unchanged."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    err = _make_bad_request_error("invalid api key")
+
+    async def raising_create(**_: object) -> Any:
+        raise err
+
+    backend._client.chat.completions.create = raising_create  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    with pytest.raises(openai.BadRequestError):
+        async for _ in backend.generate(session):  # type: ignore[arg-type]
+            pass
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_semaphore_releases_on_exception() -> None:
+    """Semaphore is released after exception so subsequent generate() works."""
+    client = MockClient()
+    tools = MockToolProvider()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=1)
+
+    overflow_err = _make_bad_request_error("maximum context length exceeded")
+    call_count = {"n": 0}
+
+    async def create_then_succeed(**_: object) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise overflow_err
+        return _FakeStream([_make_finish_chunk()])
+
+    backend._client.chat.completions.create = create_then_succeed  # type: ignore[assignment]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session1 = await agent.new()
+    session2 = await agent.new()
+
+    with pytest.raises(ContextOverflowError):
+        async for _ in backend.generate(session1):  # type: ignore[arg-type]
+            pass
+
+    result, _ = await asyncio.wait_for(_collect(backend.generate(session2)), timeout=1.0)  # type: ignore[arg-type]
+    assert result.finish_reason == "completed"

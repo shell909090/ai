@@ -122,11 +122,16 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
     timeout_raw = cfg.get("timeout", 60.0)
     timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 60.0
 
+    max_concurrency = int(cfg.get("max_concurrency", 1))
+    context_window = int(cfg.get("context_window", 128000))
+
     return OpenAIBackend(
         model=str(model),
         api_key=api_key,
         base_url=cfg.get("base_url"),
         timeout=timeout,
+        max_concurrency=max_concurrency,
+        context_window=context_window,
     )
 
 
