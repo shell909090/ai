@@ -115,19 +115,46 @@ def test_update_thinking_chunk(client: CliClient, session: _MockSession) -> None
 
 
 def test_update_tool_call(client: CliClient, session: _MockSession) -> None:
-    """update() prints tool calls."""
+    """update() prints tool calls in multi-line k: v format."""
     with patch("builtins.print") as mock_print:
         asyncio.run(
             client.update(
                 session,
                 SessionUpdate(
                     type="tool_call",
-                    data={"calls": {"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}}},
+                    data={
+                        "calls": {"c1": {"tool_name": "bash", "arguments": {"command": "ls -la"}}}
+                    },
                 ),
             )
         )
     calls = [c[0][0] for c in mock_print.call_args_list]
     assert any("ToolCall" in c for c in calls)
+    assert any(c == "command: ls -la" for c in calls)
+
+
+def test_update_tool_call_no_json_escaping(client: CliClient, session: _MockSession) -> None:
+    """Tool call arguments with quotes are printed without JSON escaping."""
+    with patch("builtins.print") as mock_print:
+        asyncio.run(
+            client.update(
+                session,
+                SessionUpdate(
+                    type="tool_call",
+                    data={
+                        "calls": {
+                            "c1": {
+                                "tool_name": "bash",
+                                "arguments": {"command": 'find . -name "*.py"'},
+                            }
+                        }
+                    },
+                ),
+            )
+        )
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert any('command: find . -name "*.py"' == c for c in calls)
+    assert not any('\\"' in c for c in calls)
 
 
 def test_update_tool_call_update(client: CliClient, session: _MockSession) -> None:

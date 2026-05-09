@@ -78,13 +78,19 @@ class CliClient(Client):
         """Print a tool call with truncated arguments."""
         tool_name = call_data.get("tool_name", "")
         arguments = call_data.get("arguments", {})
-        args_text = json.dumps(arguments, indent=2, ensure_ascii=False)
-        lines = args_text.splitlines()
-        if len(lines) > 3:
-            truncated = "\n".join(lines[:3])
-            args_text = f"{truncated}\n...{len(lines) - 3} lines..."
+        kv_lines: list[str] = []
+        for k, v in arguments.items():
+            kv_lines.append(
+                f"{k}: {v}" if isinstance(v, str) else f"{k}: {json.dumps(v, ensure_ascii=False)}"
+            )
+        lines = "\n".join(kv_lines).splitlines()
+        if len(lines) > 5:
+            args_text = "\n".join(lines[:5]) + f"\n...{len(lines) - 5} lines..."
+        else:
+            args_text = "\n".join(lines)
         print(f"[ToolCall] {call_id}: {tool_name}")
-        print(args_text)
+        if args_text:
+            print(args_text)
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Handle session update with buffering for consecutive same-type chunks."""

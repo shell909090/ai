@@ -21,6 +21,7 @@ from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.openai import (
     OpenAIBackend,
     _chain_to_messages,
+    _format_tool_result,
     _tool_map_to_openai_functions,
 )
 from little_agent.backends.protocol import BackendTurnResult
@@ -105,6 +106,21 @@ def test_chain_to_messages_with_tool_result() -> None:
     assert messages[0]["role"] == "user"
     assert messages[1]["role"] == "assistant"
     assert messages[2]["role"] == "tool"
+    assert messages[2]["content"] == "status: completed\ncontent: hi"
+
+
+def test_format_tool_result_plain_string() -> None:
+    """String values are written as-is without JSON escaping."""
+    result = {"status": "completed", "content": "line1\nline2\npath: /foo/bar"}
+    text = _format_tool_result(result)
+    assert text == "status: completed\ncontent: line1\nline2\npath: /foo/bar"
+
+
+def test_format_tool_result_non_string_value() -> None:
+    """Non-string values fall back to json.dumps."""
+    result = {"status": "completed", "content": {"key": "val"}}
+    text = _format_tool_result(result)
+    assert text == 'status: completed\ncontent: {"key": "val"}'
 
 
 def test_chain_to_messages_parallel_tool_calls() -> None:

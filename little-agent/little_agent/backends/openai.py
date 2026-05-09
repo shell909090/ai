@@ -59,6 +59,17 @@ def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
     return functions
 
 
+def _format_tool_result(result: dict[str, Any]) -> str:
+    """Format tool result dict as multi-line k: v text."""
+    lines = []
+    for k, v in result.items():
+        if isinstance(v, str):
+            lines.append(f"{k}: {v}")
+        else:
+            lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+    return "\n".join(lines)
+
+
 def _node_to_message(n: Node) -> list[dict[str, Any]]:
     """Convert a single node to one or more OpenAI messages."""
     if isinstance(n, UserPromptNode):
@@ -84,7 +95,7 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
             {
                 "role": "tool",
                 "tool_call_id": call_id,
-                "content": json.dumps(result),
+                "content": _format_tool_result(result),
             }
             for call_id, result in n.results.items()
         ]

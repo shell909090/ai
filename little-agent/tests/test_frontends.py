@@ -44,12 +44,12 @@ async def test_cli_update_tool_call() -> None:
         await client.update(None, update)  # type: ignore[arg-type]
     mock_print.assert_any_call("[ToolCall] c1: echo")
     printed = [call.args[0] for call in mock_print.call_args_list]
-    assert '  "text": "hello"' in printed[1]
+    assert printed[1] == "text: hello"
 
 
 @pytest.mark.asyncio
 async def test_cli_update_tool_call_truncated() -> None:
-    """Test CliClient.update truncates long tool_call arguments."""
+    """Test CliClient.update truncates long tool_call arguments at 5 lines."""
     client = CliClient()
     from little_agent.types import JSONValue
 
@@ -59,6 +59,7 @@ async def test_cli_update_tool_call_truncated() -> None:
         "line3": "c",
         "line4": "d",
         "line5": "e",
+        "line6": "f",
     }
     update = SessionUpdate(
         type="tool_call",
@@ -69,7 +70,7 @@ async def test_cli_update_tool_call_truncated() -> None:
     mock_print.assert_any_call("[ToolCall] c1: echo")
     printed = [call.args[0] for call in mock_print.call_args_list]
     args_text = printed[1]
-    assert "...4 lines..." in args_text
+    assert "...1 lines..." in args_text
 
 
 @pytest.mark.asyncio
