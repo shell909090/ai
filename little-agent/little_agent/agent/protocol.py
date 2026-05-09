@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from little_agent.types import ContentBlock, JSONValue, PromptReturn
 
@@ -12,6 +12,18 @@ if TYPE_CHECKING:
     from little_agent.tools.protocol import ToolRegistry
 
     from .nodes import Node
+
+
+@runtime_checkable
+class PermissionChecker(Protocol):
+    """Protocol for permission checkers in the Chain of Responsibility."""
+
+    async def request_permission(
+        self,
+        session: Session,
+        kind: str,
+        payload: dict[str, JSONValue],
+    ) -> bool: ...
 
 
 class Compressor(Protocol):

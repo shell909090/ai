@@ -192,14 +192,14 @@ def _load_compressor(
     )
 
 
-def _load_permissions(config: dict[str, Any]) -> Any:
-    """Load permission manager from config if present."""
+def _load_permissions(config: dict[str, Any], client: Any) -> Any:
+    """Build permission chain from config list, with client as terminal."""
     permissions_cfg = config.get("permissions")
-    if isinstance(permissions_cfg, dict):
-        from little_agent.agent.permissions import PermissionManager
+    if isinstance(permissions_cfg, list):
+        from little_agent.agent.permissions import build_permission_chain
 
-        return PermissionManager.from_config(permissions_cfg)
-    return None
+        return build_permission_chain(permissions_cfg, client)
+    return client
 
 
 def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str, Any]) -> Any:
@@ -238,7 +238,6 @@ def main() -> None:
     tools = _load_tools(config)
     backend, backends_config = _load_backend(config)
     compressor = _load_compressor(config, backend, backends_config)
-    permissions = _load_permissions(config)
     memory = _load_memory(config, backend, backends_config)
 
     frontend_type = config.get("frontend", {}).get("type", "cli")
@@ -249,6 +248,8 @@ def main() -> None:
         client = AcpClient()
     else:
         client = CliClient()
+
+    permissions = _load_permissions(config, client)
 
     agent_cfg = config.get("agent") or {}
     compress_ratio = float(agent_cfg.get("R", 0.5))

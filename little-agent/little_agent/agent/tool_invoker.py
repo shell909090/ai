@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.types import JSONValue, SessionUpdate
@@ -75,41 +75,6 @@ class ToolInvoker:
         self._session._append_node(node)
         return node
 
-    def _check(
-        self,
-        tc: BackendToolCall,
-        allowed_names: set[str] | None,
-    ) -> tuple[Literal["allow", "deny", "ask"], str | None]:
-        """Check if a tool call is allowed; return (action, error_msg)."""
-        if allowed_names is not None and tc.tool_name not in allowed_names:
-            return "deny", f"Tool not in allowed list: {tc.tool_name}"
-
-        if self._session.agent.permissions is not None:
-            return self._session.agent.permissions.check(tc.tool_name), None
-        return "ask", None
-
-    async def _ask_permissions(
-        self,
-        needs_permission: list[BackendToolCall],
-        tool_result_node: ToolResultNode,
-    ) -> list[BackendToolCall]:
-        """Request permission for 'ask' calls; return approved ones."""
-        approved: list[BackendToolCall] = []
-        for tc in needs_permission:
-            granted = await self._session.agent.client.request_permission(
-                self._session,
-                tc.tool_name,
-                {"arguments": tc.arguments},
-            )
-            if granted:
-                approved.append(tc)
-            else:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": "Permission denied",
-                }
-        return approved
-
     async def _invoke_tools(
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
@@ -123,22 +88,23 @@ class ToolInvoker:
         )
 
         allowed_calls: list[BackendToolCall] = []
-        needs_permission: list[BackendToolCall] = []
         for tc in result.tool_calls:
-            action, error_msg = self._check(tc, allowed_names)
-            if action == "deny":
+            if allowed_names is not None and tc.tool_name not in allowed_names:
                 tool_result_node.results[tc.call_id] = {
                     "status": "failed",
-                    "content": error_msg or "Permission denied",
+                    "content": f"Tool not in allowed list: {tc.tool_name}",
                 }
                 continue
-            if action == "ask":
-                needs_permission.append(tc)
-                continue
-            allowed_calls.append(tc)
-
-        approved = await self._ask_permissions(needs_permission, tool_result_node)
-        allowed_calls.extend(approved)
+            granted = await self._session.agent.permissions.request_permission(
+                self._session, tc.tool_name, {"arguments": tc.arguments}
+            )
+            if granted:
+                allowed_calls.append(tc)
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": "Permission denied",
+                }
 
         token = current_session.set(self._session)
         try:

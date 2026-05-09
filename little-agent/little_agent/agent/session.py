@@ -162,9 +162,7 @@ class SessionCore(Session):
         metric: str
         ratio: float
         usage = last_result.usage if last_result is not None else None
-        total_tokens = (
-            usage.get("input_tokens", 0) + usage.get("output_tokens", 0) if usage else 0
-        )
+        total_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0) if usage else 0
         if total_tokens > 0:
             ratio = total_tokens / cw
             metric = f"tokens={total_tokens}"

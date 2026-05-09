@@ -13,7 +13,7 @@ little-agent 的主要特性：
 - **多 LLM 后端** — 支持 OpenAI 兼容 API 和 Anthropic Claude
 - **多前端** — 交互式 CLI、WebSocket（ACP）、HTTP/WebSocket（Web）
 - **MCP 工具支持** — 通过 Model Context Protocol 连接外部工具服务器
-- **权限系统** — 对每个工具配置 allow/deny/ask 策略
+- **权限系统** — 责任链模式：对每个工具配置 allow/deny 策略，无匹配时自动询问用户
 - **记忆** — 跨会话持久化并召回知识
 - **自动压缩** — 上下文窗口接近上限时自动总结历史
 
@@ -83,13 +83,21 @@ compressor:
   keep_turns: 5                      # 保留最近若干轮不压缩
   compressed_window: 0.2             # 压缩目标大小占 context_window 的比例
 
-permissions:
-  default: allow                     # allow | deny | ask
-  rules:
-    - tool: bash
-      action: ask                    # 执行 bash 前询问用户
-    - tool: dangerous_tool
-      action: deny
+permissions:                          # 检查器列表，从上到下依次执行
+  - type: blackwhitelist             # 黑名单优先于白名单；无匹配则询问用户
+    blacklist:
+      - "dangerous_tool"             # 始终拒绝
+    whitelist:
+      - "read_file"                  # 始终放行，不询问
+      - "list_dir"
+  # 未匹配的工具转交用户决定（运行时弹出提示）
+  #
+  # 放行所有工具（适合自动化测试）：
+  # permissions:
+  #   - type: yesman
+  #
+  # 每次均询问用户（省略 permissions 时的默认行为）：
+  # permissions: []   # 或直接不写该字段
 
 memory:
   type: file
@@ -153,11 +161,10 @@ make fmt lint build test   # 一键全部执行
 
 ```
 little_agent/
-  agent/          # AgentCore、SessionCore、节点链、压缩
+  agent/          # AgentCore、SessionCore、节点链、压缩、权限系统
   backends/       # OpenAI 和 Anthropic 流式后端
   frontends/      # CLI、Web（HTTP+WebSocket）、ACP（WebSocket）
   tools/          # BashTool、TaskTool、MCP 工具管理
-  permissions.py  # 工具权限规则
   memory.py       # 基于文件的会话记忆
   main.py         # 配置加载与入口
 ```

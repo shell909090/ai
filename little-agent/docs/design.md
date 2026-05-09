@@ -277,21 +277,66 @@ turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之
 
 ### 2.7 Permissions
 
-权限管理为可选注入子系统：
+权限系统采用 **Chain of Responsibility** 模式。
+
+#### 2.7.1 PermissionChecker 接口
 
 ```python
-class PermissionManager:
-    def check(self, tool_name: str) -> Literal["allow", "deny", "ask"]: ...
+class PermissionChecker(Protocol):
+    async def request_permission(
+        self,
+        session: Session,
+        kind: str,
+        payload: dict[str, JSONValue],
+    ) -> bool: ...
 ```
 
-规则：
+`Client` 接口包含完全相同的方法签名，天然满足 `PermissionChecker`，作为 chain 末端（向用户询问）。
 
-1. 由启动脚本按配置构造，在 `Agent.__init__` 注入。
-2. 注入时每个 tool 调用前检查权限规则。
-3. `"allow"`：直接执行。
-4. `"deny"`：写入 `ToolResultNode.results[call_id] = {status: "failed", content: "Permission denied"}`，不执行。
-5. `"ask"`：通过 `Client.request_permission()` 询问用户，用户拒绝同 `deny`。
-6. 未注入：所有 tool 视同 `"allow"`。
+#### 2.7.2 Chain 构建
+
+`Agent.permissions: PermissionChecker` 始终存在（非 Optional）。未配置时默认值为 `client`，即所有 tool 调用直接询问用户。
+
+chain 从配置 list 尾部往头部构建，请求从头部向尾部流转，第一个能决策的 checker 截断 chain：
+
+```
+checker[0] → checker[1] → ... → client
+```
+
+list 为空 → 全部流转到 `client`，每次询问用户。
+
+#### 2.7.3 内置 Checker 类型
+
+**YesManChecker**：无配置项，始终返回 True。用于"放行一切未被前面 checker 拦截的请求"，或测试场景。
+
+**BlackWhiteListChecker**：
+
+```yaml
+- type: blackwhitelist
+  blacklist:
+    - "dangerous_*"
+  whitelist:
+    - "read_*"
+```
+
+- `blacklist`：fnmatch 模式列表；tool name 匹配任意一条 → 立即 deny（返回 False），截断 chain。
+- `whitelist`：fnmatch 模式列表；tool name 匹配任意一条 → 立即 allow（返回 True），截断 chain。
+- black 优先于 white。
+- 两者均不匹配 → 传递给 `next`。
+
+未来可扩展：`BashRiskChecker`（解析 bash 参数识别高危模式）、`RegexChecker` 等，接口一致。
+
+#### 2.7.4 ToolInvoker 中的调用
+
+每个 tool call 只做一次调用：
+
+```python
+allowed = await session.agent.permissions.request_permission(
+    session, tc.tool_name, {"arguments": tc.arguments}
+)
+```
+
+返回 False → `ToolResultNode.results[call_id] = {status: "failed", content: "Permission denied"}`，不执行。`allowed_names`（turn 级别工具可用性）作为独立前置检查，不经过 permission chain。
 
 ### 2.8 Memory
 
@@ -514,7 +559,7 @@ class Agent(Protocol):
         backend: Backend,
         tools: ToolRegistry,
         compressor: "Compressor | None" = None,
-        permissions: "PermissionManager | None" = None,
+        permissions: "PermissionChecker",
         memory: "Memory | None" = None,
     ) -> None: ...
 
@@ -527,7 +572,7 @@ ACP 映射：`new()` ↔ `session/new`；`load()` ↔ `session/load`；`initiali
 约束：
 
 1. 如需绑定不同 client，应创建不同 agent 实例。
-2. `compressor` / `permissions` / `memory` 为可选注入；详见 §2.6 / §2.7 / §2.8。
+2. `compressor` / `memory` 为可选注入；`permissions` 必须注入，默认值为 `client`；详见 §2.6 / §2.7 / §2.8。
 3. backends 支持多个，agent 只持有名为 `primary` 的那个；compressor 是否使用独立 backend，由配置中是否存在名为 `compressor` 的 backend 决定。
 
 ### 4.4 Session 接口
@@ -753,9 +798,10 @@ little-agent = "little_agent.main:main"
    - `--loglevel` 强制覆盖 `cfg['logging']['loggers']['']['level']`。
 4. 初始化 `ToolManager`：构造实例；加载配置中的 providers，将 `BashToolProvider` append 到末尾，统一注册。
 5. 初始化各 `Backend`（按配置中 `backends` 多个名称分别构造）。
-6. 初始化 `Compressor`（可选）、`PermissionManager`（可选）、`Memory`（可选）。
+6. 初始化 `Compressor`（可选）、`Memory`（可选）。
 7. 初始化具体 `Client` 实现。
-8. 用上述依赖构造 `Agent`。
+8. 从配置 `permissions` list 与 `client` 构建 permission chain（`PermissionChecker`）；list 为空则直接用 `client`。
+9. 用上述依赖构造 `Agent`。
 9. 调用 client 的 `run(agent)` 启动交互。
 
 ### 6.2 配置文件 schema
@@ -799,6 +845,16 @@ tools:
       module: my_tools.weather
     - type: python
       module: my_tools.calculator
+
+# permissions 为 checker 列表，从上到下依次检查，首个能决策的截断 chain。
+# 列表为空或省略时，所有 tool 调用直接询问用户（client）。
+permissions:
+  - type: blackwhitelist
+    blacklist:
+      - "dangerous_*"     # fnmatch 模式，命中则立即 deny
+    whitelist:
+      - "read_*"          # fnmatch 模式，命中则立即 allow
+  - type: yesman          # 放行所有未被上面拦截的请求
 
 frontend:
   type: cli

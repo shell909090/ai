@@ -2,74 +2,71 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+import fnmatch
+from typing import TYPE_CHECKING
 
 from little_agent.types import JSONValue
 
+if TYPE_CHECKING:
+    from little_agent.agent.protocol import Session
 
-@dataclass
-class PermissionRule:
-    """A single permission rule for a tool or default policy."""
-
-    tool: str
-    action: Literal["allow", "deny", "ask"]
+from little_agent.agent.protocol import PermissionChecker
 
 
-class PermissionManager:
-    """Manages permission rules for tool invocations.
+class YesManChecker:
+    """Always grants permission."""
 
-    Rules are evaluated in order; the first matching rule wins.
-    If no rule matches, the default policy is applied.
-    """
+    async def request_permission(
+        self,
+        session: Session,
+        kind: str,
+        payload: dict[str, JSONValue],
+    ) -> bool:
+        return True
+
+
+class BlackWhiteListChecker:
+    """Permission checker with fnmatch pattern lists. Blacklist takes priority over whitelist."""
 
     def __init__(
         self,
-        rules: list[PermissionRule] | None = None,
-        default: Literal["allow", "deny", "ask"] = "ask",
+        blacklist: list[str],
+        whitelist: list[str],
+        next: PermissionChecker,
     ) -> None:
-        self._rules = rules or []
-        self._default = default
+        self._blacklist = blacklist
+        self._whitelist = whitelist
+        self._next = next
 
-    def check(self, tool_name: str) -> Literal["allow", "deny", "ask"]:
-        """Return the action for a given tool name."""
-        for rule in self._rules:
-            if rule.tool == tool_name:
-                return rule.action
-        return self._default
+    async def request_permission(
+        self,
+        session: Session,
+        kind: str,
+        payload: dict[str, JSONValue],
+    ) -> bool:
+        for pattern in self._blacklist:
+            if fnmatch.fnmatch(kind, pattern):
+                return False
+        for pattern in self._whitelist:
+            if fnmatch.fnmatch(kind, pattern):
+                return True
+        return await self._next.request_permission(session, kind, payload)
 
-    @classmethod
-    def from_config(cls, config: dict[str, JSONValue] | None) -> "PermissionManager":
-        """Build a PermissionManager from a config dict.
 
-        Expected config shape::
-
-            permissions:
-              default: allow   # or deny, ask
-              rules:
-                - tool: bash
-                  action: ask
-                - tool: rm
-                  action: deny
-        """
-        if config is None:
-            return cls()
-
-        default_raw = str(config.get("default", "ask"))
-        if default_raw not in ("allow", "deny", "ask"):
-            default_raw = "ask"
-        default: Literal["allow", "deny", "ask"] = default_raw  # type: ignore[assignment]
-
-        rules: list[PermissionRule] = []
-        rules_raw = config.get("rules", [])
-        if isinstance(rules_raw, list):
-            for r in rules_raw:
-                if isinstance(r, dict):
-                    tool = r.get("tool", "")
-                    action_raw = r.get("action", "allow")
-                    if isinstance(tool, str) and isinstance(action_raw, str):
-                        action: Literal["allow", "deny", "ask"] = action_raw  # type: ignore[assignment]
-                        if action in ("allow", "deny", "ask"):
-                            rules.append(PermissionRule(tool=tool, action=action))
-
-        return cls(rules=rules, default=default)
+def build_permission_chain(
+    config_list: list[dict[str, JSONValue]],
+    terminal: PermissionChecker,
+) -> PermissionChecker:
+    """Build a permission chain from config list with terminal as fallback."""
+    checker: PermissionChecker = terminal
+    for cfg in reversed(config_list):
+        checker_type = cfg.get("type")
+        if checker_type == "yesman":
+            checker = YesManChecker()
+        elif checker_type == "blackwhitelist":
+            blacklist_raw = cfg.get("blacklist", [])
+            whitelist_raw = cfg.get("whitelist", [])
+            blacklist = [str(p) for p in blacklist_raw] if isinstance(blacklist_raw, list) else []
+            whitelist = [str(p) for p in whitelist_raw] if isinstance(whitelist_raw, list) else []
+            checker = BlackWhiteListChecker(blacklist=blacklist, whitelist=whitelist, next=checker)
+    return checker

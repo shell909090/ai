@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 from little_agent.types import JSONValue
 
-from .protocol import Agent, Compressor, Session
+from .protocol import Agent, Compressor, PermissionChecker, Session
 from .session import SessionCore
 
 if TYPE_CHECKING:
-    from little_agent.agent.permissions import PermissionManager
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
     from little_agent.tools.protocol import ToolRegistry
@@ -24,7 +23,7 @@ class AgentCore(Agent):
         backend: Backend,
         tools: ToolRegistry,
         compressor: Compressor | None = None,
-        permissions: PermissionManager | None = None,
+        permissions: PermissionChecker | None = None,
         memory: Any = None,
         compress_ratio: float = 0.5,
         context_window: int = 128000,
@@ -33,7 +32,7 @@ class AgentCore(Agent):
         self.backend = backend
         self.tools = tools
         self.compressor = compressor
-        self.permissions = permissions
+        self.permissions: PermissionChecker = permissions if permissions is not None else client
         self.memory = memory
         self.compress_ratio = compress_ratio
         self.context_window = context_window

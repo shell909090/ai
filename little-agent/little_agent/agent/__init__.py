@@ -11,8 +11,8 @@ from .nodes import (
     ToolResultNode,
     UserPromptNode,
 )
-from .permissions import PermissionManager, PermissionRule
-from .protocol import Agent, Compressor, Session
+from .permissions import BlackWhiteListChecker, YesManChecker, build_permission_chain
+from .protocol import Agent, Compressor, PermissionChecker, Session
 from .session import MAX_TURN_ITERATIONS, SessionCore
 
 __all__ = [
@@ -30,6 +30,8 @@ __all__ = [
     "SummaryNode",
     "SessionBusyError",
     "LLMCompressor",
-    "PermissionManager",
-    "PermissionRule",
+    "PermissionChecker",
+    "YesManChecker",
+    "BlackWhiteListChecker",
+    "build_permission_chain",
 ]

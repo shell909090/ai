@@ -1,104 +1,154 @@
-"""Tests for permission system."""
+"""Tests for the Chain of Responsibility permission system."""
 
 from __future__ import annotations
 
 import pytest
 
-from little_agent.agent.permissions import PermissionManager, PermissionRule
+from little_agent.agent.permissions import (
+    BlackWhiteListChecker,
+    YesManChecker,
+    build_permission_chain,
+)
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.tools.protocol import ToolDef, ToolProvider
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
 
-
-class _DenyAllClient(MockClient):
-    """Mock client that denies all permission requests."""
-
-    async def request_permission(
-        self,
-        session: object,
-        kind: str,
-        payload: dict[str, JSONValue],
-    ) -> bool:
-        return False
-
-
-class _AskToolProvider(ToolProvider):
-    """Provider with tools for permission testing."""
-
-    def __iter__(self):  # type: ignore[override]
-        _empty_def = ToolDef(desc="", args=[])
-        for name in ("bash", "read", "write"):
-
-            async def _fn(args: dict[str, JSONValue], _n: str = name) -> JSONValue:
-                return f"{_n}-result"
-
-            yield name, _empty_def, _fn
+# ---------------------------------------------------------------------------
+# YesManChecker unit tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_permission_manager_default_allow() -> None:
-    """Default allow grants all tools."""
-    pm = PermissionManager(default="allow")
-    assert pm.check("bash") == "allow"
-    assert pm.check("anything") == "allow"
-
-
-@pytest.mark.asyncio
-async def test_permission_manager_default_deny() -> None:
-    """Default deny blocks all tools."""
-    pm = PermissionManager(default="deny")
-    assert pm.check("bash") == "deny"
-    assert pm.check("read") == "deny"
-
-
-@pytest.mark.asyncio
-async def test_permission_manager_rule_override() -> None:
-    """Specific rules override default."""
-    pm = PermissionManager(
-        rules=[
-            PermissionRule(tool="bash", action="ask"),
-            PermissionRule(tool="write", action="deny"),
-        ],
-        default="allow",
+async def test_yesman_always_grants() -> None:
+    """YesManChecker returns True for any tool and payload."""
+    checker = YesManChecker()
+    assert await checker.request_permission(object(), "bash", {}) is True
+    assert (
+        await checker.request_permission(object(), "write", {"arguments": {"path": "/tmp"}}) is True
     )
-    assert pm.check("bash") == "ask"
-    assert pm.check("write") == "deny"
-    assert pm.check("read") == "allow"
+    assert await checker.request_permission(object(), "anything", {}) is True
+
+
+# ---------------------------------------------------------------------------
+# BlackWhiteListChecker unit tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_permission_manager_from_config() -> None:
-    """Build PermissionManager from config dict."""
-    config = {
-        "default": "deny",
-        "rules": [
-            {"tool": "bash", "action": "ask"},
-            {"tool": "read", "action": "allow"},
-        ],
-    }
-    pm = PermissionManager.from_config(config)
-    assert pm.check("bash") == "ask"
-    assert pm.check("read") == "allow"
-    assert pm.check("write") == "deny"
+async def test_blackwhitelist_blacklist_blocks() -> None:
+    """A blacklisted pattern denies the tool."""
+    terminal = YesManChecker()
+    checker = BlackWhiteListChecker(blacklist=["rm*"], whitelist=[], next=terminal)
+    assert await checker.request_permission(object(), "rm", {}) is False
+    assert await checker.request_permission(object(), "rmdir", {}) is False
 
 
 @pytest.mark.asyncio
-async def test_permission_manager_from_none_config() -> None:
-    """None config produces default-ask manager."""
-    pm = PermissionManager.from_config(None)
-    assert pm.check("anything") == "ask"
+async def test_blackwhitelist_whitelist_allows() -> None:
+    """A whitelisted pattern (with no blacklist match) grants the tool."""
+    terminal = YesManChecker()
+    checker = BlackWhiteListChecker(blacklist=[], whitelist=["echo", "read*"], next=terminal)
+    assert await checker.request_permission(object(), "echo", {}) is True
+    assert await checker.request_permission(object(), "read_file", {}) is True
 
 
 @pytest.mark.asyncio
-async def test_permission_deny_blocks_tool() -> None:
-    """When permission is deny, tool call is recorded as failed without invocation."""
+async def test_blackwhitelist_blacklist_priority_over_whitelist() -> None:
+    """Blacklist takes priority even when whitelist also matches."""
+    terminal = YesManChecker()
+    checker = BlackWhiteListChecker(blacklist=["bash"], whitelist=["bash"], next=terminal)
+    assert await checker.request_permission(object(), "bash", {}) is False
+
+
+@pytest.mark.asyncio
+async def test_blackwhitelist_no_match_delegates() -> None:
+    """When no pattern matches, the request is delegated to next."""
+
+    class _RecordingChecker:
+        called: bool = False
+
+        async def request_permission(
+            self, session: object, kind: str, payload: dict[str, JSONValue]
+        ) -> bool:
+            self.called = True
+            return True
+
+    next_checker = _RecordingChecker()
+    checker = BlackWhiteListChecker(blacklist=["rm"], whitelist=["echo"], next=next_checker)
+    result = await checker.request_permission(object(), "add", {})
+    assert result is True
+    assert next_checker.called
+
+
+# ---------------------------------------------------------------------------
+# build_permission_chain unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_chain_empty_returns_terminal() -> None:
+    """An empty config list returns the terminal unchanged."""
+    terminal = YesManChecker()
+    result = build_permission_chain([], terminal)
+    assert result is terminal
+
+
+@pytest.mark.asyncio
+async def test_build_chain_yesman() -> None:
+    """A yesman config produces a YesManChecker (terminal is replaced)."""
+    terminal = YesManChecker()
+    result = build_permission_chain([{"type": "yesman"}], terminal)
+    assert isinstance(result, YesManChecker)
+    assert await result.request_permission(object(), "anything", {}) is True
+
+
+@pytest.mark.asyncio
+async def test_build_chain_blackwhitelist() -> None:
+    """A blackwhitelist config wraps the terminal in a BlackWhiteListChecker."""
+    terminal = YesManChecker()
+    cfg: list[dict[str, JSONValue]] = [
+        {
+            "type": "blackwhitelist",
+            "blacklist": ["rm"],
+            "whitelist": ["echo"],
+        }
+    ]
+    result = build_permission_chain(cfg, terminal)
+    assert isinstance(result, BlackWhiteListChecker)
+    assert await result.request_permission(object(), "rm", {}) is False
+    assert await result.request_permission(object(), "echo", {}) is True
+    # unknown → delegates to terminal (YesManChecker) → True
+    assert await result.request_permission(object(), "add", {}) is True
+
+
+@pytest.mark.asyncio
+async def test_build_chain_order() -> None:
+    """First config in list is the outermost (first-checked) wrapper."""
+    # Build a chain where config[0] blacklists "bash" and config[1] is yesman.
+    # The outermost checker must be the one from config[0], so "bash" is denied.
+    cfg: list[dict[str, JSONValue]] = [
+        {"type": "blackwhitelist", "blacklist": ["bash"], "whitelist": []},
+        {"type": "yesman"},
+    ]
+    terminal = YesManChecker()
+    result = build_permission_chain(cfg, terminal)
+    # "bash" should be denied by the outermost blackwhitelist
+    assert await result.request_permission(object(), "bash", {}) is False
+    # other tools delegate through to yesman → True
+    assert await result.request_permission(object(), "echo", {}) is True
+
+
+# ---------------------------------------------------------------------------
+# Integration tests with MockAgent / MockBackend
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_permission_denies_tool_when_blacklisted() -> None:
+    """BlackWhiteListChecker with blacklist blocks tool call with 'Permission denied'."""
     client = MockClient()
     provider = BuiltinToolProvider()
-    pm = PermissionManager(
-        rules=[PermissionRule(tool="add", action="deny")],
-        default="allow",
-    )
+    checker = BlackWhiteListChecker(blacklist=["add"], whitelist=[], next=YesManChecker())
 
     script = [
         BackendTurnResult(
@@ -113,7 +163,7 @@ async def test_permission_deny_blocks_tool() -> None:
         ),
     ]
     backend = MockBackend(script=script)
-    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=pm)
+    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=checker)
     session = await agent.new()
 
     await session.prompt("hello")
@@ -128,14 +178,11 @@ async def test_permission_deny_blocks_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_permission_ask_grants_when_allowed() -> None:
-    """When permission is ask and client grants, tool is invoked."""
+async def test_permission_grants_tool_when_yesman() -> None:
+    """YesManChecker grants tool call and it runs successfully."""
     client = MockClient()
     provider = BuiltinToolProvider()
-    pm = PermissionManager(
-        rules=[PermissionRule(tool="echo", action="ask")],
-        default="allow",
-    )
+    checker = YesManChecker()
 
     script = [
         BackendTurnResult(
@@ -150,7 +197,7 @@ async def test_permission_ask_grants_when_allowed() -> None:
         ),
     ]
     backend = MockBackend(script=script)
-    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=pm)
+    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=checker)
     session = await agent.new()
 
     await session.prompt("hello")
@@ -165,19 +212,25 @@ async def test_permission_ask_grants_when_allowed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_permission_ask_denies_when_rejected() -> None:
-    """When permission is ask and client rejects, tool is not invoked."""
+async def test_permission_denies_when_client_rejects() -> None:
+    """When client (used as terminal) rejects, tool call fails with 'Permission denied'."""
+
+    class _DenyAllClient(MockClient):
+        async def request_permission(
+            self,
+            session: object,
+            kind: str,
+            payload: dict[str, JSONValue],
+        ) -> bool:
+            return False
+
     client = _DenyAllClient()
     provider = BuiltinToolProvider()
-    pm = PermissionManager(
-        rules=[PermissionRule(tool="echo", action="ask")],
-        default="allow",
-    )
 
     script = [
         BackendTurnResult(
             output_text="",
-            tool_calls=[BackendToolCall(call_id="e1", tool_name="echo", arguments={"text": "hi"})],
+            tool_calls=[BackendToolCall(call_id="d1", tool_name="add", arguments={"a": 1, "b": 2})],
             finish_reason="tool_call",
         ),
         BackendTurnResult(
@@ -187,15 +240,16 @@ async def test_permission_ask_denies_when_rejected() -> None:
         ),
     ]
     backend = MockBackend(script=script)
-    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=pm)
+    # Pass client explicitly as permissions (acting as the terminal deny-all checker)
+    agent = MockAgent(backend=backend, tools=provider, client=client, permissions=client)
     session = await agent.new()
 
     await session.prompt("hello")
 
     updates = [
-        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "e1"
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "d1"
     ]
-    assert updates, "Expected a tool_call_update for call_id 'e1'"
+    assert updates, "Expected a tool_call_update for call_id 'd1'"
     update = updates[0]
     assert update.data["status"] == "failed"
     assert "Permission denied" in str(update.data.get("content", ""))

@@ -34,12 +34,12 @@ def _log_streaming_response(
     """Log a streaming response at INFO level."""
     logger.info(
         "%s streaming response: model=%s finish_reason=%s "
-        "input_tokens=%s output_tokens=%s cached_tokens=%s elapsed=%.3fs",
+        "input_tokens=%s cached_tokens=%s output_tokens=%s elapsed=%.3fs",
         name,
         model,
         finish_reason,
         usage.get("input_tokens") if usage else None,
-        usage.get("output_tokens") if usage else None,
         usage.get("cached_tokens") if usage else None,
+        usage.get("output_tokens") if usage else None,
         elapsed,
     )

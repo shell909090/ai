@@ -156,11 +156,13 @@ class MockAgent:
         tool_mgr = ToolManager()
         tool_mgr.register(tool_provider)
         self.tools: ToolManager = tool_mgr
+        from little_agent.agent.permissions import YesManChecker
+
         self._agent = AgentCore(
             client=self._client,
             backend=self._backend,
             tools=tool_mgr,
-            permissions=permissions,
+            permissions=permissions if permissions is not None else YesManChecker(),
         )
 
     async def new(self, cwd: str | None = None) -> Session:

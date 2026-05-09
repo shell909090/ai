@@ -13,7 +13,7 @@ little-agent features:
 - **Multiple LLM backends** — OpenAI-compatible APIs and Anthropic Claude
 - **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)
 - **MCP tool support** — connect external tool servers via Model Context Protocol
-- **Permission system** — per-tool allow/deny/ask rules
+- **Permission system** — Chain of Responsibility: per-tool allow/deny rules with user prompt fallback
 - **Memory** — persist and recall facts across sessions
 - **Auto-compression** — automatically summarize history when context window fills up
 
@@ -83,13 +83,21 @@ compressor:
   keep_turns: 5                      # keep this many recent turns verbatim
   compressed_window: 0.2             # target compressed size as fraction of context_window
 
-permissions:
-  default: allow                     # allow | deny | ask
-  rules:
-    - tool: bash
-      action: ask                    # prompt user before running bash commands
-    - tool: dangerous_tool
-      action: deny
+permissions:                          # list of checkers, evaluated top-to-bottom
+  - type: blackwhitelist             # blacklist wins over whitelist; no match → ask user
+    blacklist:
+      - "dangerous_tool"             # always denied
+    whitelist:
+      - "read_file"                  # always allowed without prompting
+      - "list_dir"
+  # tools not matched above are delegated to the user (prompted at runtime)
+  #
+  # To allow ALL tools without prompting (useful for automated/test runs):
+  # permissions:
+  #   - type: yesman
+  #
+  # To prompt for EVERY tool (default when permissions is omitted):
+  # permissions: []   # or omit the key entirely
 
 memory:
   type: file
@@ -153,11 +161,10 @@ make fmt lint build test   # run everything
 
 ```
 little_agent/
-  agent/          # AgentCore, SessionCore, node chain, compression
+  agent/          # AgentCore, SessionCore, node chain, compression, permissions
   backends/       # OpenAI and Anthropic streaming backends
   frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
   tools/          # BashTool, TaskTool, MCP tool manager
-  permissions.py  # per-tool permission rules
   memory.py       # file-based session memory
   main.py         # config loading and entry point
 ```
