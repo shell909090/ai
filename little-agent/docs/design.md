@@ -85,7 +85,7 @@ agent -> backends
 这一层采用更符合 Python 使用习惯的对象模型：
 
 1. frontend 具体实现 `Client` 接口。
-2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolProvider`（以及可选的 `Compressor`）引用。
+2. `Agent` 在构造时持有 `Client`、`Backend`、`ToolRegistry`（以及可选的 `Compressor`）引用。
 3. `Agent.new()` 与 `Agent.load()` 创建 `Session`。
 4. `Session.prompt()` 负责推进一轮对话，也就是延伸倒排链。
 5. `Session` 在运行中通过 `Agent` 反向回调 `Client.update()`。
@@ -161,7 +161,7 @@ class Agent(Protocol):
         self,
         client: Client,
         backend: Backend,
-        tools: ToolProvider,
+        tools: ToolRegistry,
         compressor: "Compressor | None" = None,
         permissions: "PermissionManager | None" = None,
         memory: "Memory | None" = None,
@@ -185,7 +185,7 @@ class Agent(Protocol):
 4. `compressor` 为可选注入；不注入时 `Session.compress()` 抛异常。
 5. `permissions` 为可选注入；注入时每个 tool 调用前检查权限规则（allow/deny/ask）。
 6. `memory` 为可选注入；注入时每轮 `_run_turn` 开始前 `recall()` 注入记忆，结束后 `remember()` 更新记忆。
-7. `tools` 参数类型为 `ToolProvider`。Agent 运行时只关心"能列出工具、能调用工具"，不关心对方是单个 provider 还是聚合后的 `ToolManager`。
+7. `tools` 参数类型为 `ToolRegistry`。Agent 运行时只关心"能描述工具、能调用工具"，不关心对方是否是 `ToolManager` 具体实现。
 8. backends支持多个，agent只持有一个backend，即名字为primary的那个。compressor在构造的时候，会根据配置，决定使用同一个backend，还是获得另一个。
 
 ### 4.5 Session 接口
@@ -245,7 +245,7 @@ class Session(Protocol):
 
 1. 消息分离：`agent_message_chunk` 前缀加 `[Agent]`；`thinking_chunk` 前缀标注为 `[Thinking]` 或折叠显示。两者输出区域分离，避免混淆。
 2. 空白处理：所有消息输出前 `strip()` 去除前后空白。
-3. Tool call 参数显示：`tool_call` 类型更新除显示 tool 名称外，还显示具体调用参数（arguments）。若参数文本超过 3 行，截断尾部并显示 `...{n} lines...`。
+3. Tool call 参数显示：`tool_call` 类型更新除显示 tool 名称外，还以多行 `k: v` 格式显示具体调用参数（arguments），字符串值直接输出，非字符串值退化为 `json.dumps`。若参数文本超过 5 行，截断尾部并显示 `...{n} lines...`。
 
 ### 4.8 CLI 命令清单
 
@@ -277,99 +277,100 @@ agent 不应关心 tool 的具体来源。
 ### 5.2 Tool 共享类型
 
 ```python
-JSONScalar = str | int | float | bool | None
-JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
+from __future__ import annotations
+from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
+from little_agent.types import JSONValue
 
-ToolArgDef = tuple[str, str, str, bool]
-ToolDef = tuple[str, list[ToolArgDef]]
-ToolMap = dict[str, ToolDef]
+AsyncToolFn = Callable[[dict[str, JSONValue]], Awaitable[JSONValue]]
+
+
+@dataclass
+class ToolArgDef:
+    name: str            # 参数名，传给 LLM 和 JSON Schema
+    type: str            # JSON Schema 类型，如 "string"、"object"、"integer"
+    desc: str            # 参数描述，传给 LLM
+    required: bool = False  # 是否必填
+
+
+@dataclass
+class ToolDef:
+    desc: str                        # 工具描述，传给 LLM
+    args: list[ToolArgDef] = field(default_factory=list)  # 参数列表
+
+
+ToolMap = dict[str, ToolDef]         # key 是 tool name
 ```
 
 说明：
 
-1. `ToolArgDef` 的四元组顺序为 `(name, type, desc, required)`。
-2. `ToolDef` 的二元组顺序为 `(desc, args)`。
-3. `ToolMap` 的 key 是 tool name，value 是对应的 `ToolDef`。
-4. `ToolMap` 这样设计是为了便于在 Python 中直接 `dict.update(...)` 做聚合。
-5. `ToolArgDef` 可自动转换成最小 MCP `inputSchema`：
+1. `ToolArgDef` 描述单个参数：名称、JSON Schema 类型、描述、是否必填。
+2. `ToolDef` 描述一个工具的元信息：自然语言描述 + 参数列表。不含 name（name 是 `ToolMap` 的 key）；不含 callable（callable 在 `ToolManager` 内部存储）。
+3. `ToolMap` 是纯描述结构，只传给 backend/LLM，不含 callable。
+4. `ToolArgDef` 可自动转换成最小 MCP `inputSchema`：
    - 顶层固定为 `type: "object"`
    - 字段填入 `properties`
-   - `required` 列表由四元组中的 `required` 推导
-6. 当前只支持顶层 object + 一层平铺标量字段；不支持嵌套对象、数组、枚举、默认值。本期已知限制（见 §11），`ToolArgDef` 未来会重新设计。
+   - `required` 列表由 `required=True` 的字段推导
+5. 当前只支持顶层 object + 一层平铺标量字段；不支持嵌套对象、数组、枚举、默认值。本期已知限制（见 §11）。
 
 额外约束：
 
 1. tool 输入与输出都必须可 JSON 序列化。
-2. 框架层通过 `json.dumps(...)` 校验可序列化性。
-3. `session_id`、`cwd`、`call_id` 不进入 tool 函数签名；这些由 agent 内部管理。
+2. `session_id`、`cwd`、`call_id` 不进入 tool 函数签名；由 agent 内部管理。
 
 ### 5.3 ToolProvider 接口
 
 ```python
-@runtime_checkable
+from collections.abc import Iterator
+
 class ToolProvider(Protocol):
-    def list(self) -> ToolMap: ...
-    async def invoke(self, name: str, **kwargs: JSONValue) -> JSONValue: ...
+    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]: ...
 ```
 
 规则：
 
-1. `list()` 返回当前 provider 暴露的全部 tools。
-2. `invoke()` 是 async 的，以便 agent 用 `asyncio.gather` 并发执行多个 tool call。同步 tool 由 provider 层用 `asyncio.to_thread` 包装成 async。
-3. `invoke()` 的签名与底层 tool 函数一致，便于透传与测试。
-4. `invoke()` 的返回值不限定为字符串，只要求可 JSON 序列化。
-5. 未知 tool、参数不合法、执行失败都通过异常表示，不使用额外的错误码返回机制。
-6. 建议内部至少区分两类异常：
-   - `ToolInvokeError`：调用层错误，例如未知 tool、参数不合法
-   - `ToolExecutionError`：tool 自身执行失败
-7. 上述异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 结果中，**绝不向上冒出 prompt turn**。这是 tools 机制的关键语义：模型拿到失败反馈后，自主决定是否重试、换工具或放弃。
-8. 本期不对并发 tool 调用设上限；未来可能加入并发上限（见 §11）。
+1. `__iter__` 逐个 yield `(name, tooldef, fn)` 三元组：name 是工具名，tooldef 是描述元信息，fn 是执行函数。
+2. `fn` 的签名固定为 `async (args: dict[str, JSONValue]) -> JSONValue`；参数整体作为一个 dict 传入，不使用 `**kwargs`（避免参数名与框架内部参数冲突）。
+3. 同步 tool 由 provider 自行用 `asyncio.to_thread` 包装成 async 后再 yield。
+4. provider 不负责路由；路由（按 name 分发）由 `ToolManager` 负责。
 
-### 5.4 ToolManager 实现
-
-`ToolManager` 是一个**具体类**，不是 Protocol。它聚合多个 `ToolProvider`，对外实现 `ToolProvider` Protocol（即提供 `list()` 和 `invoke()`），同时额外提供 `register(provider)` 方法用于组装期注册。
-
-说明：
-
-1. `ToolProvider` 是 agent 运行时的统一契约。任何实现了 `list` + `invoke` 的对象都可以注入 Agent。
-2. 由于 `ToolMap` 是字典结构，聚合时可以直接 `tools.update(provider.list())`。
-3. 这种设计支持 Chain of Responsibility 模式：可以在 `ToolManager` 外再包一层 filter、logger、权限检查等装饰层，只要外层也实现 `ToolProvider` 即可注入 Agent。
-
-快速分发约定（可选）
-
-`ToolManager.invoke()` 在调用 `provider.invoke()` 前，会先检查 provider 是否存在与 tool 同名的方法：
-
-- 若存在且可调用，直接调用该方法，跳过 `provider.invoke()` 的分发层。
-- `list` 和 `invoke` 这两个名称被保留，永远不走快速路径（避免与 Protocol 方法冲突）。
-- 这是一条**约定**，不修改 `ToolProvider` Protocol 接口，provider 无需实现任何额外接口。
-
-快速路径方法的签名约定：
+### 5.4 ToolRegistry 协议
 
 ```python
-async def <tool_name>(self, **kwargs: JSONValue) -> JSONValue:
-    ...
+class ToolRegistry(Protocol):
+    def register(self, provider: ToolProvider) -> None: ...
+    def desc_tool(self, names: set[str] | None = None) -> ToolMap: ...
+    def __getitem__(self, name: str) -> AsyncToolFn: ...
 ```
 
-优先为每个 tool 定义对应方法，`invoke()` 只做兜底分发（处理动态注册的 tool 或不想显式定义方法的场景）。
+规则：
+
+1. `register(provider)` 迭代 provider，将 `(name, tooldef, fn)` 注册到 registry；name 冲突时 raise `ValueError`。
+2. `desc_tool(None)` 返回全部已注册工具的 `ToolMap`。
+3. `desc_tool(set())` 返回空 `ToolMap`（空集即空结果，"默认全部"与"指定空集"语义分离）。
+4. `desc_tool({name, ...})` 只返回指定名称的工具描述，未注册的名称忽略。
+5. `__getitem__(name)` 返回对应工具的 `AsyncToolFn`；name 不存在时 raise `KeyError`。调用方直接 `await registry[name](args)` 执行工具。
+6. 执行失败通过异常表示；异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 中，**绝不向上冒出 prompt turn**。
+7. 本期不对并发 tool 调用设上限；未来可能加入（见 §11）。
 
 ### 5.5 tools 模块内部实现边界
 
 `tools` 模块内部可以继续拆实现，但不向外暴露为一级模块接口：
 
-1. builtin tool registry
-2. MCP provider adapter
-3. tool routing
+1. builtin tool providers（bash、task 等）
+2. MCP provider adapter（未来）
+3. tool routing（由 `ToolManager` 完成）
 
-对 `agent` 暴露的唯一稳定边界就是 `ToolProvider` Protocol。
+对 `agent` 暴露的唯一稳定边界是 `ToolRegistry` Protocol。
 
-内置 tool 的最小函数形态为：
+内置 tool 的函数签名为：
 
 ```python
-async def f(**kwargs: JSONValue) -> JSONValue:
+async def f(args: dict[str, JSONValue]) -> JSONValue:
     ...
 ```
 
-同步 tool 由内置 provider 统一包装成 async（`asyncio.to_thread`）。
+同步 tool 由 provider 自行用 `asyncio.to_thread` 包装成 async。
 
 ### 5.6 内置 Bash Tool
 
@@ -712,7 +713,7 @@ turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之
       - 追加 `ToolCallNode`（冻结）。
       - 通过 `Client.update(session, tool_call)` 通知 frontend。
       - 追加 `ToolResultNode`（可变）。
-      - 并发调用 `ToolProvider.invoke(...)` 执行全部 tools（`asyncio.gather`）。调用前先检查 tool name 是否在本轮允许列表内；不在列表中的 tool call 直接记录为失败（`status="failed"`，`content="Tool not in allowed list"`），不实际调用。
+      - 并发调用 `await registry[name](args)` 执行全部 tools（`asyncio.gather`）。调用前先检查 tool name 是否在本轮允许列表内；不在列表中的 tool call 直接记录为失败（`status="failed"`，`content="Tool not in allowed list"`），不实际调用。
         - 正常完成：写入对应 `call_id` 的结果（`status = "completed"`）。
         - 抛出 `ToolInvokeError` / `ToolExecutionError`：捕获并写入失败结果（`status = "failed"`，`content` 为异常信息）。
         - tool 抛出的异常**绝不冒出 prompt turn**。
@@ -896,6 +897,6 @@ logging:
 1. 一级模块固定为 `agent`、`tools`、`frontends`、`backends`
 2. 启动装配由 `little-agent` 命令行脚本完成（`pyproject.toml` 的 `[project.scripts]` 注册）
 3. `frontends <-> agent` 用 ACP 类接口；`Client` 是稳定边界
-4. `tools <-> agent` 用 MCP 类接口；`ToolProvider` 是稳定边界
+4. `tools <-> agent` 用 MCP 类接口；`ToolRegistry` 是稳定边界
 5. `backends <-> agent` 先使用最小内部接口
 6. 测试中提供 `MockClient`、`MockToolProvider`、`MockBackend`、`MockAgent`
