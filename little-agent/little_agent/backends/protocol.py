@@ -35,6 +35,8 @@ class BackendTurnResult:
 class Backend(Protocol):
     """Backend protocol for LLM providers."""
 
+    context_window: int
+
     def generate(
         self, session: SessionCore
     ) -> AsyncIterator[SessionUpdate | BackendTurnResult]: ...
