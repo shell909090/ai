@@ -159,15 +159,25 @@ def _load_backend(config: dict[str, Any]) -> Any:
     return _build_backend(primary_cfg, "primary"), backends_config
 
 
-def _load_compressor(backends_config: dict[str, Any]) -> Any:
-    """Load compressor from backends config if present."""
+def _load_compressor(
+    config: dict[str, Any], primary_backend: Any, backends_config: dict[str, Any]
+) -> Any:
+    """Load compressor if backends.compressor is configured."""
     compressor_cfg = backends_config.get("compressor")
-    if isinstance(compressor_cfg, dict):
-        from little_agent.compressor import LLMCompressor
+    if not isinstance(compressor_cfg, dict):
+        return None
+    from little_agent.compressor import LLMCompressor
 
-        compressor_backend = _build_backend(compressor_cfg, "compressor")
-        return LLMCompressor(compressor_backend)
-    return None
+    compressor_backend = _build_backend(compressor_cfg, "compressor")
+    compressor_section = config.get("compressor") or {}
+    keep_turns = int(compressor_section.get("keep_turns", 5))
+    compressed_window = float(compressor_section.get("compressed_window", 0.2))
+    compressed_window_tokens = int(compressed_window * primary_backend.context_window)
+    return LLMCompressor(
+        compressor_backend,
+        keep_turns=keep_turns,
+        compressed_window_tokens=compressed_window_tokens,
+    )
 
 
 def _load_permissions(config: dict[str, Any]) -> Any:
@@ -215,7 +225,7 @@ def main() -> None:
 
     tools = _load_tools(config)
     backend, backends_config = _load_backend(config)
-    compressor = _load_compressor(backends_config)
+    compressor = _load_compressor(config, backend, backends_config)
     permissions = _load_permissions(config)
     memory = _load_memory(config, backend, backends_config)
 

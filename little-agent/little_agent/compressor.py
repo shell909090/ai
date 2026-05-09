@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +22,8 @@ from little_agent.tools.protocol import ToolMap
 
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
+
+logger = logging.getLogger(__name__)
 
 
 def _nodes_to_text(nodes: list[Node]) -> str:
@@ -39,6 +44,55 @@ def _nodes_to_text(nodes: list[Node]) -> str:
         elif isinstance(n, SummaryNode):
             parts.append(f"[Previous summary: {n.summary}]")
     return "\n".join(parts)
+
+
+def _split_into_turns(nodes: list[Node]) -> list[list[Node]]:
+    """Split nodes into turns; each turn starts with a UserPromptNode."""
+    turns: list[list[Node]] = []
+    current: list[Node] = []
+    for n in nodes:
+        if isinstance(n, UserPromptNode) and current:
+            turns.append(current)
+            current = [n]
+        else:
+            current.append(n)
+    if current:
+        turns.append(current)
+    return turns
+
+
+def _apply_w_limit(chain: list[Node], w_tokens: int) -> tuple[int, list[Node]]:
+    """Trim old SummaryNodes when cumulative tokens exceed W.
+
+    Returns (discarded_count, trimmed_chain).
+    w_tokens=0 means no limit; returns (0, chain) immediately.
+    """
+    if w_tokens == 0:
+        return 0, chain
+
+    # Collect indices of SummaryNodes
+    summary_indices = [i for i, n in enumerate(chain) if isinstance(n, SummaryNode)]
+    if not summary_indices:
+        return 0, chain
+
+    # Accumulate token estimates from newest SummaryNode backwards
+    cumulative = 0
+    cutoff_idx: int | None = None
+    for idx in reversed(summary_indices):
+        node = chain[idx]
+        assert isinstance(node, SummaryNode)
+        cumulative += len(str(node.summary)) // 4
+        if cumulative > w_tokens:
+            # Discard everything before this node (this node itself is kept)
+            cutoff_idx = idx
+            break
+
+    if cutoff_idx is None:
+        return 0, chain
+
+    # Count discarded SummaryNodes (those before cutoff_idx)
+    discarded_count = sum(1 for i in summary_indices if i < cutoff_idx)
+    return discarded_count, chain[cutoff_idx:]
 
 
 class _CompressorSession:
@@ -72,53 +126,105 @@ class _CompressorAgent:
 class LLMCompressor:
     """Compresses session history using an LLM backend.
 
-    Keeps the most recent ``keep_nodes`` nodes verbatim; summarizes
-    everything older than that into a single SummaryNode.
+    Keeps the most recent ``keep_turns`` turns verbatim; summarizes
+    older turns into SummaryNodes. Old SummaryNodes are trimmed when
+    their cumulative size exceeds ``compressed_window_tokens``.
     """
 
-    def __init__(self, backend: Backend, keep_nodes: int = 10) -> None:
+    def __init__(
+        self,
+        backend: Backend,
+        keep_turns: int = 5,
+        compressed_window_tokens: int = 0,
+    ) -> None:
+        """Initialize LLMCompressor with backend and tuning parameters."""
+        if keep_turns < 3:
+            logger.warning("keep_turns=%d is too small; forcing to 3", keep_turns)
+            keep_turns = 3
         self._backend = backend
-        self._keep_nodes = keep_nodes
+        self._keep_turns = keep_turns
+        self._compressed_window_tokens = compressed_window_tokens
 
-    async def compress(self, head: Node | None) -> Node | None:
-        if head is None:
+    async def compress(self, tail: Node | None) -> Node | None:
+        """Compress session history by summarizing old turns into SummaryNodes."""
+        if tail is None:
             return None
 
-        # Collect chain in chronological order
+        t0 = time.monotonic()
+
+        # Step 1: collect chain in chronological order
         chain: list[Node] = []
-        node: Node | None = head
+        node: Node | None = tail
         while node is not None:
             chain.append(node)
             node = node.prev
         chain.reverse()
 
-        if len(chain) <= self._keep_nodes:
-            return head
+        # Step 2: find compress-zone upper bound (last SummaryNode index)
+        upper_bound_idx = -1
+        for i, n in enumerate(chain):
+            if isinstance(n, SummaryNode):
+                upper_bound_idx = i
+        compress_start = upper_bound_idx + 1
 
-        split = len(chain) - self._keep_nodes
-        old_nodes = chain[:split]
-        recent_nodes = chain[split:]
+        # Step 3: find preserve-zone start (based on keep_turns)
+        user_indices = [
+            i
+            for i, n in enumerate(chain[compress_start:], start=compress_start)
+            if isinstance(n, UserPromptNode)
+        ]
+        if len(user_indices) <= self._keep_turns:
+            return tail
+        preserve_start_idx = user_indices[-self._keep_turns]
+        if preserve_start_idx <= compress_start:
+            return tail
 
-        summary_text = await self._summarize(old_nodes)
-        summary_node = SummaryNode(
-            id=str(uuid.uuid4()),
-            prev=None,
-            summary=summary_text,
+        # Step 4: split zones
+        head_part = chain[:compress_start]
+        compress_zone = chain[compress_start:preserve_start_idx]
+        preserve_zone = chain[preserve_start_idx:]
+
+        # Step 5: split compress_zone into turns
+        turns = _split_into_turns(compress_zone)
+        if not turns:
+            return tail
+
+        # Step 6: concurrent summarization (all-or-nothing)
+        summary_texts: list[str] = await asyncio.gather(*[self._summarize(t) for t in turns])
+
+        # Step 7: assemble new chain
+        new_summary_nodes: list[Node] = [
+            SummaryNode(id=str(uuid.uuid4()), prev=None, summary=text) for text in summary_texts
+        ]
+        new_chain = head_part + new_summary_nodes + preserve_zone
+
+        # Step 8: apply W-limit
+        discarded, new_chain = _apply_w_limit(new_chain, self._compressed_window_tokens)
+
+        # Step 9: relink prev pointers
+        prev_node: Node | None = None
+        for n in new_chain:
+            n.prev = prev_node
+            prev_node = n
+        new_tail = prev_node
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        logger.info(
+            "compress: compressed_turns=%d new_summaries=%d discarded_summaries=%d elapsed_ms=%d",
+            len(turns),
+            len(new_summary_nodes),
+            discarded,
+            elapsed_ms,
         )
 
-        # Relink recent nodes behind the summary node
-        prev: Node = summary_node
-        for n in recent_nodes:
-            n.prev = prev
-            prev = n
-
-        return prev
+        return new_tail
 
     async def _summarize(self, nodes: list[Node]) -> str:
+        """Summarize a single conversation turn via the backend."""
         history = _nodes_to_text(nodes)
         prompt = (
-            "Please summarize the following conversation history concisely, "
-            "preserving all important facts, decisions, and context:\n\n" + history
+            "Please summarize the following conversation turn, preserving important facts, "
+            "decisions, tool interactions, and context in reasonable detail:\n\n" + history
         )
         agent = _CompressorAgent(self._backend)
         session = _CompressorSession(self._backend, prompt)
