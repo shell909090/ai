@@ -472,8 +472,21 @@ class Backend(Protocol):
 5. 性能计数：在 `BackendTurnResult` yield 前记录 INFO 级别日志，包括 input/output token 数、执行时间、缓存信息（如 `cached_tokens`）。
 6. DEBUG 日志：请求开始前记录完整 payload（messages、tools 等）。
 7. 超时控制：streaming 模式下对整个流设置超时，超时后关闭 stream 并抛出 `BackendTimeoutError`，由上层处理。
-8. `BackendTurnResult.thinking_text` 保留字段（用于非流式 fallback 或测试），流式模式下通常为 `None`（thinking 内容已通过 `thinking_chunk` 逐 chunk 发出）。
-9. `<think>` 标签处理：部分模型（如 DeepSeek-R1）不使用 `reasoning_content` 字段，而是在 `content` 中以 `<think>...</think>` 标签包裹思考内容。`OpenAIBackend` 在 streaming 过程中维护一个状态机，将标签前的内容作为 `agent_message_chunk` 立刻 emit，标签内的内容作为 `thinking_chunk` 逐 chunk emit，标签后恢复 `agent_message_chunk`。维护最多 8 字节的 lookahead buffer 处理跨 chunk 的标签截断；流结束时 flush 残余 buffer（未闭合的 `<think>` 按 `thinking_chunk` 处理）。`reasoning_content` 路径不受影响。
+8. context-overflow 异常：当底层 API 返回上下文长度超限错误（如 OpenAI 的 `context_length_exceeded`、HTTP 400 含 `maximum context length` 等模式）时，backend 必须识别并抛出 `ContextOverflowError`（定义在 `backends/exceptions.py`）。其他 `BadRequestError` 原样向上抛。该异常由 agent core 按 §7.6.6 in-turn retry 路径处理。
+9. `BackendTurnResult.thinking_text` 保留字段（用于非流式 fallback 或测试），流式模式下通常为 `None`（thinking 内容已通过 `thinking_chunk` 逐 chunk 发出）。
+10. `<think>` 标签处理：部分模型（如 DeepSeek-R1）不使用 `reasoning_content` 字段，而是在 `content` 中以 `<think>...</think>` 标签包裹思考内容。`OpenAIBackend` 在 streaming 过程中维护一个状态机，将标签前的内容作为 `agent_message_chunk` 立刻 emit，标签内的内容作为 `thinking_chunk` 逐 chunk emit，标签后恢复 `agent_message_chunk`。维护最多 8 字节的 lookahead buffer 处理跨 chunk 的标签截断；流结束时 flush 残余 buffer（未闭合的 `<think>` 按 `thinking_chunk` 处理）。`reasoning_content` 路径不受影响。
+
+### 6.4 并发控制
+
+并发限制是 backend 自身的关注点，不由调用方（agent / compressor）控制。原因：rate limit 与 API key 共享在同一个 backend 实例上，多个 session、compressor 调用、未来其他用法都共用此约束；只有 backend 层有完整视图。
+
+规则：
+
+1. 每个 `Backend` 实例在构造时根据配置项 `max_concurrency` 初始化一把 `asyncio.Semaphore`；默认 `1`，表示串行。
+2. 所有 `generate()` 调用必须在内部 acquire 该 semaphore，调用完成（无论成功、异常、取消）后 release。
+3. 调用方可以放心地并发发起 `generate()`（如 `asyncio.gather`），实际并发由 backend 的 semaphore gate。
+4. Semaphore 的获取 / 释放对调用方透明；不暴露在接口签名上。
+5. 设计上保留并发能力，未来调整并发只需改配置，不需要改业务代码。
 
 ## 7. agent 模块内部数据结构
 
@@ -598,7 +611,7 @@ class SummaryNode(Node):
 
 ### 7.5 压缩接口
 
-压缩能力以可插拔协议定义，本期只预留接口、不提供具体实现：
+压缩能力以可插拔协议定义：
 
 ```python
 class Compressor(Protocol):
@@ -616,6 +629,70 @@ class Compressor(Protocol):
    - 否则调用 `compressor.compress(tail)`，把返回节点设为 session 新的 tail。
 5. 旧链保留，用于回放与 fork。不修改旧链，不从旧链摘节点。
 6. compressor在构造的时候，根据配置，main.py决定compressor和agent使用同一个backend，还是获得另一个。当backends里面有一个叫compressor的backend的时候，使用那个。如果没有，和agent使用同一个。
+7. agent 编排在每次 turn 结束后自动评估并按需调度 `compress()`，触发策略详见 §7.6。
+
+### 7.6 自动压缩触发策略
+
+`Compressor.compress()` 由 agent 在每次 turn 完成后自动触发，frontend 不感知。post-turn 触发让用户阅读 AI 输出与键入下一条消息的同时，agent 在后台压缩历史，避免把压缩延迟塞入用户等待回复的路径。
+
+#### 7.6.1 触发时机
+
+post-turn：每次 `Session.prompt()` 即将返回前（成功、取消、异常都参与判定）评估 §7.6.2 判据。命中则 agent 异步调度 compress 任务（`asyncio.create_task`），prompt() 立即返回 `(stop_reason, output)` 给 frontend，不等待压缩完成。
+
+compress 任务运行期间复用 session 的活跃 turn 标记（与正常 turn 互斥）。新到达的 prompt 通过 §8 既有的 pending 队列机制等待，与活跃 turn 处理逻辑一致；compress 结束后释放标记，pending 唤醒。
+
+#### 7.6.2 触发判据
+
+满足以下任一条件即调度自动压缩：
+
+1. **token 阈值（首选）**：本 turn 最后一次 backend 调用的 `BackendTurnResult.usage.input_tokens + usage.output_tokens` 与该 backend 配置的 `context_window` 相比，比值大于 `R`。`R` 由 agent 配置项 `R` 调整，默认 `0.5`，取值范围 (0, 1]。
+2. **字符兜底**：本 turn 没有有效 usage 数据（usage 为 None 或字段为 0），退化到字符数估算：从 tail 往前累加每个节点序列化后的字符数，除以 4 得到 token 估算值，同样比较 `R` 阈值。
+3. **context-overflow 错误兜底**：见 §7.6.6。该路径不属于 post-turn，而是在 turn 内同步触发并 retry。
+
+#### 7.6.3 保留窗口
+
+最近 `K` 个 turn 不参与压缩。`K` 由 compressor 配置项 `keep_turns` 调整，默认 `5`，下限 `3`（配置低于 3 时报警并强制使用 3）。
+
+turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之前的所有节点（含 ToolCallNode / ToolResultNode / AssistantResponseNode）属于同一个 turn。
+
+#### 7.6.4 压缩算法
+
+1. **压缩区上界**：从 tail 往前回溯，找到最后一条 `SummaryNode` 即为上界（再往前皆为已压缩内容，本次不重复处理）；若链上无 SummaryNode，上界为链首。
+2. **保留区**：tail 起最近 `K` 个 turn 的所有节点。
+3. **被压区**：上界与保留区之间的所有节点，按 turn 切分。
+4. **压缩**：每个被压 turn 一次 LLM 调用，压成一条 `SummaryNode`，保留关键事实、决策和上下文（"相对详细"，非极致压缩）。多个被压 turn 通过 `asyncio.gather` 并发发起调用，实际并发由 backend 层的 `max_concurrency` 限制（详见 §6.4）；按时序串接结果。任一并发请求失败按 §7.6.6 处理（all-or-nothing：丢弃整批，旧链保留）。
+5. **新链拼装**：上界之前的旧 SummaryNode + 本次新产出的 SummaryNode + 保留区。
+6. 压缩失败处理见 §7.6.6。
+
+#### 7.6.5 历史上限
+
+压缩历史也有窗口限制，避免 SummaryNode 累积无限制：
+
+1. 上限 `W = compressed_window * context_window`（tokens）。`compressed_window` 是 compressor 配置项，单位为比例（取值范围 (0, 1)），默认 `0.2`；`context_window` 取自 primary backend 配置。
+2. 计量：SummaryNode 没有 usage 数据，统一用字符数 / 4 估算。
+3. 时机：压缩算法（§7.6.4）拼装新链后立刻执行。
+4. 算法：从最新 SummaryNode 往旧累加估算 token；累加值首次超过 `W` 时，该位置之前的所有 SummaryNode 整体丢弃，与 SummaryNode 边界对齐，不切断单条 SummaryNode。
+
+#### 7.6.6 失败处理
+
+`Compressor.compress()` 抛出异常（含 context-overflow、超时、其他 backend 异常）时：
+
+1. **post-turn 路径**：异常向 frontend 抛，frontend 显示错误；session 链结构不破坏（旧 SummaryNode 与保留区保持原样）。处理方式与普通 backend 调用失败一致。
+2. **in-turn overflow retry 路径**：在 §8 主循环中 backend 抛 context-overflow 错误时，agent 同步调用 `compressor.compress(self.tail)` 一次，把返回值赋给 `self.tail`，然后对当前 backend 调用 retry 一次。retry 仍 overflow 则按普通 backend 异常向上抛，turn 终止。该路径不通知 frontend，因为反馈出去会让用户介入并续写 prompt，导致历史链增长，与压缩目的相反；agent 自行控制 retry。
+
+#### 7.6.7 日志
+
+每次自动压缩必须输出 INFO 级别日志，至少包含：
+
+- 触发判据：`token_threshold` / `char_fallback` / `overflow_retry`
+- 触发值：估算 token 数与对应 `context_window`
+- 被压 turn 数与新生成 SummaryNode 数
+- 历史上限触发的丢弃 SummaryNode 数（若有）
+- 压缩耗时（毫秒）
+
+#### 7.6.8 backend 配置
+
+每个 backend 配置增加 `context_window` 字段（int，默认 `128000`）。当前主流模型的 context window 无法从 API 读取，统一由配置指定。agent 在 §7.6.2 触发判据中读取本次 backend 调用对应 backend 的 `context_window`。
 
 ## 8. agent 的编排流程
 
@@ -623,10 +700,11 @@ class Compressor(Protocol):
 
 1. 若当前 session 已有活跃 turn：进入 pending 队列；队列满则抛 `SessionBusy`。否则立刻占据，标记"有活跃 turn"。
 2. 在当前尾部追加 `UserPromptNode`，旧尾若为可变类型先冻结。
-3. 进入主循环（循环上限 `MAX_TURN_ITERATIONS`，默认 10）：
+3. 进入主循环（循环上限 `MAX_TURN_ITERATIONS`，默认 20）：
    1. 调用 `session.get_turn_tool_map()` 得到本轮可见 tool 子集（若 `allowed_tools` 为 None，则返回全部已注册 tool）。调用 `Backend.generate(session)` 得到 async iterator；backend 内部读取 `session.get_turn_tool_map()` 而非 `session.agent.tools.list()`；遍历其产出：
       - 遇到 `SessionUpdate`（`agent_message_chunk` / `thinking_chunk`）：立即通过 `client.update()` 转发给 frontend，实现逐 token 流式显示。
       - 遇到 `BackendTurnResult`：保存为 `result`，退出遍历循环。
+      - 若 backend 抛 context-overflow 错误：进入 §7.6.6 中的 in-turn retry 路径（同步调用 `compressor.compress(self.tail)` 一次，更新 `self.tail`，对本次 `Backend.generate(session)` retry 一次）。retry 仍 overflow 按普通 backend 异常处理，turn 终止。该 retry 不经 frontend 通知。
    2. 若 `result.finish_reason == "completed"`：
       - 追加 `AssistantResponseNode`（内容来自 `result.output_text`），冻结。
       - 跳出主循环，返回 `("end_turn", output_text)`。
@@ -648,8 +726,11 @@ class Compressor(Protocol):
    - 若正在并发执行 tools：`asyncio.gather` 的 wait 被解除，已完成的结果正常写入，尚未完成的 call 在 `ToolResultNode.results` 中标记 `cancelled`，节点立刻冻结；后到的结果因节点已冻结而被丢弃。
    - 最后冻结任何未封口节点，返回 `("cancelled", partial_output)`。
 6. 真正失败（backend 异常、链条不一致等）直接抛异常，而不是返回 `failed`。
-7. 无论成功、取消还是异常，finally 清理活跃 turn 标记；pending 队列非空时唤醒下一个排队协程继续处理（失败不得污染队列）。
-8. `Session.cancel()` 只影响当前活跃 turn，不清空 pending 队列。
+7. 无论成功、取消还是异常，finally 阶段先按 §7.6.2 判据评估是否触发 post-turn 自动压缩：
+   - 触发：保持活跃 turn 标记不释放，异步调度 compress 任务（`asyncio.create_task`），由该任务在结束时释放活跃 turn 标记；pending 队列在 compress 结束后才唤醒。
+   - 未触发：立即清理活跃 turn 标记；pending 队列非空时唤醒下一个排队协程继续处理。
+   失败不得污染队列。
+8. `Session.cancel()` 只影响当前活跃 turn（含 post-turn compress 任务），不清空 pending 队列。
 
 `Session.cancel()` 的规则：
 
@@ -698,10 +779,23 @@ backends:
     model: gpt-4
     api_key: OPENAI_API_KEY
     base_url: https://api.openai.com/v1  # optional
+    context_window: 128000               # optional, default 128000；§7.6.8
+    max_concurrency: 1                   # optional, default 1；§6.4
   compressor:
     type: openai
     model: gpt-3.5-turbo
     api_key_env: OPENAI_API_KEY_NAME_IN_ENV
+    context_window: 128000
+    max_concurrency: 1
+
+# 自动压缩触发阈值，§7.6.2
+agent:
+  R: 0.5                                 # post-turn 触发阈值，取值范围 (0, 1]，默认 0.5
+
+# 压缩策略参数，§7.6.3 / §7.6.5
+compressor:
+  keep_turns: 5                          # 不参与压缩的最近 turn 数，下限 3，默认 5
+  compressed_window: 0.2                 # 压缩历史上限比例，W = compressed_window * primary.context_window，默认 0.2
 
 tools:
   providers:
