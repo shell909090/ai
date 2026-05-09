@@ -1,5 +1,7 @@
 """Main entry point for little-agent CLI."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import importlib
@@ -7,7 +9,10 @@ import logging
 import logging.config
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from little_agent.agent.protocol import PermissionChecker
 
 import yaml
 
@@ -192,9 +197,15 @@ def _load_compressor(
     )
 
 
-def _load_permissions(config: dict[str, Any], client: Any) -> Any:
+def _load_permissions(config: dict[str, Any], client: PermissionChecker) -> PermissionChecker:
     """Build permission chain from config list, with client as terminal."""
     permissions_cfg = config.get("permissions")
+    if isinstance(permissions_cfg, dict):
+        logger.warning(
+            "permissions config is a dict (old format); ignored. "
+            "Use a list of checkers: [{type: blackwhitelist, ...}]"
+        )
+        return client
     if isinstance(permissions_cfg, list):
         from little_agent.agent.permissions import build_permission_chain
 

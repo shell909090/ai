@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from little_agent.agent.permissions import YesManChecker
 from little_agent.main import (
     _build_backend,
+    _load_permissions,
     load_config,
     main,
     setup_logging,
@@ -411,3 +413,22 @@ def test_main_with_compressor_backend() -> None:
 
                     # Both primary and compressor backends are constructed
                     assert mock_backend_cls.call_count == 2
+
+
+def test_load_permissions_list_builds_chain() -> None:
+    """List config with yesman produces a YesManChecker chain."""
+    client = MagicMock()
+    config = {"permissions": [{"type": "yesman"}]}
+    result = _load_permissions(config, client)
+    assert isinstance(result, YesManChecker)
+
+
+def test_load_permissions_dict_warns_and_returns_client() -> None:
+    """Dict config (old format) logs a warning and returns client unchanged."""
+    client = MagicMock()
+    config = {"permissions": {"default": "allow", "rules": []}}
+    with patch("little_agent.main.logger") as mock_logger:
+        result = _load_permissions(config, client)
+    assert result is client
+    mock_logger.warning.assert_called_once()
+    assert "old format" in mock_logger.warning.call_args.args[0]
