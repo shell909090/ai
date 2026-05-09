@@ -196,7 +196,7 @@ def _load_permissions(config: dict[str, Any]) -> Any:
     """Load permission manager from config if present."""
     permissions_cfg = config.get("permissions")
     if isinstance(permissions_cfg, dict):
-        from little_agent.permissions import PermissionManager
+        from little_agent.agent.permissions import PermissionManager
 
         return PermissionManager.from_config(permissions_cfg)
     return None

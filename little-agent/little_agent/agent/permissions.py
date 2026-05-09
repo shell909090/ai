@@ -26,7 +26,7 @@ class PermissionManager:
     def __init__(
         self,
         rules: list[PermissionRule] | None = None,
-        default: Literal["allow", "deny", "ask"] = "allow",
+        default: Literal["allow", "deny", "ask"] = "ask",
     ) -> None:
         self._rules = rules or []
         self._default = default
@@ -53,14 +53,12 @@ class PermissionManager:
                   action: deny
         """
         if config is None:
-            return cls(default="allow")
+            return cls()
 
-        default_raw = config.get("default", "allow")
-        default: Literal["allow", "deny", "ask"] = (
-            "allow" if default_raw in ("allow", None) else str(default_raw)  # type: ignore[assignment]
-        )
-        if default not in ("allow", "deny", "ask"):
-            default = "allow"
+        default_raw = str(config.get("default", "ask"))
+        if default_raw not in ("allow", "deny", "ask"):
+            default_raw = "ask"
+        default: Literal["allow", "deny", "ask"] = default_raw  # type: ignore[assignment]
 
         rules: list[PermissionRule] = []
         rules_raw = config.get("rules", [])

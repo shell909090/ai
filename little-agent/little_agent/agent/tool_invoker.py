@@ -86,7 +86,7 @@ class ToolInvoker:
 
         if self._session.agent.permissions is not None:
             return self._session.agent.permissions.check(tc.tool_name), None
-        return "allow", None
+        return "ask", None
 
     async def _ask_permissions(
         self,

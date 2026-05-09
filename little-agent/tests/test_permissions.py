@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from little_agent.agent.permissions import PermissionManager, PermissionRule
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.permissions import PermissionManager, PermissionRule
 from little_agent.tools.protocol import ToolDef, ToolProvider
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
@@ -85,9 +85,9 @@ async def test_permission_manager_from_config() -> None:
 
 @pytest.mark.asyncio
 async def test_permission_manager_from_none_config() -> None:
-    """None config produces default-allow manager."""
+    """None config produces default-ask manager."""
     pm = PermissionManager.from_config(None)
-    assert pm.check("anything") == "allow"
+    assert pm.check("anything") == "ask"
 
 
 @pytest.mark.asyncio

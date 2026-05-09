@@ -11,9 +11,9 @@ from .protocol import Agent, Compressor, Session
 from .session import SessionCore
 
 if TYPE_CHECKING:
+    from little_agent.agent.permissions import PermissionManager
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
-    from little_agent.permissions import PermissionManager
     from little_agent.tools.protocol import ToolRegistry
 
 

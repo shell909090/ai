@@ -11,6 +11,7 @@ from .nodes import (
     ToolResultNode,
     UserPromptNode,
 )
+from .permissions import PermissionManager, PermissionRule
 from .protocol import Agent, Compressor, Session
 from .session import MAX_TURN_ITERATIONS, SessionCore
 
@@ -29,4 +30,6 @@ __all__ = [
     "SummaryNode",
     "SessionBusyError",
     "LLMCompressor",
+    "PermissionManager",
+    "PermissionRule",
 ]

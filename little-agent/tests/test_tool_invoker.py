@@ -22,11 +22,11 @@ def _tc(tool_name: str) -> BackendToolCall:
 class TestCheckNoAllowedNames:
     """Tests where allowed_names=None (no turn-level restriction)."""
 
-    def test_no_allowed_names_no_permissions_returns_allow(self):
-        """When allowed_names is None and agent has no permissions, allow unconditionally."""
+    def test_no_allowed_names_no_permissions_returns_ask(self):
+        """When allowed_names is None and agent has no permissions, ask by default."""
         invoker = _make_invoker(permissions=None)
         result = invoker._check(_tc("echo"), allowed_names=None)
-        assert result == ("allow", None)
+        assert result == ("ask", None)
 
     def test_no_allowed_names_permissions_allow(self):
         """When permissions.check returns 'allow', _check propagates it with no error."""
@@ -59,11 +59,11 @@ class TestCheckNoAllowedNames:
 class TestCheckWithAllowedNames:
     """Tests where allowed_names restricts the tool set."""
 
-    def test_tool_in_allowed_names_no_permissions_returns_allow(self):
-        """Tool present in allowed_names and no permissions → allow."""
+    def test_tool_in_allowed_names_no_permissions_returns_ask(self):
+        """Tool present in allowed_names and no permissions → ask by default."""
         invoker = _make_invoker(permissions=None)
         result = invoker._check(_tc("echo"), allowed_names={"echo"})
-        assert result == ("allow", None)
+        assert result == ("ask", None)
 
     def test_tool_not_in_allowed_names_returns_deny_with_message(self):
         """Tool absent from allowed_names returns deny with descriptive error."""
