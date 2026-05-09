@@ -503,6 +503,9 @@ async def test_anthropic_backend_generate_text() -> None:
     result, updates = await _run_backend_with_events(backend, events)
     assert result.finish_reason == "completed"
     assert result.output_text == "Hello, world"
+    assert result.usage is not None
+    assert result.usage.get("input_tokens") == 10
+    assert result.usage.get("output_tokens") == 5
 
     text_updates = [u for u in updates if u.type == "agent_message_chunk"]
     combined = "".join(u.data["text"] for u in text_updates)

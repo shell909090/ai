@@ -202,11 +202,15 @@ def _update_metadata(
         if hasattr(delta, "stop_reason") and delta.stop_reason:
             finish_reason_raw = delta.stop_reason
         if hasattr(event, "usage") and event.usage:
-            usage = _extract_usage(event.usage)
+            if usage is None:
+                usage = {}
+            usage.update(_extract_usage(event.usage))
     elif event_type == "message_start":
         msg = event.message
         if hasattr(msg, "usage") and msg.usage:
-            usage = _extract_usage(msg.usage)
+            if usage is None:
+                usage = {}
+            usage.update(_extract_usage(msg.usage))
     return finish_reason_raw, usage
 
 
