@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -63,6 +64,14 @@ class CliClient(Client):
         self._updates: list[SessionUpdate] = []
         self._buffer_type: _ChunkType | None = None
         self._buffer_parts: list[str] = []
+        # Bounded to prevent unbounded growth if asyncio.to_thread is mistakenly
+        # mocked to return immediately in tests, which would otherwise let the
+        # _stdin_reader busy-loop and OOM the host.
+        self._stdin_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=32)
+        # Set means "no permission request in flight"; cleared while request_permission
+        # is waiting on the queue, so _watch_cancel_loop backs off and does not race.
+        self._permission_done: asyncio.Event = asyncio.Event()
+        self._permission_done.set()
 
     def _flush_buffer(self) -> None:
         """Flush buffered content chunks as a single coalesced message."""
@@ -121,6 +130,18 @@ class CliClient(Client):
                 status = status_raw if isinstance(status_raw, str) else str(status_raw)
                 print(f"[ToolResult] {call_id}: {status}")
 
+    async def _stdin_reader(self) -> None:
+        """Background task reading stdin lines into _stdin_queue; None signals EOF."""
+        try:
+            while True:
+                line = await asyncio.to_thread(sys.stdin.readline)
+                if not line:
+                    await self._stdin_queue.put(None)
+                    break
+                await self._stdin_queue.put(line.rstrip("\n"))
+        except asyncio.CancelledError:
+            pass
+
     async def request_permission(
         self,
         session: Session,
@@ -129,11 +150,21 @@ class CliClient(Client):
     ) -> bool:
         """Interactive permission prompt for CLI."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
+        print(f"[Allow {kind}? y/N] ", end="", flush=True)
+        self._permission_done.clear()
         try:
-            answer = await asyncio.to_thread(input, f"[Allow {kind}? y/N] ")
-        except (EOFError, KeyboardInterrupt):
+            item = await self._stdin_queue.get()
+        except asyncio.CancelledError:
             return False
-        return answer.strip().lower() in ("y", "yes")
+        finally:
+            self._permission_done.set()
+        if item is None:
+            return False
+        stripped = item.strip()
+        if stripped == "/cancel":
+            await session.cancel()
+            return False
+        return stripped.lower() in ("y", "yes")
 
     async def _do_save(self, session: Session, path: Path) -> None:
         """Save session to file."""
@@ -196,10 +227,62 @@ class CliClient(Client):
                 print(f"Unknown command: {stripped}")
                 return session, True
 
-    async def _do_prompt(self, session: Session, user_input: str) -> None:
-        """Send user input to the session and handle the result."""
+    async def _wait_for_permission(self, prompt_task: asyncio.Task[tuple[str, str]]) -> None:
+        """Wait until _permission_done is set or prompt_task finishes."""
+        perm_wait: asyncio.Task[bool] = asyncio.create_task(self._permission_done.wait())
+        await asyncio.wait({prompt_task, perm_wait}, return_when=asyncio.FIRST_COMPLETED)
+        if not perm_wait.done():
+            perm_wait.cancel()
+            try:
+                await perm_wait
+            except asyncio.CancelledError:
+                pass
+
+    async def _watch_cancel_loop(
+        self, prompt_task: asyncio.Task[tuple[str, str]], session: Session
+    ) -> None:
+        """Watch _stdin_queue for /cancel and EOF while prompt_task runs.
+
+        Any other input is put back on the queue for run() to handle after the prompt.
+        """
+        pending_get: asyncio.Task[str | None] | None = None
         try:
-            stop_reason, text = await session.prompt(user_input)
+            while not prompt_task.done():
+                if not self._permission_done.is_set():
+                    await self._wait_for_permission(prompt_task)
+                    continue
+                if pending_get is None:
+                    pending_get = asyncio.create_task(self._stdin_queue.get())
+                done, _ = await asyncio.wait(
+                    {prompt_task, pending_get}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if pending_get not in done:
+                    break  # prompt finished; pending_get still waiting
+                item = pending_get.result()
+                pending_get = None
+                if item is None:
+                    await self._stdin_queue.put(None)  # forward EOF to run()
+                    break
+                if item.strip() == "/cancel":
+                    await session.cancel()
+                    break
+                # anything else (text, slash commands): put back for run()
+                await self._stdin_queue.put(item)
+                break
+        finally:
+            if pending_get is not None and not pending_get.done():
+                pending_get.cancel()
+                try:
+                    await pending_get
+                except asyncio.CancelledError:
+                    pass
+
+    async def _do_prompt(self, session: Session, user_input: str) -> None:
+        """Send user input to session; watch for /cancel and queue text concurrently."""
+        prompt_task: asyncio.Task[tuple[str, str]] = asyncio.create_task(session.prompt(user_input))
+        try:
+            await self._watch_cancel_loop(prompt_task, session)
+            stop_reason, text = await prompt_task
             self._flush_buffer()
             if stop_reason == "cancelled":
                 print("[Cancelled]")
@@ -212,17 +295,30 @@ class CliClient(Client):
             self._flush_buffer()
             logger.exception("Error during prompt")
             print(f"[Error] {e}")
+        finally:
+            if not prompt_task.done():
+                prompt_task.cancel()
+                try:
+                    await prompt_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     async def run(self, agent: Agent) -> None:
         """Run the CLI interactive loop."""
         history_file = _setup_readline()
         session = await agent.new()
         print("Little Agent CLI. Commands: /new /save <path> /load <path> /cancel /fork /quit")
+        reader_task = asyncio.create_task(self._stdin_reader())
         try:
             while True:
                 try:
-                    user_input = await asyncio.to_thread(input, "> ")
-                except (EOFError, KeyboardInterrupt):
+                    print("> ", end="", flush=True)
+                    user_input = await self._stdin_queue.get()
+                except asyncio.CancelledError:
+                    print("\nGoodbye!")
+                    break
+
+                if user_input is None:  # EOF
                     print("\nGoodbye!")
                     break
 
@@ -238,6 +334,11 @@ class CliClient(Client):
 
                 await self._do_prompt(session, user_input)
         finally:
+            reader_task.cancel()
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass
             if history_file is not None:
                 try:
                     import readline

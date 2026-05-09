@@ -10,7 +10,7 @@ from little_agent.agent.exceptions import SessionBusyError
 from little_agent.agent.session import MAX_TURN_ITERATIONS
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.types import JSONValue, SessionUpdate
+from little_agent.types import JSONValue, PromptReturn, SessionUpdate
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
@@ -203,13 +203,18 @@ async def test_cancel_during_tool_execution() -> None:
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
+    result: PromptReturn | None = None
+
     async def prompt_task() -> None:
-        await session.prompt("cancel me")
+        nonlocal result
+        result = await session.prompt("cancel me")
 
     task = asyncio.create_task(prompt_task())
     await asyncio.sleep(0.1)
     await session.cancel()
     await task
+    assert result is not None
+    assert result[0] == "cancelled"
 
 
 @pytest.mark.asyncio

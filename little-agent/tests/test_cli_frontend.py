@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -384,7 +384,8 @@ def test_flush_clears_buffer(client: CliClient, session: _MockSession) -> None:
 @pytest.mark.asyncio
 async def test_request_permission_granted(client: CliClient, session: _MockSession) -> None:
     """request_permission returns True when user answers 'y'."""
-    with patch("asyncio.to_thread", return_value="y"):
+    client._stdin_queue.put_nowait("y")
+    with patch("builtins.print"):
         result = await client.request_permission(session, "bash", {})
     assert result is True
 
@@ -392,17 +393,29 @@ async def test_request_permission_granted(client: CliClient, session: _MockSessi
 @pytest.mark.asyncio
 async def test_request_permission_denied(client: CliClient, session: _MockSession) -> None:
     """request_permission returns False when user answers 'n'."""
-    with patch("asyncio.to_thread", return_value="n"):
+    client._stdin_queue.put_nowait("n")
+    with patch("builtins.print"):
         result = await client.request_permission(session, "bash", {})
     assert result is False
 
 
 @pytest.mark.asyncio
 async def test_request_permission_eof(client: CliClient, session: _MockSession) -> None:
-    """request_permission returns False on EOFError."""
-    with patch("asyncio.to_thread", side_effect=EOFError):
+    """request_permission returns False on EOF (None sentinel)."""
+    client._stdin_queue.put_nowait(None)
+    with patch("builtins.print"):
         result = await client.request_permission(session, "bash", {})
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_request_permission_cancel(client: CliClient, session: _MockSession) -> None:
+    """request_permission cancels session and returns False on /cancel."""
+    client._stdin_queue.put_nowait("/cancel")
+    with patch("builtins.print"):
+        result = await client.request_permission(session, "bash", {})
+    assert result is False
+    assert session._cancelled is True
 
 
 # --- _handle_command() tests ---
@@ -603,16 +616,17 @@ async def test_do_prompt_error_flushes_buffer(client: CliClient, session: _MockS
 @pytest.mark.asyncio
 async def test_run_quit_command(client: CliClient, agent: _MockAgent) -> None:
     """run() exits on /quit command."""
-    inputs = ["/quit"]
-    with patch("asyncio.to_thread", side_effect=lambda _, prompt: inputs.pop(0)):
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
         with patch("builtins.print"):
             await client.run(agent)
 
 
 @pytest.mark.asyncio
 async def test_run_eof(client: CliClient, agent: _MockAgent) -> None:
-    """run() exits on EOF."""
-    with patch("asyncio.to_thread", side_effect=EOFError):
+    """run() exits on EOF (None sentinel in queue)."""
+    client._stdin_queue.put_nowait(None)
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
         with patch("builtins.print"):
             await client.run(agent)
 
@@ -620,10 +634,173 @@ async def test_run_eof(client: CliClient, agent: _MockAgent) -> None:
 @pytest.mark.asyncio
 async def test_run_prompt_and_command(client: CliClient, agent: _MockAgent) -> None:
     """run() handles prompt then command."""
-    inputs = ["hello", "/quit"]
-    with patch("asyncio.to_thread", side_effect=lambda _, prompt: inputs.pop(0)):
+    client._stdin_queue.put_nowait("hello")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
         with patch("builtins.print"):
             await client.run(agent)
+
+
+@pytest.mark.asyncio
+async def test_run_empty_input(client: CliClient, agent: _MockAgent) -> None:
+    """run() skips empty input and continues."""
+    client._stdin_queue.put_nowait("")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print"):
+            await client.run(agent)
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_command(client: CliClient, agent: _MockAgent) -> None:
+    """run() handles /cancel at top level."""
+    client._stdin_queue.put_nowait("/cancel")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print"):
+            await client.run(agent)
+
+
+@pytest.mark.asyncio
+async def test_run_fork(client: CliClient, agent: _MockAgent) -> None:
+    """run() handles /fork."""
+    client._stdin_queue.put_nowait("/fork")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("Forked new session.")
+
+
+@pytest.mark.asyncio
+async def test_run_new(client: CliClient, agent: _MockAgent) -> None:
+    """run() handles /new."""
+    client._stdin_queue.put_nowait("/new")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("Created new session.")
+
+
+@pytest.mark.asyncio
+async def test_run_exit_alias(client: CliClient, agent: _MockAgent) -> None:
+    """run() exits on /exit (alias for /quit)."""
+    client._stdin_queue.put_nowait("/exit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("Goodbye!")
+
+
+@pytest.mark.asyncio
+async def test_run_list_tools(client: CliClient, agent: _MockAgent) -> None:
+    """run() handles /list-tools."""
+    client._stdin_queue.put_nowait("/list-tools")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("Available tools:")
+
+
+@pytest.mark.asyncio
+async def test_run_unknown_command(client: CliClient, agent: _MockAgent) -> None:
+    """run() prints hint for unknown / commands."""
+    client._stdin_queue.put_nowait("/typo")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("Unknown command: /typo")
+
+
+@pytest.mark.asyncio
+async def test_run_save_and_load(client: CliClient, agent: _MockAgent, tmp_path: Path) -> None:
+    """run() handles /save and /load."""
+    save_path = tmp_path / "session.json"
+    client._stdin_queue.put_nowait(f"/save {save_path}")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call(f"Session saved to {save_path}")
+    assert save_path.exists()
+
+    client2 = CliClient()
+    client2._stdin_queue.put_nowait(f"/load {save_path}")
+    client2._stdin_queue.put_nowait("/quit")
+    with patch.object(client2, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print2:
+            await client2.run(agent)
+    mock_print2.assert_any_call(f"Session loaded from {save_path}")
+
+
+@pytest.mark.asyncio
+async def test_run_cancelled_prompt(client: CliClient, agent: _MockAgent) -> None:
+    """run() prints [Cancelled] when prompt returns cancelled."""
+    custom_session = _MockSession()
+    custom_session.prompt = AsyncMock(return_value=("cancelled", ""))  # type: ignore[method-assign]
+    agent.new = AsyncMock(return_value=custom_session)  # type: ignore[method-assign]
+    client._stdin_queue.put_nowait("hello")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("[Cancelled]")
+
+
+@pytest.mark.asyncio
+async def test_run_prompt_error(client: CliClient, agent: _MockAgent) -> None:
+    """run() handles exception raised by prompt."""
+    custom_session = _MockSession()
+    custom_session.prompt = AsyncMock(side_effect=ValueError("bad prompt"))  # type: ignore[method-assign]
+    agent.new = AsyncMock(return_value=custom_session)  # type: ignore[method-assign]
+    client._stdin_queue.put_nowait("hello")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    mock_print.assert_any_call("[Error] bad prompt")
+
+
+@pytest.mark.asyncio
+async def test_run_backend_timeout(client: CliClient, agent: _MockAgent) -> None:
+    """run() prints [Timeout] on BackendTimeoutError."""
+    custom_session = _MockSession()
+    custom_session.prompt = AsyncMock(  # type: ignore[method-assign]
+        side_effect=BackendTimeoutError("timed out after 60s")
+    )
+    agent.new = AsyncMock(return_value=custom_session)  # type: ignore[method-assign]
+    client._stdin_queue.put_nowait("hello")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    printed = [str(c.args[0]) for c in mock_print.call_args_list]
+    assert any("[Timeout]" in p for p in printed)
+
+
+# --- _watch_cancel_loop tests ---
+
+
+@pytest.mark.asyncio
+async def test_watch_cancel_loop_backs_off_during_permission(
+    client: CliClient, session: _MockSession
+) -> None:
+    """_watch_cancel_loop does not consume queue while _permission_done is clear."""
+    client._permission_done.clear()  # simulate in-flight permission request
+    client._stdin_queue.put_nowait("user text")
+
+    async def short_prompt() -> tuple[str, str]:
+        return ("end_turn", "ok")
+
+    prompt_task = asyncio.create_task(short_prompt())
+    await client._watch_cancel_loop(prompt_task, session)
+
+    assert not session._cancelled
+    # Queue item must be untouched because _watch_cancel_loop backed off.
+    assert client._stdin_queue.qsize() == 1
 
 
 # --- _setup_readline tests ---
