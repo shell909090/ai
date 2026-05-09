@@ -32,22 +32,19 @@ logger = logging.getLogger(__name__)
 def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
     """Convert ToolMap to OpenAI function definitions."""
     functions = []
-    for name, (desc, args) in tool_map.items():
+    for name, tooldef in tool_map.items():
         properties: dict[str, Any] = {}
         required: list[str] = []
-        for arg_name, arg_type, arg_desc, arg_required in args:
-            properties[arg_name] = {
-                "type": arg_type,
-                "description": arg_desc,
-            }
-            if arg_required:
-                required.append(arg_name)
+        for arg in tooldef.args:
+            properties[arg.name] = {"type": arg.type, "description": arg.desc}
+            if arg.required:
+                required.append(arg.name)
         functions.append(
             {
                 "type": "function",
                 "function": {
                     "name": name,
-                    "description": desc,
+                    "description": tooldef.desc,
                     "parameters": {
                         "type": "object",
                         "properties": properties,

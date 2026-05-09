@@ -25,6 +25,8 @@ from little_agent.backends.openai import (
     _tool_map_to_openai_functions,
 )
 from little_agent.backends.protocol import BackendTurnResult
+from little_agent.tools.manager import ToolManager
+from little_agent.tools.protocol import ToolArgDef, ToolDef
 from little_agent.types import SessionUpdate
 from tests.mocks import MockClient, MockToolProvider
 
@@ -65,7 +67,7 @@ class _FakeStream:
 def test_tool_map_to_openai_functions() -> None:
     """Test tool map conversion to OpenAI functions."""
     tool_map = {
-        "echo": ("Echo", [("text", "string", "text", True)]),
+        "echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)]),
     }
     functions = _tool_map_to_openai_functions(tool_map)
     assert len(functions) == 1
@@ -145,7 +147,12 @@ def test_chain_to_messages_parallel_tool_calls() -> None:
 async def test_openai_backend_generate() -> None:
     """Test OpenAI backend generate method."""
     client = MockClient()
-    tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
+    tools = ToolManager()
+    tools.register(
+        MockToolProvider(
+            tools={"echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)])}
+        )
+    )
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     chunk1 = MagicMock()
@@ -189,7 +196,12 @@ async def test_openai_backend_generate() -> None:
 async def test_openai_backend_generate_with_tool_calls() -> None:
     """Test OpenAI backend generate with tool calls in response."""
     client = MockClient()
-    tools = MockToolProvider(tools={"echo": ("Echo", [("text", "string", "text", True)])})
+    tools = ToolManager()
+    tools.register(
+        MockToolProvider(
+            tools={"echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)])}
+        )
+    )
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     tc_delta1 = MagicMock()
@@ -277,7 +289,7 @@ async def test_openai_backend_timeout_raises_backend_timeout_error() -> None:
     from little_agent.backends.exceptions import BackendTimeoutError
 
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key", timeout=0.001)
 
     async def slow_create(**_: object) -> None:
@@ -297,7 +309,7 @@ async def test_openai_backend_timeout_raises_backend_timeout_error() -> None:
 async def test_openai_backend_generate_with_reasoning() -> None:
     """Test OpenAI backend extracts reasoning_content into thinking_text."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     chunk1 = MagicMock()
@@ -335,7 +347,7 @@ async def test_openai_backend_generate_with_reasoning() -> None:
 async def test_openai_backend_streams_content_chunks() -> None:
     """Test that generate() yields agent_message_chunk updates as tokens arrive."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     chunks = []
@@ -417,7 +429,7 @@ def test_openai_backend_default_max_concurrency() -> None:
 async def test_openai_backend_semaphore_serializes_with_max_concurrency_1() -> None:
     """With max_concurrency=1, two concurrent generate() calls run serially."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=1)
 
     sleep_seconds = 0.05
@@ -448,7 +460,7 @@ async def test_openai_backend_semaphore_serializes_with_max_concurrency_1() -> N
 async def test_openai_backend_semaphore_allows_parallel_with_max_concurrency_2() -> None:
     """With max_concurrency=2, two concurrent generate() calls overlap."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=2)
 
     sleep_seconds = 0.05
@@ -476,7 +488,7 @@ async def test_openai_backend_semaphore_allows_parallel_with_max_concurrency_2()
 async def test_openai_backend_overflow_error_by_code() -> None:
     """BadRequestError with code='context_length_exceeded' maps to ContextOverflowError."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     err = _make_bad_request_error("some msg", code="context_length_exceeded")
@@ -506,7 +518,7 @@ async def test_openai_backend_overflow_error_by_code() -> None:
 async def test_openai_backend_overflow_error_by_message_pattern(message: str) -> None:
     """BadRequestError with overflow-pattern message maps to ContextOverflowError."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     err = _make_bad_request_error(message)
@@ -528,7 +540,7 @@ async def test_openai_backend_overflow_error_by_message_pattern(message: str) ->
 async def test_openai_backend_non_overflow_bad_request_reraises() -> None:
     """Non-overflow BadRequestError propagates unchanged."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key")
 
     err = _make_bad_request_error("invalid api key")
@@ -550,7 +562,7 @@ async def test_openai_backend_non_overflow_bad_request_reraises() -> None:
 async def test_openai_backend_semaphore_releases_on_exception() -> None:
     """Semaphore is released after exception so subsequent generate() works."""
     client = MockClient()
-    tools = MockToolProvider()
+    tools = ToolManager()
     backend = OpenAIBackend(model="gpt-4", api_key="test-key", max_concurrency=1)
 
     overflow_err = _make_bad_request_error("maximum context length exceeded")

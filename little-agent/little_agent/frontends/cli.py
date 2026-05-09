@@ -184,11 +184,11 @@ class CliClient(Client):
                 session = await self._do_load(agent, session, Path(path_str))
                 return session, True
             case ["/list-tools"]:
-                tools = agent.tools.list()
+                tools = agent.tools.desc_tool()
                 if tools:
                     print("Available tools:")
-                    for name, (desc, _) in tools.items():
-                        print(f"  {name}: {desc}")
+                    for name, tooldef in tools.items():
+                        print(f"  {name}: {tooldef.desc}")
                 else:
                     print("No tools registered.")
                 return session, True

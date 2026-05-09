@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from little_agent.tools.protocol import ToolMap, ToolProvider
+from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef, ToolRegistry
 from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
@@ -29,22 +29,16 @@ class _TaskSpec:
     result_future: asyncio.Future[JSONValue]
 
 
-class _FilteredProvider:
-    """Wraps a ToolProvider exposing only the allowed tool names."""
+class _RegistrySliceProvider:
+    """Adapts a ToolRegistry subset into a ToolProvider for sub-manager registration."""
 
-    def __init__(self, provider: ToolProvider, allowed: set[str]) -> None:
-        self._provider = provider
-        self._allowed = allowed
+    def __init__(self, registry: ToolRegistry, names: set[str]) -> None:
+        self._registry = registry
+        self._names = names
 
-    def list(self) -> ToolMap:
-        return {k: v for k, v in self._provider.list().items() if k in self._allowed}
-
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        if name not in self._allowed:
-            from little_agent.tools.exceptions import ToolInvokeError
-
-            raise ToolInvokeError(f"Tool '{name}' is not available in this sub-task")
-        return await self._provider.invoke(name, kwargs)
+    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
+        for name, tooldef in self._registry.desc_tool(self._names).items():
+            yield name, tooldef, self._registry[name]
 
 
 def _spec_label(spec: _TaskSpec) -> str:
@@ -102,47 +96,42 @@ def _collect_done_tasks(
 class TaskToolProvider:
     """Provides the built-in create_task tool for spawning sub-sessions."""
 
-    _TOOLS: ToolMap = {
-        "create_task": (
-            "Create a sub-task with its own session and execute it",
-            [
-                ("prompt", "string", "The prompt for the sub-task", True),
-                ("id", "integer", "Optional sub-task identifier", False),
-                ("depends", "array", "Optional list of dependency task IDs", False),
-                ("tools", "array", "Optional list of allowed tool names (default: all)", False),
-                (
-                    "inheritance",
-                    "boolean",
-                    "If true, inherit conversation history via fork",
-                    False,
-                ),
-            ],
-        )
-    }
+    _TOOL_DEF = ToolDef(
+        desc="Create a sub-task with its own session and execute it",
+        args=[
+            ToolArgDef("prompt", "string", "The prompt for the sub-task", True),
+            ToolArgDef("id", "integer", "Optional sub-task identifier", False),
+            ToolArgDef("depends", "array", "Optional list of dependency task IDs", False),
+            ToolArgDef(
+                "tools", "array", "Optional list of allowed tool names (default: all)", False
+            ),
+            ToolArgDef(
+                "inheritance", "boolean", "If true, inherit conversation history via fork", False
+            ),
+        ],
+    )
 
     def __init__(self, agent: AgentCore) -> None:
         self._agent = agent
         self._pending: list[_TaskSpec] = []
         self._scheduler: asyncio.Task[None] | None = None
 
-    def list(self) -> ToolMap:
-        return self._TOOLS.copy()
+    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
+        """Yield the single create_task tool triple."""
+        yield ("create_task", self._TOOL_DEF, self._create_task_dispatch)
 
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        if name != "create_task":
-            raise ValueError(f"Unknown tool: {name}")
-        return await self.create_task(**kwargs)
+    async def _create_task_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
+        return await self.create_task(**args)
 
-    def _build_sub_tools(self, tool_names: Sequence[str] | None) -> Any:
+    def _build_sub_tools(self, tool_names: Sequence[str] | None) -> ToolRegistry:
         from little_agent.tools.manager import ToolManager
 
-        all_names = set(self._agent.tools.list().keys())
+        all_names = set(self._agent.tools.desc_tool().keys())
         all_names.discard("create_task")
         allowed = (set(tool_names) & all_names) if tool_names is not None else all_names
 
-        filtered = _FilteredProvider(self._agent.tools, allowed)
         sub_mgr = ToolManager()
-        sub_mgr.register(filtered)
+        sub_mgr.register(_RegistrySliceProvider(self._agent.tools, allowed))
         return sub_mgr
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:

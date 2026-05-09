@@ -9,7 +9,7 @@ from little_agent.types import ContentBlock, JSONValue, PromptReturn
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
-    from little_agent.tools.protocol import ToolProvider
+    from little_agent.tools.protocol import ToolRegistry
 
     from .nodes import Node
 
@@ -39,13 +39,13 @@ class Session(Protocol):
 class Agent(Protocol):
     """Agent protocol."""
 
-    tools: ToolProvider
+    tools: ToolRegistry
 
     def __init__(
         self,
         client: Client,
         backend: Backend,
-        tools: ToolProvider,
+        tools: ToolRegistry,
         compressor: Compressor | None = None,
     ) -> None: ...
 

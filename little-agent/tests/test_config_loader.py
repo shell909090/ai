@@ -3,18 +3,15 @@
 from unittest.mock import MagicMock, patch
 
 from little_agent.main import load_providers_from_config
-from little_agent.tools.protocol import ToolMap, ToolProvider
-from little_agent.types import JSONValue
+from little_agent.tools.protocol import ToolProvider
 
 
 class FakeProvider(ToolProvider):
     """Fake provider for testing."""
 
-    def list(self) -> ToolMap:
-        return {}
-
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        return "ok"
+    def __iter__(self):  # type: ignore[override]
+        """Yield no tools."""
+        return iter([])
 
 
 def test_empty_config_returns_empty() -> None:

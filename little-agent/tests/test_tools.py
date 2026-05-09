@@ -3,137 +3,82 @@
 import pytest
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.tools.exceptions import ToolExecutionError, ToolInvokeError
+from little_agent.tools.exceptions import ToolExecutionError
 from little_agent.tools.manager import ToolManager
-from little_agent.tools.protocol import ToolMap, ToolProvider
-from little_agent.types import JSONValue
+from little_agent.tools.protocol import ToolMap
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
-
-
-class _FastPathProvider(ToolProvider):
-    """Provider that exposes a named method for fast-path dispatch testing."""
-
-    def __init__(self) -> None:
-        self.invoke_called = False
-        self.fast_called = False
-
-    def list(self) -> ToolMap:
-        return {
-            "greet": ("Say hello", [("name", "string", "Name to greet", True)]),
-            "invoke": ("A tool literally named invoke", []),
-        }
-
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        self.invoke_called = True
-        if name == "invoke":
-            return "invoke-tool-result"
-        return f"fallback:{name}"
-
-    async def greet(self, **kwargs: JSONValue) -> JSONValue:
-        self.fast_called = True
-        return f"hello {kwargs.get('name', '')}"
 
 
 @pytest.mark.asyncio
 async def test_tool_manager_register_and_list() -> None:
-    """Test register and list tools."""
+    """Test register and desc_tool."""
     manager = ToolManager()
     provider = BuiltinToolProvider()
     manager.register(provider)
-    tools = manager.list()
+    tools = manager.desc_tool()
     assert "echo" in tools
     assert "add" in tools
 
 
 @pytest.mark.asyncio
 async def test_invoke_routes_to_provider() -> None:
-    """Test invoke routes to correct provider."""
+    """Test __getitem__ routes to correct provider callable."""
     manager = ToolManager()
     provider = BuiltinToolProvider()
     manager.register(provider)
-    result = await manager.invoke("echo", {"text": "hello"})
+    result = await manager["echo"]({"text": "hello"})
     assert result == "hello"
 
 
-@pytest.mark.asyncio
-async def test_invoke_unknown_tool_raises() -> None:
-    """Test invoke unknown tool raises ToolInvokeError."""
+def test_invoke_unknown_tool_raises() -> None:
+    """Test __getitem__ for unknown tool raises KeyError."""
     manager = ToolManager()
-    with pytest.raises(ToolInvokeError):
-        await manager.invoke("nonexistent", {})
+    with pytest.raises(KeyError):
+        manager["nonexistent"]
 
 
 @pytest.mark.asyncio
 async def test_builtin_echo() -> None:
     """Test builtin echo tool."""
-    provider = BuiltinToolProvider()
-    result = await provider.invoke("echo", {"text": "world"})
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = await manager["echo"]({"text": "world"})
     assert result == "world"
 
 
 @pytest.mark.asyncio
 async def test_builtin_add() -> None:
     """Test builtin add tool."""
-    provider = BuiltinToolProvider()
-    result = await provider.invoke("add", {"a": 1, "b": 2})
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = await manager["add"]({"a": 1, "b": 2})
     assert result == 3
 
 
 @pytest.mark.asyncio
 async def test_builtin_add_invalid_type_raises() -> None:
     """Test builtin add with invalid types raises ToolExecutionError."""
-    provider = BuiltinToolProvider()
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
     with pytest.raises(ToolExecutionError):
-        await provider.invoke("add", {"a": "x", "b": "y"})
+        await manager["add"]({"a": "x", "b": "y"})
 
 
-@pytest.mark.asyncio
-async def test_builtin_unknown_tool_raises() -> None:
-    """Test builtin unknown tool raises ToolExecutionError."""
-    provider = BuiltinToolProvider()
-    with pytest.raises(ToolExecutionError):
-        await provider.invoke("nonexistent", {})
-
-
-@pytest.mark.asyncio
-async def test_fast_path_dispatch_calls_method_directly() -> None:
-    """Test that manager uses fast path when provider has a matching method."""
+def test_builtin_unknown_tool_raises() -> None:
+    """Test KeyError for unknown tool name."""
     manager = ToolManager()
-    provider = _FastPathProvider()
-    manager.register(provider)
-    result = await manager.invoke("greet", {"name": "world"})
-    assert result == "hello world"
-    assert provider.fast_called is True
-    assert provider.invoke_called is False
+    manager.register(BuiltinToolProvider())
+    with pytest.raises(KeyError):
+        manager["nonexistent"]
 
 
 @pytest.mark.asyncio
-async def test_fast_path_reserved_name_falls_back_to_invoke() -> None:
-    """Test that a tool named 'invoke' is never fast-pathed."""
+async def test_register_conflict_raises() -> None:
+    """Registering the same tool name twice raises ValueError."""
     manager = ToolManager()
-    provider = _FastPathProvider()
-    manager.register(provider)
-    result = await manager.invoke("invoke", {})
-    assert result == "invoke-tool-result"
-    assert provider.invoke_called is True
-
-
-@pytest.mark.asyncio
-async def test_fast_path_absent_method_falls_back_to_invoke() -> None:
-    """Test that manager falls back to provider.invoke() when no method exists."""
-    manager = ToolManager()
-
-    class _NoMethodProvider(ToolProvider):
-        def list(self) -> ToolMap:
-            return {"dynamo": ("dynamic tool", [])}
-
-        async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-            return f"fallback:{name}"
-
-    provider = _NoMethodProvider()
-    manager.register(provider)
-    result = await manager.invoke("dynamo", {})
-    assert result == "fallback:dynamo"
+    manager.register(BuiltinToolProvider())
+    with pytest.raises(ValueError):
+        manager.register(BuiltinToolProvider())
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +114,7 @@ async def test_allowed_tools_filters_tool_map() -> None:
 
     client = MockClient()
     provider = BuiltinToolProvider()
-    # Bypass MockAgent's type hint; BuiltinToolProvider satisfies ToolProvider protocol.
-    agent = MockAgent(backend=_CapturingBackend(), tools=provider, client=client)  # type: ignore[arg-type]
+    agent = MockAgent(backend=_CapturingBackend(), tools=provider, client=client)
     session = await agent.new()
 
     await session.prompt("hello", allowed_tools=["echo"])
@@ -200,12 +144,11 @@ async def test_disallowed_tool_call_results_in_failure() -> None:
         ),
     ]
     backend = MockBackend(script=script)
-    agent = MockAgent(backend=backend, tools=provider, client=client)  # type: ignore[arg-type]
+    agent = MockAgent(backend=backend, tools=provider, client=client)
     session = await agent.new()
 
     await session.prompt("hello", allowed_tools=["echo"])
 
-    # Find the tool_call_update for call_id "c1"
     updates = [
         u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "c1"
     ]
@@ -218,7 +161,6 @@ async def test_disallowed_tool_call_results_in_failure() -> None:
     assert "not in allowed list" in str(content) or "Permission denied" in str(content), (
         f"Expected 'not in allowed list' or 'Permission denied' in content, got {content!r}"
     )
-    # The actual add(1, 2) = 3 result must NOT be the content (tool was not invoked)
     assert content != 3, (
         "add tool must not have been invoked (result 3 must not appear as tool output)"
     )
@@ -243,10 +185,10 @@ async def test_allowed_tools_none_allows_all() -> None:
         ),
     ]
     backend = MockBackend(script=script)
-    agent = MockAgent(backend=backend, tools=provider, client=client)  # type: ignore[arg-type]
+    agent = MockAgent(backend=backend, tools=provider, client=client)
     session = await agent.new()
 
-    await session.prompt("hello")  # allowed_tools defaults to None
+    await session.prompt("hello")
 
     updates = [
         u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "e1"

@@ -253,8 +253,10 @@ async def test_cli_run_exit() -> None:
 @pytest.mark.asyncio
 async def test_cli_run_list_tools() -> None:
     """Test CliClient.run handles /list-tools."""
+    from little_agent.tools.protocol import ToolArgDef, ToolDef
+
     client = CliClient()
-    tools = {"echo": ("Echo tool", [("text", "string", "text", True)])}
+    tools = {"echo": ToolDef(desc="Echo tool", args=[ToolArgDef("text", "string", "text", True)])}
     agent = MockAgent(tools=MockToolProvider(tools=tools))
 
     with patch("asyncio.to_thread", side_effect=["/list-tools", "/quit"]):

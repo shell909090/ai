@@ -51,10 +51,12 @@ class _MockAgent:
     """Mock agent for CLI testing."""
 
     def __init__(self) -> None:
+        from little_agent.tools.protocol import ToolDef
+
         self.tools = MagicMock()
-        self.tools.list.return_value = {
-            "bash": ("Run shell commands", []),
-            "read": ("Read files", []),
+        self.tools.desc_tool.return_value = {
+            "bash": ToolDef(desc="Run shell commands"),
+            "read": ToolDef(desc="Read files"),
         }
         self._session_count = 0
 

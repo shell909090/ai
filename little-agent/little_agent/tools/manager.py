@@ -1,47 +1,31 @@
 """Tool manager implementation."""
 
-from typing import cast
+from __future__ import annotations
 
-from little_agent.types import JSONValue
-
-from .exceptions import ToolInvokeError
-from .protocol import ToolMap, ToolProvider
-
-# Names reserved by the ToolProvider Protocol; never treated as tool methods.
-_RESERVED = frozenset({"list", "invoke"})
+from .protocol import AsyncToolFn, ToolDef, ToolMap, ToolProvider
 
 
 class ToolManager:
-    """Aggregates multiple tool providers."""
+    """Implements ToolRegistry: aggregates ToolProviders."""
 
     def __init__(self) -> None:
-        self._providers: list[ToolProvider] = []
-        self._tools: ToolMap = {}
-        self._index: dict[str, ToolProvider] = {}
+        self._registry: dict[str, tuple[ToolDef, AsyncToolFn]] = {}
 
     def register(self, provider: ToolProvider) -> None:
-        """Register a tool provider."""
-        self._providers.append(provider)
-        for name in provider.list():
-            self._index[name] = provider
-        self._tools.update(provider.list())
+        """Register all tools from a provider; raises ValueError on name conflict."""
+        for name, tooldef, fn in provider:
+            if name in self._registry:
+                raise ValueError(f"Tool '{name}' already registered")
+            self._registry[name] = (tooldef, fn)
 
-    def list(self) -> ToolMap:
-        """Return all registered tools."""
-        return self._tools.copy()
+    def desc_tool(self, names: set[str] | None = None) -> ToolMap:
+        """Return ToolMap for the given name set, or all tools if names is None."""
+        if names is None:
+            return {n: td for n, (td, _) in self._registry.items()}
+        return {n: td for n, (td, _) in self._registry.items() if n in names}
 
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        """Invoke a tool by name.
-
-        Fast path: if the provider exposes a method whose name matches the tool
-        name (and the name is not a reserved Protocol method), call it directly,
-        skipping the provider's own invoke() dispatch layer.
-        """
-        provider = self._index.get(name)
-        if provider is None:
-            raise ToolInvokeError(f"Tool '{name}' not found")
-        if name not in _RESERVED:
-            method = getattr(provider, name, None)
-            if callable(method):
-                return cast(JSONValue, await method(**kwargs))
-        return await provider.invoke(name, kwargs)
+    def __getitem__(self, name: str) -> AsyncToolFn:
+        """Return the callable for a tool; raises KeyError if not found."""
+        if name not in self._registry:
+            raise KeyError(f"Tool '{name}' not found")
+        return self._registry[name][1]

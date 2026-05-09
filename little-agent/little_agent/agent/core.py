@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
     from little_agent.permissions import PermissionManager
-    from little_agent.tools.protocol import ToolProvider
+    from little_agent.tools.protocol import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +53,10 @@ class SessionCore(Session):
         self._compress_task: asyncio.Task[None] | None = None
 
     def get_turn_tool_map(self) -> ToolMap:
-        """Return tool map filtered by _turn_allowed_tools (None = all tools)."""
-        full_map = self.agent.tools.list()
+        """Return tool map for current turn."""
         if self._turn_allowed_tools is None:
-            return full_map
-        return {k: v for k, v in full_map.items() if k in self._turn_allowed_tools}
+            return self.agent.tools.desc_tool()
+        return self.agent.tools.desc_tool(set(self._turn_allowed_tools))
 
     async def prompt(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
@@ -382,6 +381,28 @@ class SessionCore(Session):
             return self.agent.permissions.check(tc.tool_name)
         return "allow"
 
+    async def _ask_permissions(
+        self,
+        needs_permission: list[BackendToolCall],
+        tool_result_node: ToolResultNode,
+    ) -> list[BackendToolCall]:
+        """Request permission for 'ask' calls; return approved ones."""
+        approved: list[BackendToolCall] = []
+        for tc in needs_permission:
+            granted = await self.agent.client.request_permission(
+                self,
+                tc.tool_name,
+                {"arguments": tc.arguments},
+            )
+            if granted:
+                approved.append(tc)
+            else:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": "Permission denied",
+                }
+        return approved
+
     async def _invoke_tools(
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
@@ -397,34 +418,28 @@ class SessionCore(Session):
         for tc in result.tool_calls:
             action = self._check_tool_allowed(tc, allowed_names, tool_result_node)
             if action == "deny":
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": "Permission denied",
-                }
+                if tc.call_id not in tool_result_node.results:
+                    tool_result_node.results[tc.call_id] = {
+                        "status": "failed",
+                        "content": "Permission denied",
+                    }
                 continue
             if action == "ask":
                 needs_permission.append(tc)
                 continue
             allowed_calls.append(tc)
 
-        for tc in needs_permission:
-            granted = await self.agent.client.request_permission(
-                self,
-                tc.tool_name,
-                {"arguments": tc.arguments},
-            )
-            if granted:
-                allowed_calls.append(tc)
-            else:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": "Permission denied",
-                }
+        approved = await self._ask_permissions(needs_permission, tool_result_node)
+        allowed_calls.extend(approved)
 
         token = current_session.set(self)
         try:
             pending_calls = {tc.call_id: tc for tc in allowed_calls}
-            tasks = [self.agent.tools.invoke(tc.tool_name, tc.arguments) for tc in allowed_calls]
+
+            async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
+                return await self.agent.tools[name](args)
+
+            tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
             tool_results = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             current_session.reset(token)
@@ -466,7 +481,7 @@ class AgentCore(Agent):
         self,
         client: Client,
         backend: Backend,
-        tools: ToolProvider,
+        tools: ToolRegistry,
         compressor: Compressor | None = None,
         permissions: PermissionManager | None = None,
         memory: Any = None,

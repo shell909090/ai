@@ -64,14 +64,9 @@ def load_config(path: Path) -> dict[str, Any]:
     return data
 
 
-def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
-    """Load tool providers from configuration.
-
-    Note: ``isinstance(provider, ToolProvider)`` only checks that the object
-    implements the required methods (``list`` and ``invoke``) due to
-    ``@runtime_checkable``. It does **not** validate method signatures.
-    """
-    providers: list[ToolProvider] = []
+def load_providers_from_config(config: dict[str, Any]) -> list[Any]:
+    """Load tool providers from configuration."""
+    providers: list[Any] = []
     tools_config = config.get("tools", {})
     provider_configs = tools_config.get("providers", [])
 
@@ -85,8 +80,8 @@ def load_providers_from_config(config: dict[str, Any]) -> list[ToolProvider]:
             try:
                 module = importlib.import_module(module_name)
                 provider = module.create_provider()
-                if not isinstance(provider, ToolProvider):
-                    logger.warning("Module %s did not return a ToolProvider", module_name)
+                if not isinstance(provider, ToolProvider) or isinstance(provider, (str, bytes)):
+                    logger.warning("Provider from %s is not a ToolProvider, skipping", module_name)
                     continue
                 providers.append(provider)
             except Exception:
@@ -141,7 +136,10 @@ def _load_tools(config: dict[str, Any]) -> ToolManager:
     providers = load_providers_from_config(config)
     providers.append(BashToolProvider())
     for provider in providers:
-        tools.register(provider)
+        try:
+            tools.register(provider)
+        except (TypeError, ValueError) as e:
+            logger.warning("Failed to register provider %s: %s", provider, e)
     return tools
 
 

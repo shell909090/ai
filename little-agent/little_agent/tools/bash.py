@@ -5,53 +5,48 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from collections.abc import Iterator
 
 from little_agent.types import JSONValue
 
-from .protocol import ToolMap, ToolProvider
+from .protocol import AsyncToolFn, ToolArgDef, ToolDef
 
 
-class BashToolProvider(ToolProvider):
+class BashToolProvider:
     """Execute shell commands via asyncio subprocess."""
 
-    _TOOLS: ToolMap = {
-        "bash": (
-            "Execute a shell command and return stdout/stderr",
-            [
-                ("command", "string", "The shell command to execute", True),
-                ("cwd", "string", "Working directory for the command", False),
-                ("env", "object", "Additional environment variables as key-value pairs", False),
-                ("stdin", "string", "Standard input to pass to the command", False),
-            ],
-        ),
-    }
+    _TOOL_DEF = ToolDef(
+        desc="Execute a shell command and return stdout/stderr",
+        args=[
+            ToolArgDef("command", "string", "The shell command to execute", True),
+            ToolArgDef("cwd", "string", "Working directory for the command", False),
+            ToolArgDef(
+                "env", "object", "Additional environment variables as key-value pairs", False
+            ),
+            ToolArgDef("stdin", "string", "Standard input to pass to the command", False),
+        ],
+    )
     _TIMEOUT = 30
 
-    def list(self) -> ToolMap:
-        """Return built-in tools."""
-        return self._TOOLS.copy()
+    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
+        """Yield the single bash tool triple."""
+        yield ("bash", self._TOOL_DEF, self._dispatch)
 
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        """Dispatch tool calls to the corresponding method."""
-        if name != "bash":
-            raise ValueError(f"Unknown tool: {name}")
-        return await self.bash(**kwargs)
-
-    async def bash(self, **kwargs: JSONValue) -> JSONValue:
+    async def _dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
         """Execute a shell command and return stdout/stderr."""
-        command = kwargs.get("command", "")
+        command = args.get("command", "")
         if not isinstance(command, str):
             raise ValueError("command must be a string")
 
-        cwd_val = kwargs.get("cwd")
+        cwd_val = args.get("cwd")
         cwd = cwd_val if isinstance(cwd_val, str) else None
 
-        env_val = kwargs.get("env")
+        env_val = args.get("env")
         env: dict[str, str] | None = None
         if isinstance(env_val, dict):
             env = {**os.environ, **{str(k): str(v) for k, v in env_val.items()}}
 
-        stdin_val = kwargs.get("stdin")
+        stdin_val = args.get("stdin")
         stdin_bytes: bytes | None = (
             stdin_val.encode("utf-8") if isinstance(stdin_val, str) else None
         )

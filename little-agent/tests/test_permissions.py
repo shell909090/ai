@@ -6,7 +6,7 @@ import pytest
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.permissions import PermissionManager, PermissionRule
-from little_agent.tools.protocol import ToolMap, ToolProvider
+from little_agent.tools.protocol import ToolDef, ToolProvider
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
 
@@ -26,15 +26,14 @@ class _DenyAllClient(MockClient):
 class _AskToolProvider(ToolProvider):
     """Provider with tools for permission testing."""
 
-    def list(self) -> ToolMap:
-        return {
-            "bash": ("Run shell commands", []),
-            "read": ("Read files", []),
-            "write": ("Write files", []),
-        }
+    def __iter__(self):  # type: ignore[override]
+        _empty_def = ToolDef(desc="", args=[])
+        for name in ("bash", "read", "write"):
 
-    async def invoke(self, name: str, kwargs: dict[str, JSONValue]) -> JSONValue:
-        return f"{name}-result"
+            async def _fn(args: dict[str, JSONValue], _n: str = name) -> JSONValue:
+                return f"{_n}-result"
+
+            yield name, _empty_def, _fn
 
 
 @pytest.mark.asyncio
