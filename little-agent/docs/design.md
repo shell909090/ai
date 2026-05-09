@@ -9,10 +9,9 @@
 1. 最小目标是"对话 + tools = agent"。
 2. 内核采用 `asyncio`。
 3. 架构上与 ACP 保持等效语义，但同进程内不机械复制 JSON-RPC 包装。
-4. 长期存在三个 frontend：`cli`、`web`、`acp`，本期只实现 `cli`。
+4. 长期存在三个 frontend：`cli`、`web`、`acp`。
 5. tool 通过配置文件注册，tool 描述尽量对齐 MCP。
-6. backends 本期只支持 OpenAI API。
-7. 对话历史采用倒排链，运行时优先使用对象引用。
+6. 对话历史采用倒排链，运行时优先使用对象引用。
 
 ## 2. 模块划分
 
@@ -30,11 +29,8 @@
    - 负责内置 tool 与 MCP tool provider 的统一接入。
 3. `frontends`
    - 负责用户交互。
-   - 本期只实现 `cli`。
-   - 后续扩展 `web` 与原生 `acp`。
 4. `backends`
    - 负责具体模型供应商接入。
-   - 本期只实现 OpenAI backend。
 
 系统启动由一个命令行脚本 `little-agent` 完成装配：加载 YAML 配置、初始化 logger、初始化各模块、拼装依赖、启动 client。脚本通过 `pyproject.toml` 的 `[project.scripts]` 注册，不是一级模块，只是装配层。
 
@@ -53,7 +49,7 @@
 2. `tools <-> agent`
    - MCP 类接口。
 3. `backends <-> agent`
-   - 项目内部接口，本期先做最小化定义。
+   - 项目内部接口。
 4. 启动脚本 `-> all`
    - 只负责装配，不承载业务逻辑。
 
@@ -231,7 +227,7 @@ class Session(Protocol):
 2. 各 frontend 只需要实现 `Client`，再各自提供自己的 `run(agent)` 入口即可。
 3. `run(agent)` 不足以单独构成一个值得长期稳定的跨模块协议。
 
-本期实现为 `CliClient`，其职责如下：
+`CliClient`职责如下：
 
 1. 由启动脚本构造并注入 `agent`。
 2. 创建或恢复 session。
@@ -339,7 +335,12 @@ class ToolProvider(Protocol):
 ```python
 class ToolRegistry(Protocol):
     def register(self, provider: ToolProvider) -> None: ...
-    def desc_tool(self, names: set[str] | None = None) -> ToolMap: ...
+    def desc_tool(
+        self,
+        names: set[str] | None = None,
+        *,
+        exclude: set[str] | None = None,
+    ) -> ToolMap: ...
     def __getitem__(self, name: str) -> AsyncToolFn: ...
 ```
 
@@ -349,9 +350,10 @@ class ToolRegistry(Protocol):
 2. `desc_tool(None)` 返回全部已注册工具的 `ToolMap`。
 3. `desc_tool(set())` 返回空 `ToolMap`（空集即空结果，"默认全部"与"指定空集"语义分离）。
 4. `desc_tool({name, ...})` 只返回指定名称的工具描述，未注册的名称忽略。
-5. `__getitem__(name)` 返回对应工具的 `AsyncToolFn`；name 不存在时 raise `KeyError`。调用方直接 `await registry[name](args)` 执行工具。
-6. 执行失败通过异常表示；异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 中，**绝不向上冒出 prompt turn**。
-7. 本期不对并发 tool 调用设上限；未来可能加入（见 §11）。
+5. `exclude` 是可选关键字参数，指定后从结果中删除对应名称，无论 `names` 如何设置。语义：`result = (全集 if names is None else names) − (exclude or ∅)`。
+6. `__getitem__(name)` 返回对应工具的 `AsyncToolFn`；name 不存在时 raise `KeyError`。调用方直接 `await registry[name](args)` 执行工具。
+7. 执行失败通过异常表示；异常在 agent 编排层被捕获，落入 `ToolResultNode` 对应 `call_id` 的 `status = "failed"` 中，**绝不向上冒出 prompt turn**。
+8. 不对并发 tool 调用设上限。
 
 ### 5.5 tools 模块内部实现边界
 
@@ -421,20 +423,15 @@ Tool 定义：
 3. 子任务异常不影响主会话（异常被捕获并作为 failed 结果返回）。
 4. inheritance默认为false。如果inheritance为true，那么从当前session上倒推到第一个没有frozen属性的node，做fork，加UserPromptNode节点，然后执行任务。一般不从当前fork，因为当前一般是ToolResultNode，还要继续写入。
 5. 发起子任务后，tool call就不会超时。但是每个task都有300s的超时时间。
-6. 子任务的tools里面，去掉task tool，避免递归调用。
+6. 子任务的tools里面，去掉task tool，避免递归调用。实现方式：通过 `desc_tool(allowed_names, exclude={"create_task"})` 得到子任务可见的工具集，将结果 key 列表作为 `allowed_tools` 传入 `sub_session.prompt()`。子任务直接复用主 agent 和 `ToolManager`，无需构造独立的 sub-ToolManager 或 sub-AgentCore。
 
 ## 6. backends 与 agent 的接口
 
 ### 6.1 设计原则
 
-这层接口本期先保持最小化。
+当前有两个 backend 实现：`OpenAIBackend` 和 `AnthropicBackend`，均实现 §6.3 的 `Backend` 协议。各 backend 负责将 session 节点链转换为各自 API 所需的消息格式，并将 API 响应映射回 `BackendTurnResult`。
 
-原因：
-
-1. 只有 OpenAI backend 一个实现。
-2. session 链如何转成 OpenAI 请求，需要先通过实现验证。
-3. 因此不宜现在做过重抽象。
-4. 当前所有 backend 都是远程调用，不要求支持底层请求级 cancel。
+所有 backend 都是远程调用，不要求支持底层请求级 cancel。
 
 ### 6.2 Backend 共享类型
 
@@ -488,6 +485,91 @@ class Backend(Protocol):
 3. 调用方可以放心地并发发起 `generate()`（如 `asyncio.gather`），实际并发由 backend 的 semaphore gate。
 4. Semaphore 的获取 / 释放对调用方透明；不暴露在接口签名上。
 5. 设计上保留并发能力，未来调整并发只需改配置，不需要改业务代码。
+
+### 6.5 AnthropicBackend 专项说明
+
+`AnthropicBackend` 使用 `anthropic` Python SDK，与 `OpenAIBackend` 的主要差异如下。
+
+#### 6.5.1 配置参数
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `type` | string | — | 固定为 `anthropic` |
+| `model` | string | — | 必填，如 `claude-opus-4-7` |
+| `api_key` | string | — | 与 `api_key_env` 二选一 |
+| `api_key_env` | string | — | 环境变量名，与 `api_key` 二选一 |
+| `system` | string | `null` | System prompt，不属于对话历史 |
+| `context_window` | int | 128000 | 同时作为 `max_tokens` 上限（Anthropic 必填） |
+| `max_concurrency` | int | 1 | 并发控制，同 §6.4 |
+| `base_url` | string | `null` | 可选，自定义 API 地址 |
+
+`max_tokens` 直接使用 `context_window` 值，无需单独配置。
+
+#### 6.5.2 节点链 → Anthropic 消息转换
+
+| 节点类型 | 转换规则 |
+|----------|----------|
+| `UserPromptNode` | `{"role": "user", "content": prompt}` |
+| `AssistantResponseNode`（无后续 ToolCallNode）| `{"role": "assistant", "content": [{"type": "text", "text": text}]}` |
+| `AssistantResponseNode` + `ToolCallNode`（相邻） | 合并为一条 `role: assistant` 消息，content 包含 text 块（可选）+ tool_use 块 |
+| `ToolCallNode`（无前置文本） | `{"role": "assistant", "content": [{"type": "tool_use", "id": call_id, "name": ..., "input": ...}, ...]}` |
+| `ToolResultNode` | `{"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": result_str}, ...]}` |
+| `SummaryNode` | `{"role": "user", "content": summary_text}` |
+
+说明：
+1. `ToolResultNode.results[call_id]["content"]` 若为字符串直接使用，否则 `json.dumps`。
+2. Anthropic 要求 assistant message 与 user message 严格交替；`ToolResultNode` 必须紧接 `ToolCallNode` 所在的 assistant message 之后，作为 user message。
+3. `system` 参数通过独立字段传入 API，不进 messages 数组。
+
+#### 6.5.3 工具定义格式
+
+Anthropic 的工具定义使用 `input_schema`（JSON Schema）：
+
+```json
+{
+  "name": "bash",
+  "description": "Execute a shell command",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {"type": "string", "description": "..."}
+    },
+    "required": ["command"]
+  }
+}
+```
+
+由 `ToolMap` 转换而来（对应 OpenAI backend 的 `_tool_map_to_openai_functions`）。
+
+#### 6.5.4 流式事件处理
+
+使用 `client.messages.stream()` 上下文管理器。事件映射：
+
+| Anthropic 事件 | emit 类型 |
+|----------------|-----------|
+| `content_block_start` / `content_block_delta`（`text_delta`） | `agent_message_chunk` |
+| `content_block_start` / `content_block_delta`（`thinking_delta`） | `thinking_chunk` |
+| `content_block_delta`（`input_json_delta`） | 累积到当前 tool_use block，不 emit |
+| `message_stop` | 触发 yield `BackendTurnResult` |
+
+不使用 `<think>` 标签解析（该逻辑仅属于 `OpenAIBackend`）。
+
+#### 6.5.5 finish_reason 映射
+
+| Anthropic `stop_reason` | `BackendTurnResult.finish_reason` |
+|-------------------------|-----------------------------------|
+| `end_turn` | `completed` |
+| `tool_use` | `tool_call` |
+
+#### 6.5.6 Context overflow 检测
+
+捕获 `anthropic.BadRequestError`，检查 message 是否匹配以下 pattern（大小写不敏感）：
+
+- `"prompt is too long"`
+- `"too many tokens"`
+- `"maximum context length"`
+
+匹配时 raise `ContextOverflowError`，其他 `BadRequestError` 原样向上抛。
 
 ## 7. agent 模块内部数据结构
 
@@ -776,12 +858,20 @@ little-agent = "little_agent.main:main"
 # 多 backend 配置，无需考虑向后兼容
 backends:
   primary:
-    type: openai
+    type: openai                         # 或 anthropic
     model: gpt-4
     api_key: OPENAI_API_KEY
     base_url: https://api.openai.com/v1  # optional
-    context_window: 128000               # optional, default 128000；§7.6.8
+    context_window: 128000               # optional, default 128000；§7.6.8；anthropic 同时用作 max_tokens
     max_concurrency: 1                   # optional, default 1；§6.4
+  # Anthropic backend 示例：
+  # primary:
+  #   type: anthropic
+  #   model: claude-opus-4-7
+  #   api_key: sk-ant-...               # 或 api_key_env: ANTHROPIC_API_KEY
+  #   system: "You are a helpful assistant."  # optional, default null；§6.5.1
+  #   context_window: 200000            # optional, default 128000
+  #   max_concurrency: 1
   compressor:
     type: openai
     model: gpt-3.5-turbo
