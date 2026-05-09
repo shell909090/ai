@@ -18,11 +18,21 @@ class ToolManager:
                 raise ValueError(f"Tool '{name}' already registered")
             self._registry[name] = (tooldef, fn)
 
-    def desc_tool(self, names: set[str] | None = None) -> ToolMap:
-        """Return ToolMap for the given name set, or all tools if names is None."""
-        if names is None:
-            return {n: td for n, (td, _) in self._registry.items()}
-        return {n: td for n, (td, _) in self._registry.items() if n in names}
+    def desc_tool(
+        self,
+        names: set[str] | None = None,
+        *,
+        exclude: set[str] | None = None,
+    ) -> ToolMap:
+        """Return ToolMap for the given name set, minus any excluded names."""
+        result = (
+            {n: td for n, (td, _) in self._registry.items()}
+            if names is None
+            else {n: td for n, (td, _) in self._registry.items() if n in names}
+        )
+        if exclude:
+            result = {n: td for n, td in result.items() if n not in exclude}
+        return result
 
     def __getitem__(self, name: str) -> AsyncToolFn:
         """Return the callable for a tool; raises KeyError if not found."""

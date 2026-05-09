@@ -41,7 +41,13 @@ class ToolRegistry(Protocol):
     """Agent-facing interface: register providers, describe tools, get callables."""
 
     def register(self, provider: ToolProvider) -> None: ...
-    def desc_tool(self, names: set[str] | None = None) -> ToolMap: ...
+
+    def desc_tool(
+        self,
+        names: set[str] | None = None,
+        *,
+        exclude: set[str] | None = None,
+    ) -> ToolMap: ...
 
     def __getitem__(self, name: str) -> AsyncToolFn:
         """Return callable for a named tool; raise KeyError if not found."""

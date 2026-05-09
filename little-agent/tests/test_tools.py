@@ -82,6 +82,47 @@ async def test_register_conflict_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# T44: desc_tool exclude parameter
+# ---------------------------------------------------------------------------
+
+
+def test_desc_tool_exclude_removes_named_tool() -> None:
+    """desc_tool(exclude={"add"}) omits add from the result."""
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = manager.desc_tool(exclude={"add"})
+    assert "echo" in result
+    assert "add" not in result
+
+
+def test_desc_tool_exclude_with_whitelist() -> None:
+    """desc_tool(names, exclude) applies both filters."""
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = manager.desc_tool({"echo", "add"}, exclude={"add"})
+    assert "echo" in result
+    assert "add" not in result
+
+
+def test_desc_tool_exclude_nonexistent_is_noop() -> None:
+    """Excluding a name not in the registry has no effect."""
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = manager.desc_tool(exclude={"nonexistent"})
+    assert "echo" in result
+    assert "add" in result
+
+
+def test_desc_tool_exclude_none_returns_all() -> None:
+    """desc_tool(exclude=None) returns all tools unchanged."""
+    manager = ToolManager()
+    manager.register(BuiltinToolProvider())
+    result = manager.desc_tool(exclude=None)
+    assert "echo" in result
+    assert "add" in result
+
+
+# ---------------------------------------------------------------------------
 # T27: runtime dynamic tool subset selection
 # ---------------------------------------------------------------------------
 

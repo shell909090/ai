@@ -106,8 +106,8 @@ async def test_create_task_exception(simple_agent: AgentCore) -> None:
     assert "boom" in str(result.get("output", ""))
 
 
-def test_build_sub_tools_excludes_create_task(simple_agent: AgentCore) -> None:
-    """Sub-task tool set never includes create_task (prevents recursion)."""
+def test_get_allowed_tools_excludes_create_task(simple_agent: AgentCore) -> None:
+    """Sub-task allowed tools never include create_task (prevents recursion)."""
     mgr = ToolManager()
     mgr.register(
         MockToolProvider(
@@ -118,13 +118,13 @@ def test_build_sub_tools_excludes_create_task(simple_agent: AgentCore) -> None:
     mgr.register(provider)
     simple_agent.tools = mgr
 
-    sub_tools = provider._build_sub_tools(None)
-    assert "create_task" not in sub_tools.desc_tool()
-    assert "echo" in sub_tools.desc_tool()
+    allowed = provider._get_allowed_tools(None)
+    assert "create_task" not in allowed
+    assert "echo" in allowed
 
 
-def test_build_sub_tools_filter_by_names(simple_agent: AgentCore) -> None:
-    """Sub-task tool set is limited to the requested names."""
+def test_get_allowed_tools_filter_by_names(simple_agent: AgentCore) -> None:
+    """Sub-task allowed tools are limited to requested names, excluding create_task."""
     mgr = ToolManager()
     mgr.register(
         MockToolProvider(
@@ -143,10 +143,10 @@ def test_build_sub_tools_filter_by_names(simple_agent: AgentCore) -> None:
     provider = TaskToolProvider(simple_agent)
     simple_agent.tools = mgr
 
-    sub_tools = provider._build_sub_tools(["echo"])
-    assert "echo" in sub_tools.desc_tool()
-    assert "add" not in sub_tools.desc_tool()
-    assert "create_task" not in sub_tools.desc_tool()
+    allowed = provider._get_allowed_tools(["echo"])
+    assert "echo" in allowed
+    assert "add" not in allowed
+    assert "create_task" not in allowed
 
 
 @pytest.mark.asyncio
@@ -161,8 +161,7 @@ async def test_fork_for_inheritance_tail_none(simple_agent: AgentCore) -> None:
     assert sub.tail is None
     assert sub.id != session.id
     assert sub.cwd == session.cwd
-    assert sub.agent is not None
-    assert sub.agent is not session.agent
+    assert sub.agent is session.agent
 
 
 @pytest.mark.asyncio

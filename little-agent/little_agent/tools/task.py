@@ -9,7 +9,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef, ToolRegistry
+from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
 from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
@@ -27,18 +27,6 @@ class _TaskSpec:
     depends: list[int]
     kwargs: dict[str, JSONValue]
     result_future: asyncio.Future[JSONValue]
-
-
-class _RegistrySliceProvider:
-    """Adapts a ToolRegistry subset into a ToolProvider for sub-manager registration."""
-
-    def __init__(self, registry: ToolRegistry, names: set[str]) -> None:
-        self._registry = registry
-        self._names = names
-
-    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
-        for name, tooldef in self._registry.desc_tool(self._names).items():
-            yield name, tooldef, self._registry[name]
 
 
 def _spec_label(spec: _TaskSpec) -> str:
@@ -123,19 +111,13 @@ class TaskToolProvider:
     async def _create_task_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
         return await self.create_task(**args)
 
-    def _build_sub_tools(self, tool_names: Sequence[str] | None) -> ToolRegistry:
-        from little_agent.tools.manager import ToolManager
-
-        all_names = set(self._agent.tools.desc_tool().keys())
-        all_names.discard("create_task")
-        allowed = (set(tool_names) & all_names) if tool_names is not None else all_names
-
-        sub_mgr = ToolManager()
-        sub_mgr.register(_RegistrySliceProvider(self._agent.tools, allowed))
-        return sub_mgr
+    def _get_allowed_tools(self, tool_names: Sequence[str] | None) -> list[str]:
+        """Return allowed tool names for a sub-task, always excluding create_task."""
+        names = set(tool_names) if tool_names is not None else None
+        return list(self._agent.tools.desc_tool(names, exclude={"create_task"}).keys())
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:
-        from little_agent.agent.core import AgentCore
+        """Fork a new session from the current, sharing frozen history."""
         from little_agent.agent.core import SessionCore as SessionCoreImpl
 
         node = session.tail
@@ -143,16 +125,10 @@ class TaskToolProvider:
             node = node.prev
         fork_tail = node if node is not None else None
 
-        sub_tools = self._build_sub_tools(None)
-        sub_agent = AgentCore(
-            client=self._agent.client,
-            backend=self._agent.backend,
-            tools=sub_tools,
-        )
         sub_session = SessionCoreImpl(
             session_id=str(uuid.uuid4()),
             cwd=session.cwd,
-            agent=sub_agent,
+            agent=self._agent,
         )
         sub_session.tail = fork_tail
         return sub_session
@@ -223,6 +199,7 @@ class TaskToolProvider:
         if isinstance(tool_names_raw, list):
             tool_names = [str(t) for t in tool_names_raw]
 
+        allowed_tools = self._get_allowed_tools(tool_names)
         inheritance = bool(kwargs.get("inheritance", False))
 
         if inheritance:
@@ -236,19 +213,11 @@ class TaskToolProvider:
                 }
             sub_session = await self._fork_for_inheritance(session)
         else:
-            from little_agent.agent.core import AgentCore
-
-            sub_tools = self._build_sub_tools(tool_names)
-            sub_agent = AgentCore(
-                client=self._agent.client,
-                backend=self._agent.backend,
-                tools=sub_tools,
-            )
-            sub_session = await sub_agent.new()
+            sub_session = await self._agent.new()
 
         try:
             stop_reason, output = await asyncio.wait_for(
-                sub_session.prompt(prompt), timeout=TASK_TIMEOUT
+                sub_session.prompt(prompt, allowed_tools=allowed_tools), timeout=TASK_TIMEOUT
             )
             return {"status": "completed", "stop_reason": stop_reason, "output": output}
         except TimeoutError:

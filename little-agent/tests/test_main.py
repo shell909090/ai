@@ -287,7 +287,7 @@ def test_build_backend_explicit_max_concurrency_and_context_window() -> None:
 def test_build_backend_unsupported_type_raises() -> None:
     """Test _build_backend raises for unsupported backend type."""
     with pytest.raises(ValueError, match="Unsupported backend type"):
-        _build_backend({"type": "anthropic", "api_key": "k"}, "primary")
+        _build_backend({"type": "foobar", "api_key": "k", "model": "m"}, "primary")
 
 
 def test_build_backend_missing_type_raises() -> None:

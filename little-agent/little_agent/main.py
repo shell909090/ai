@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from little_agent.agent.core import AgentCore
+from little_agent.backends.anthropic import AnthropicBackend
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.cli import CliClient
@@ -92,17 +93,18 @@ def load_providers_from_config(config: dict[str, Any]) -> list[Any]:
     return providers
 
 
-def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
-    """Build an OpenAIBackend from a named backend config dict."""
+def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicBackend:
+    """Build a backend from a named backend config dict."""
     backend_type = cfg.get("type")
     if not backend_type:
         raise ValueError(f"Backend '{name}' must contain a 'type' field")
-    if backend_type != "openai":
+    if backend_type not in ("openai", "anthropic"):
         raise ValueError(f"Unsupported backend type: {backend_type}")
 
     api_key: str | None = cfg.get("api_key")
     if not api_key:
-        api_key_env: str = cfg.get("api_key_env", "OPENAI_API_KEY")
+        default_env = "ANTHROPIC_API_KEY" if backend_type == "anthropic" else "OPENAI_API_KEY"
+        api_key_env: str = cfg.get("api_key_env", default_env)
         api_key = os.environ.get(api_key_env)
         if not api_key:
             raise ValueError(
@@ -119,6 +121,18 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend:
 
     max_concurrency = int(cfg.get("max_concurrency", 1))
     context_window = int(cfg.get("context_window", 128000))
+
+    if backend_type == "anthropic":
+        system: str | None = cfg.get("system") or None
+        return AnthropicBackend(
+            model=str(model),
+            api_key=api_key,
+            base_url=cfg.get("base_url"),
+            timeout=timeout,
+            max_concurrency=max_concurrency,
+            context_window=context_window,
+            system=system,
+        )
 
     return OpenAIBackend(
         model=str(model),
