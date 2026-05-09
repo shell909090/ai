@@ -14,6 +14,19 @@ from little_agent.frontends.cli import CliClient, _setup_readline
 from little_agent.types import SessionUpdate
 
 
+@pytest.fixture(autouse=True)
+def _isolate_readline():
+    """Mock readline to prevent real history file IO.
+
+    Without this, client.run() tests read and rewrite ~/.little_agent_history on
+    every invocation. Because readline.read_history_file appends rather than replaces
+    the in-memory list, running multiple tests in the same process causes the file to
+    grow exponentially and can thrash the disk into OOM.
+    """
+    with patch.dict("sys.modules", {"readline": MagicMock()}):
+        yield
+
+
 class _MockSession:
     """Mock session for CLI testing."""
 

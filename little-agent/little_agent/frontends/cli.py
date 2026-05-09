@@ -38,6 +38,7 @@ def _setup_readline() -> Path | None:
         import readline
 
         history_file = Path.home() / ".little_agent_history"
+        readline.set_history_length(1000)
         try:
             readline.read_history_file(str(history_file))
         except FileNotFoundError:
