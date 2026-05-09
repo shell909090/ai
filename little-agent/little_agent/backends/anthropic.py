@@ -24,7 +24,7 @@ from .exceptions import BackendTimeoutError, ContextOverflowError
 from .protocol import BackendToolCall, BackendTurnResult
 
 if TYPE_CHECKING:
-    from little_agent.agent.core import SessionCore
+    from little_agent.agent.session import SessionCore
 
 logger = logging.getLogger(__name__)
 

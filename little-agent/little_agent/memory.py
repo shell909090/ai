@@ -19,7 +19,7 @@ from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.protocol import ToolMap
 
 if TYPE_CHECKING:
-    from little_agent.agent.core import SessionCore
+    from little_agent.agent.session import SessionCore
     from little_agent.backends.protocol import Backend
 
 logger = logging.getLogger(__name__)

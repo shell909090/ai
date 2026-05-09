@@ -1,7 +1,7 @@
 """Agent module."""
 
+from .agent import AgentCore
 from .compressor import LLMCompressor
-from .core import AgentCore, SessionCore
 from .exceptions import SessionBusyError
 from .nodes import (
     AssistantResponseNode,
@@ -12,6 +12,7 @@ from .nodes import (
     UserPromptNode,
 )
 from .protocol import Agent, Compressor, Session
+from .session import MAX_TURN_ITERATIONS, SessionCore
 
 __all__ = [
     "Agent",
@@ -19,6 +20,7 @@ __all__ = [
     "Compressor",
     "AgentCore",
     "SessionCore",
+    "MAX_TURN_ITERATIONS",
     "Node",
     "UserPromptNode",
     "AssistantResponseNode",

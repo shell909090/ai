@@ -2,7 +2,7 @@
 
 import pytest
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.agent import AgentCore
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 

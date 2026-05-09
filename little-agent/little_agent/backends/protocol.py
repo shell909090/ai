@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from little_agent.types import SessionUpdate
 
 if TYPE_CHECKING:
-    from little_agent.agent.core import SessionCore
+    from little_agent.agent.session import SessionCore
 
 
 @dataclass

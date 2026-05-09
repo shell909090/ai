@@ -10,7 +10,7 @@ import httpx
 import openai
 import pytest
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import (
     AssistantResponseNode,
     ToolCallNode,

@@ -6,7 +6,7 @@ import contextvars
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from little_agent.agent.core import SessionCore
+    from little_agent.agent.session import SessionCore
 
 current_session: contextvars.ContextVar["SessionCore | None"] = contextvars.ContextVar(
     "current_session", default=None

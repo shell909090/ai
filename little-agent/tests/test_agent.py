@@ -5,8 +5,9 @@ from collections.abc import AsyncGenerator
 
 import pytest
 
-from little_agent.agent.core import MAX_TURN_ITERATIONS, AgentCore
+from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
+from little_agent.agent.session import MAX_TURN_ITERATIONS
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.types import JSONValue, SessionUpdate

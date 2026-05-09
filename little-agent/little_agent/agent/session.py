@@ -1,12 +1,14 @@
+"""SessionCore: per-conversation state and turn execution."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from little_agent.backends.exceptions import ContextOverflowError
-from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
+from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import ContentBlock, JSONValue, PromptReturn, SessionUpdate
 
@@ -15,18 +17,13 @@ from .nodes import (
     AssistantResponseNode,
     Node,
     SummaryNode,
-    ToolCallNode,
-    ToolResultNode,
     UserPromptNode,
     _rebuild_chain,
 )
-from .protocol import Agent, Compressor, Session
+from .protocol import Session
 
 if TYPE_CHECKING:
-    from little_agent.backends.protocol import Backend
-    from little_agent.frontends.protocol import Client
-    from little_agent.permissions import PermissionManager
-    from little_agent.tools.protocol import ToolRegistry
+    from .agent import AgentCore
 
 logger = logging.getLogger(__name__)
 
@@ -313,215 +310,7 @@ class SessionCore(Session):
         self.tail = _rebuild_chain(chain)
 
     async def _handle_tool_call(self, result: BackendTurnResult, partial_output: str) -> str:
-        """Handle tool_call result and return updated partial_output."""
-        partial_output = result.output_text or partial_output
-        # Only send full-text chunk if backend did not stream chunks.
-        if result.output_text:
-            await self.agent.client.update(
-                self,
-                SessionUpdate(
-                    type="agent_message_chunk",
-                    data={"text": result.output_text},
-                ),
-            )
+        """Delegate tool-call handling to ToolInvoker."""
+        from .tool_invoker import ToolInvoker
 
-        tool_call_node = self._create_tool_call_node(result)
-        await self.agent.client.update(
-            self,
-            SessionUpdate(
-                type="tool_call",
-                data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
-            ),
-        )
-
-        tool_result_node = self._create_tool_result_node()
-        await self._invoke_tools(result, tool_result_node)
-        self._freeze_tail()
-
-        return partial_output
-
-    def _create_tool_call_node(self, result: BackendTurnResult) -> ToolCallNode:
-        """Create and append a ToolCallNode."""
-        node = ToolCallNode(
-            id=str(uuid.uuid4()),
-            prev=self.tail,
-            calls={
-                tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
-                for tc in result.tool_calls
-            },
-        )
-        self._append_node(node)
-        return node
-
-    def _create_tool_result_node(self) -> ToolResultNode:
-        """Create and append a ToolResultNode."""
-        node = ToolResultNode(
-            id=str(uuid.uuid4()),
-            prev=self.tail,
-            results={},
-        )
-        self._append_node(node)
-        return node
-
-    def _check_tool_allowed(
-        self,
-        tc: BackendToolCall,
-        allowed_names: set[str] | None,
-        tool_result_node: ToolResultNode,
-    ) -> Literal["allow", "deny", "ask"]:
-        """Check if a tool call is allowed; return the permission action."""
-        if allowed_names is not None and tc.tool_name not in allowed_names:
-            tool_result_node.results[tc.call_id] = {
-                "status": "failed",
-                "content": f"Tool not in allowed list: {tc.tool_name}",
-            }
-            return "deny"
-
-        if self.agent.permissions is not None:
-            return self.agent.permissions.check(tc.tool_name)
-        return "allow"
-
-    async def _ask_permissions(
-        self,
-        needs_permission: list[BackendToolCall],
-        tool_result_node: ToolResultNode,
-    ) -> list[BackendToolCall]:
-        """Request permission for 'ask' calls; return approved ones."""
-        approved: list[BackendToolCall] = []
-        for tc in needs_permission:
-            granted = await self.agent.client.request_permission(
-                self,
-                tc.tool_name,
-                {"arguments": tc.arguments},
-            )
-            if granted:
-                approved.append(tc)
-            else:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": "Permission denied",
-                }
-        return approved
-
-    async def _invoke_tools(
-        self, result: BackendTurnResult, tool_result_node: ToolResultNode
-    ) -> None:
-        """Invoke tools and populate tool_result_node."""
-        from little_agent.agent.context import current_session
-
-        allowed_names = (
-            set(self._turn_allowed_tools) if self._turn_allowed_tools is not None else None
-        )
-
-        allowed_calls = []
-        needs_permission: list[BackendToolCall] = []
-        for tc in result.tool_calls:
-            action = self._check_tool_allowed(tc, allowed_names, tool_result_node)
-            if action == "deny":
-                if tc.call_id not in tool_result_node.results:
-                    tool_result_node.results[tc.call_id] = {
-                        "status": "failed",
-                        "content": "Permission denied",
-                    }
-                continue
-            if action == "ask":
-                needs_permission.append(tc)
-                continue
-            allowed_calls.append(tc)
-
-        approved = await self._ask_permissions(needs_permission, tool_result_node)
-        allowed_calls.extend(approved)
-
-        token = current_session.set(self)
-        try:
-            pending_calls = {tc.call_id: tc for tc in allowed_calls}
-
-            async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
-                return await self.agent.tools[name](args)
-
-            tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
-            tool_results = await asyncio.gather(*tasks, return_exceptions=True)
-        finally:
-            current_session.reset(token)
-
-        for tc, res in zip(allowed_calls, tool_results, strict=True):
-            if self._cancel_requested and tc.call_id in pending_calls:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "cancelled",
-                    "content": "",
-                }
-                del pending_calls[tc.call_id]
-            elif isinstance(res, Exception):
-                tool_result_node.results[tc.call_id] = {
-                    "status": "failed",
-                    "content": str(res),
-                }
-            else:
-                tool_result_node.results[tc.call_id] = {
-                    "status": "completed",
-                    "content": res,
-                }
-
-        for tc in result.tool_calls:
-            await self.agent.client.update(
-                self,
-                SessionUpdate(
-                    type="tool_call_update",
-                    data={
-                        "call_id": tc.call_id,
-                        "status": tool_result_node.results[tc.call_id]["status"],
-                        "content": tool_result_node.results[tc.call_id]["content"],
-                    },
-                ),
-            )
-
-
-class AgentCore(Agent):
-    def __init__(
-        self,
-        client: Client,
-        backend: Backend,
-        tools: ToolRegistry,
-        compressor: Compressor | None = None,
-        permissions: PermissionManager | None = None,
-        memory: Any = None,
-        compress_ratio: float = 0.5,
-        context_window: int = 128000,
-    ) -> None:
-        self.client = client
-        self.backend = backend
-        self.tools = tools
-        self.compressor = compressor
-        self.permissions = permissions
-        self.memory = memory
-        self.compress_ratio = compress_ratio
-        self.context_window = context_window
-
-    async def new(self, cwd: str | None = None) -> Session:
-        """Create a new session."""
-        session = SessionCore(
-            session_id=str(uuid.uuid4()),
-            cwd=cwd,
-            agent=self,
-        )
-        return session
-
-    async def load(self, data: JSONValue) -> Session:
-        """Load a session from serialized data."""
-        if not isinstance(data, dict):
-            raise ValueError("Invalid session data: expected dict")
-        session_id = data.get("id")
-        if not isinstance(session_id, str):
-            raise ValueError("Session data missing 'id'")
-        session_cwd = data.get("cwd")
-        if session_cwd is not None and not isinstance(session_cwd, str):
-            raise ValueError("Session 'cwd' must be a string or null")
-        session = SessionCore(
-            session_id=session_id,
-            cwd=session_cwd,
-            agent=self,
-        )
-        chain = data.get("chain", [])
-        if isinstance(chain, list):
-            session._rebuild_tail(chain)
-        return session
+        return await ToolInvoker(self).invoke(result, partial_output)

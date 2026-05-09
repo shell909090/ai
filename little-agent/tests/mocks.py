@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from typing import Any
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.agent import AgentCore
 from little_agent.agent.protocol import Session
 from little_agent.backends.protocol import Backend, BackendTurnResult
 from little_agent.frontends.protocol import Client

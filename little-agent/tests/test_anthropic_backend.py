@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from little_agent.agent.core import AgentCore, SessionCore
+from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import (
     AssistantResponseNode,
     SummaryNode,
@@ -24,6 +24,7 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
+from little_agent.agent.session import SessionCore
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.manager import ToolManager

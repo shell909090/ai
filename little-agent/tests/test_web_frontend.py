@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.agent import AgentCore
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.frontends.web import WebClient
 from little_agent.types import SessionUpdate
@@ -116,7 +116,7 @@ async def test_websocket_update_broadcast(web_client_fixture) -> None:
 
     async with test_client.ws_connect("/ws") as ws:
         # Simulate an update from the agent side
-        from little_agent.agent.core import SessionCore
+        from little_agent.agent.session import SessionCore
 
         session = await agent.new()
         assert isinstance(session, SessionCore)

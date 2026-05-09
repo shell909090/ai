@@ -134,7 +134,7 @@ async def test_allowed_tools_filters_tool_map() -> None:
 
     from collections.abc import AsyncIterator
 
-    from little_agent.agent.core import SessionCore
+    from little_agent.agent.session import SessionCore
     from little_agent.backends.protocol import Backend
     from little_agent.types import SessionUpdate
 

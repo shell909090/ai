@@ -13,8 +13,9 @@ from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
 from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
-    from little_agent.agent.core import AgentCore, SessionCore
+    from little_agent.agent.agent import AgentCore
     from little_agent.agent.protocol import Session
+    from little_agent.agent.session import SessionCore
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ class TaskToolProvider:
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:
         """Fork a new session from the current, sharing frozen history."""
-        from little_agent.agent.core import SessionCore as SessionCoreImpl
+        from little_agent.agent.session import SessionCore as SessionCoreImpl
 
         node = session.tail
         while node is not None and hasattr(node, "frozen"):

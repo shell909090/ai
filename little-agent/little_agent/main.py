@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from little_agent.agent.core import AgentCore
+from little_agent.agent.agent import AgentCore
 from little_agent.backends.anthropic import AnthropicBackend
 from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.acp import AcpClient

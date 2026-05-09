@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from little_agent.agent.core import AgentCore, SessionCore
+from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import AssistantResponseNode, UserPromptNode
+from little_agent.agent.session import SessionCore
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolArgDef, ToolDef
