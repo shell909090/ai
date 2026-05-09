@@ -309,6 +309,80 @@ def test_build_backend_no_api_key_raises() -> None:
             _build_backend({"type": "openai", "api_key_env": "MISSING_KEY"}, "primary")
 
 
+def _run_main_with_config(mock_config: dict[str, Any]) -> MagicMock:
+    """Helper: run main() with given config and return the mock AgentCore call args."""
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("little_agent.main.AgentCore") as mock_agent_cls:
+                    mock_agent = MagicMock()
+                    mock_agent_cls.return_value = mock_agent
+                    with patch("little_agent.main.CliClient") as mock_client_cls:
+                        mock_client = MagicMock()
+                        mock_client.run = AsyncMock(return_value=None)
+                        mock_client_cls.return_value = mock_client
+                        with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                            mock_parse.return_value = MagicMock(
+                                config=Path("config.yaml"), loglevel=None
+                            )
+                            main()
+                    return mock_agent_cls
+
+
+def test_main_agent_default_compress_ratio() -> None:
+    """Default agent config yields compress_ratio=0.5."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_agent_cls = _run_main_with_config(mock_config)
+    kwargs = mock_agent_cls.call_args.kwargs
+    assert kwargs["compress_ratio"] == 0.5
+
+
+def test_main_agent_custom_compress_ratio() -> None:
+    """agent.R in config is passed to AgentCore as compress_ratio."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["agent"] = {"R": 0.8}
+    mock_agent_cls = _run_main_with_config(mock_config)
+    kwargs = mock_agent_cls.call_args.kwargs
+    assert kwargs["compress_ratio"] == pytest.approx(0.8)
+
+
+def test_main_agent_invalid_compress_ratio_zero_raises() -> None:
+    """agent.R=0 raises ValueError (must be in (0, 1])."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["agent"] = {"R": 0.0}
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                    with pytest.raises(ValueError, match="agent.R must be in range"):
+                        main()
+
+
+def test_main_agent_invalid_compress_ratio_above_1_raises() -> None:
+    """agent.R=1.5 raises ValueError."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["agent"] = {"R": 1.5}
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                    with pytest.raises(ValueError, match="agent.R must be in range"):
+                        main()
+
+
 def test_main_with_compressor_backend() -> None:
     """Test main constructs compressor backend when present in config."""
     mock_config = {

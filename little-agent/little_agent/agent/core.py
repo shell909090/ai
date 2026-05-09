@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import TYPE_CHECKING, Any, Literal
 
+from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import ContentBlock, JSONValue, PromptReturn, SessionUpdate
@@ -26,7 +28,9 @@ if TYPE_CHECKING:
     from little_agent.permissions import PermissionManager
     from little_agent.tools.protocol import ToolProvider
 
-MAX_TURN_ITERATIONS = 10
+logger = logging.getLogger(__name__)
+
+MAX_TURN_ITERATIONS = 20
 
 _PendingItem = tuple[str | list[ContentBlock], list[str] | None, asyncio.Future[PromptReturn]]
 
@@ -46,6 +50,7 @@ class SessionCore(Session):
         self._cancel_requested: bool = False
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
         self._turn_allowed_tools: list[str] | None = None
+        self._compress_task: asyncio.Task[None] | None = None
 
     def get_turn_tool_map(self) -> ToolMap:
         """Return tool map filtered by _turn_allowed_tools (None = all tools)."""
@@ -57,6 +62,7 @@ class SessionCore(Session):
     async def prompt(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
     ) -> PromptReturn:
+        """Queue a user prompt and await the agent's response."""
         future: asyncio.Future[PromptReturn] = asyncio.get_running_loop().create_future()
         try:
             self._pending_queue.put_nowait((prompt, allowed_tools, future))
@@ -70,6 +76,7 @@ class SessionCore(Session):
         return await future
 
     async def _consume_queue(self) -> None:
+        """Drain pending prompts serially; yield to compress task when scheduled."""
         try:
             while not self._pending_queue.empty():
                 prompt, allowed_tools, future = self._pending_queue.get_nowait()
@@ -81,15 +88,19 @@ class SessionCore(Session):
                 except Exception as exc:
                     if not future.done():
                         future.set_exception(exc)
+                # Post-turn compress was scheduled; it will restart the queue when done.
+                if self._compress_task is not None:
+                    return
         finally:
-            self._active_turn = False
+            if self._compress_task is None:
+                self._active_turn = False
 
     async def _run_turn(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
     ) -> PromptReturn:
+        """Execute one user turn including all backend/tool iterations."""
         self._turn_allowed_tools = allowed_tools
 
-        # Inject memory before starting the turn by prepending a SummaryNode.
         if self.agent.memory is not None:
             memory_text = await self.agent.memory.recall()
             if memory_text:
@@ -108,13 +119,16 @@ class SessionCore(Session):
         self._append_node(user_node)
 
         partial_output = ""
+        _overflow_retried = False
+        last_result: BackendTurnResult | None = None
         try:
             for _ in range(MAX_TURN_ITERATIONS):
                 if self._cancel_requested:
                     self._freeze_tail()
                     return ("cancelled", partial_output)
 
-                result = await self._generate_backend_result()
+                result, _overflow_retried = await self._backend_result_with_retry(_overflow_retried)
+                last_result = result
 
                 match result.finish_reason:
                     case "completed":
@@ -130,6 +144,81 @@ class SessionCore(Session):
             raise RuntimeError("Max turn iterations exceeded")
         finally:
             await self._update_memory()
+            self._schedule_compress_if_needed(last_result)
+
+    def _schedule_compress_if_needed(self, last_result: BackendTurnResult | None) -> None:
+        """Evaluate §7.6.2 trigger criteria; schedule post-turn compress if triggered."""
+        if self.agent.compressor is None:
+            return
+
+        triggered = False
+        use_token = False
+        cw = self.agent.context_window
+        compress_ratio = self.agent.compress_ratio
+
+        if last_result is not None and last_result.usage is not None:
+            usage = last_result.usage
+            total_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+            if total_tokens > 0:
+                use_token = True
+                ratio = total_tokens / cw
+                triggered = ratio > compress_ratio
+                logger.info(
+                    "post-turn compress eval: tokens=%d ratio=%.3f R=%.2f triggered=%s",
+                    total_tokens,
+                    ratio,
+                    compress_ratio,
+                    triggered,
+                )
+
+        if not use_token:
+            char_count = 0
+            node: Node | None = self.tail
+            while node is not None:
+                char_count += len(str(node.to_dict()))
+                node = node.prev
+            ratio = (char_count / 4) / cw
+            triggered = ratio > compress_ratio
+            logger.info(
+                "post-turn compress eval (char fallback): chars=%d ratio=%.3f R=%.2f triggered=%s",
+                char_count,
+                ratio,
+                compress_ratio,
+                triggered,
+            )
+
+        if triggered:
+            self._compress_task = asyncio.create_task(self._run_post_turn_compress())
+
+    async def _run_post_turn_compress(self) -> None:
+        """Background task: compress history then resume the pending queue."""
+        try:
+            new_tail = await self.agent.compressor.compress(self.tail)  # type: ignore[union-attr]
+            if new_tail is not None:
+                self.tail = new_tail
+        except Exception:
+            logger.exception("Post-turn compress failed")
+        finally:
+            self._compress_task = None
+            self._active_turn = False
+            if not self._pending_queue.empty():
+                self._active_turn = True
+                asyncio.create_task(self._consume_queue())
+
+    async def _backend_result_with_retry(
+        self, overflow_retried: bool
+    ) -> tuple[BackendTurnResult, bool]:
+        """Generate backend result; compress and retry once on ContextOverflowError."""
+        try:
+            return await self._generate_backend_result(), overflow_retried
+        except ContextOverflowError:
+            if overflow_retried or self.agent.compressor is None:
+                raise
+            logger.info("in-turn context overflow: compressing and retrying")
+            new_tail = await self.agent.compressor.compress(self.tail)
+            if new_tail is not None:
+                self.tail = new_tail
+            return await self._generate_backend_result(), True
 
     async def _generate_backend_result(self) -> BackendTurnResult:
         """Generate a single backend turn result."""
@@ -181,11 +270,15 @@ class SessionCore(Session):
             self.tail.frozen = True
 
     async def cancel(self) -> None:
+        """Cancel the active turn and any running post-turn compress."""
         if not self._active_turn:
             return
         self._cancel_requested = True
+        if self._compress_task is not None:
+            self._compress_task.cancel()
 
     async def fork(self) -> Session:
+        """Fork into a new session sharing the frozen history."""
         if self._active_turn:
             raise RuntimeError("Cannot fork session with active turn")
         self._freeze_tail()
@@ -198,6 +291,7 @@ class SessionCore(Session):
         return new_session
 
     async def compress(self) -> None:
+        """Manually compress session history (not allowed during an active turn)."""
         if self._active_turn:
             raise RuntimeError("Cannot compress session with active turn")
         if self.agent.compressor is None:
@@ -206,6 +300,7 @@ class SessionCore(Session):
         self.tail = new_head
 
     def save(self) -> JSONValue:
+        """Serialize session state to a JSON-compatible dict."""
         chain: list[dict[str, JSONValue]] = []
         node = self.tail
         while node is not None:
@@ -375,6 +470,8 @@ class AgentCore(Agent):
         compressor: Compressor | None = None,
         permissions: PermissionManager | None = None,
         memory: Any = None,
+        compress_ratio: float = 0.5,
+        context_window: int = 128000,
     ) -> None:
         self.client = client
         self.backend = backend
@@ -382,8 +479,11 @@ class AgentCore(Agent):
         self.compressor = compressor
         self.permissions = permissions
         self.memory = memory
+        self.compress_ratio = compress_ratio
+        self.context_window = context_window
 
     async def new(self, cwd: str | None = None) -> Session:
+        """Create a new session."""
         session = SessionCore(
             session_id=str(uuid.uuid4()),
             cwd=cwd,
@@ -392,6 +492,7 @@ class AgentCore(Agent):
         return session
 
     async def load(self, data: JSONValue) -> Session:
+        """Load a session from serialized data."""
         if not isinstance(data, dict):
             raise ValueError("Invalid session data: expected dict")
         session_id = data.get("id")

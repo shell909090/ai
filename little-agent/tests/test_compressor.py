@@ -7,6 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
+from little_agent.agent.compressor import (
+    LLMCompressor,
+    _apply_w_limit,
+    _nodes_to_text,
+    _split_into_turns,
+)
 from little_agent.agent.nodes import (
     AssistantResponseNode,
     Node,
@@ -16,7 +22,6 @@ from little_agent.agent.nodes import (
     UserPromptNode,
 )
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.compressor import LLMCompressor, _apply_w_limit, _nodes_to_text, _split_into_turns
 from tests.mocks import MockBackend
 
 # ---------------------------------------------------------------------------
@@ -381,7 +386,7 @@ async def test_keep_turns_below_3_forced_to_3() -> None:
         [BackendTurnResult(output_text="sum1", tool_calls=[], finish_reason="completed")]
     )
 
-    with patch.object(logging.getLogger("little_agent.compressor"), "warning") as mock_warn:
+    with patch.object(logging.getLogger("little_agent.agent.compressor"), "warning") as mock_warn:
         compressor = LLMCompressor(backend, keep_turns=1)
         mock_warn.assert_called_once()
         assert "keep_turns" in mock_warn.call_args[0][0] or "1" in str(mock_warn.call_args)

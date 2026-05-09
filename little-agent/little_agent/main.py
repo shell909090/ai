@@ -166,7 +166,7 @@ def _load_compressor(
     compressor_cfg = backends_config.get("compressor")
     if not isinstance(compressor_cfg, dict):
         return None
-    from little_agent.compressor import LLMCompressor
+    from little_agent.agent.compressor import LLMCompressor
 
     compressor_backend = _build_backend(compressor_cfg, "compressor")
     compressor_section = config.get("compressor") or {}
@@ -238,6 +238,11 @@ def main() -> None:
     else:
         client = CliClient()
 
+    agent_cfg = config.get("agent") or {}
+    compress_ratio = float(agent_cfg.get("R", 0.5))
+    if not (0 < compress_ratio <= 1):
+        raise ValueError(f"agent.R must be in range (0, 1], got {compress_ratio}")
+
     agent = AgentCore(
         client=client,
         backend=backend,
@@ -245,6 +250,8 @@ def main() -> None:
         compressor=compressor,
         permissions=permissions,
         memory=memory,
+        compress_ratio=compress_ratio,
+        context_window=backend.context_window,
     )
 
     tools.register(TaskToolProvider(agent))

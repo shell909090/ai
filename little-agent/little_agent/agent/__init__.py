@@ -1,5 +1,6 @@
 """Agent module."""
 
+from .compressor import LLMCompressor
 from .core import AgentCore, SessionCore
 from .exceptions import SessionBusyError
 from .nodes import (
@@ -25,4 +26,5 @@ __all__ = [
     "ToolResultNode",
     "SummaryNode",
     "SessionBusyError",
+    "LLMCompressor",
 ]
