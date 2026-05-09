@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from little_agent.backends.exceptions import ContextOverflowError
@@ -142,46 +143,42 @@ class SessionCore(Session):
             await self._update_memory()
             self._schedule_compress_if_needed(last_result)
 
+    def _iter_nodes(self) -> Iterator["Node"]:
+        node: Node | None = self.tail
+        while node is not None:
+            yield node
+            node = node.prev
+
     def _schedule_compress_if_needed(self, last_result: BackendTurnResult | None) -> None:
         """Evaluate §7.6.2 trigger criteria; schedule post-turn compress if triggered."""
         if self.agent.compressor is None:
             return
 
-        triggered = False
-        use_token = False
         cw = self.agent.context_window
         compress_ratio = self.agent.compress_ratio
 
-        if last_result is not None and last_result.usage is not None:
-            usage = last_result.usage
-            total_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
-            if total_tokens > 0:
-                use_token = True
-                ratio = total_tokens / cw
-                triggered = ratio > compress_ratio
-                logger.info(
-                    "post-turn compress eval: tokens=%d ratio=%.3f R=%.2f triggered=%s",
-                    total_tokens,
-                    ratio,
-                    compress_ratio,
-                    triggered,
-                )
-
-        if not use_token:
-            char_count = 0
-            node: Node | None = self.tail
-            while node is not None:
-                char_count += len(str(node.to_dict()))
-                node = node.prev
+        metric: str
+        ratio: float
+        usage = last_result.usage if last_result is not None else None
+        total_tokens = (
+            usage.get("input_tokens", 0) + usage.get("output_tokens", 0) if usage else 0
+        )
+        if total_tokens > 0:
+            ratio = total_tokens / cw
+            metric = f"tokens={total_tokens}"
+        else:
+            char_count = sum(len(str(node.to_dict())) for node in self._iter_nodes())
             ratio = (char_count / 4) / cw
-            triggered = ratio > compress_ratio
-            logger.info(
-                "post-turn compress eval (char fallback): chars=%d ratio=%.3f R=%.2f triggered=%s",
-                char_count,
-                ratio,
-                compress_ratio,
-                triggered,
-            )
+            metric = f"chars={char_count} (fallback)"
+
+        triggered = ratio > compress_ratio
+        logger.info(
+            "post-turn compress eval: %s ratio=%.3f R=%.2f triggered=%s",
+            metric,
+            ratio,
+            compress_ratio,
+            triggered,
+        )
 
         if triggered:
             self._compress_task = asyncio.create_task(self._run_post_turn_compress())
