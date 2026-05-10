@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from little_agent.types import JSONValue
 
@@ -32,7 +32,9 @@ class AgentCore(Agent):
         self.backend = backend
         self.tools = tools
         self.compressor = compressor
-        self.permissions: PermissionChecker = permissions if permissions is not None else client
+        self.permissions: PermissionChecker = (
+            permissions if permissions is not None else cast(PermissionChecker, client)
+        )
         self.memory = memory
         self.compress_ratio = compress_ratio
         self.context_window = context_window

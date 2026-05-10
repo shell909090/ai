@@ -45,6 +45,32 @@ class BashToolProvider:
     )
     _TIMEOUT = 30
 
+    async def _handle_timeout(
+        self,
+        proc: asyncio.subprocess.Process,
+        command: str,
+        timed_out: bool,
+        exc: BaseException,
+    ) -> JSONValue:
+        """Kill process after timeout or cancellation and return result."""
+        if timed_out:
+            logger.warning("bash: command timed out after %ss: %r", self._TIMEOUT, command)
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError) as e:
+            logger.error("bash: failed to kill process: %s", e)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except (TimeoutError, asyncio.CancelledError):
+            pass
+        if not timed_out:
+            raise exc
+        return {
+            "stdout": "",
+            "stderr": f"Command timed out after {self._TIMEOUT} seconds",
+            "returncode": -1,
+        }
+
     def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
         """Yield the single bash tool triple."""
         yield ("bash", self._TOOL_DEF, self._dispatch)
@@ -70,9 +96,13 @@ class BashToolProvider:
                     env[key] = str(v)
 
         stdin_val = args.get("stdin")
+        if stdin_val is not None and not isinstance(stdin_val, str):
+            raise ValueError("stdin must be a string")
         stdin_bytes: bytes | None = (
             stdin_val.encode("utf-8") if isinstance(stdin_val, str) else None
         )
+
+        logger.debug("bash: command=%r cwd=%r", command, cwd)
 
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -83,32 +113,18 @@ class BashToolProvider:
             env=env,
             start_new_session=True,
         )
-        timed_out = False
         try:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(input=stdin_bytes), timeout=self._TIMEOUT
             )
         except (TimeoutError, asyncio.CancelledError) as exc:
-            timed_out = isinstance(exc, TimeoutError)
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, OSError):
-                pass
-            # Drain without raising so the transport cleans up properly.
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except (TimeoutError, asyncio.CancelledError):
-                pass
-            if not timed_out:
-                raise
-            return {
-                "stdout": "",
-                "stderr": f"Command timed out after {self._TIMEOUT} seconds",
-                "returncode": -1,
-            }
+            return await self._handle_timeout(proc, command, isinstance(exc, TimeoutError), exc)
 
+        returncode = proc.returncode
+        if returncode != 0:
+            logger.warning("bash: command exited with returncode=%d: %r", returncode, command)
         return {
             "stdout": stdout.decode("utf-8", errors="replace"),
             "stderr": stderr.decode("utf-8", errors="replace"),
-            "returncode": proc.returncode,
+            "returncode": returncode,
         }

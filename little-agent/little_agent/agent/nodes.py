@@ -126,7 +126,7 @@ class SummaryNode(Node):
     """Summary node."""
 
     kind: ClassVar[str] = "summary"
-    summary: JSONValue = None
+    summary: str = ""
 
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)
@@ -135,7 +135,7 @@ class SummaryNode(Node):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
-        return cls(id=data["id"], prev=prev, summary=data.get("summary"))
+        return cls(id=data["id"], prev=prev, summary=str(data.get("summary") or ""))
 
 
 _NODE_REGISTRY: dict[str, type[Node]] = {

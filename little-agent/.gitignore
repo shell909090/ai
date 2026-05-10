@@ -12,3 +12,6 @@ docs/review.md
 docs/tasks.md
 .coverage
 htmlcov/
+
+node_modules/
+package-lock.json

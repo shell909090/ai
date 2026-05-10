@@ -66,12 +66,18 @@ def _format_tool_result_content(result: dict[str, Any]) -> str:
         if isinstance(v, str):
             lines.append(f"{k}: {v}")
         else:
-            lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            try:
+                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            except (TypeError, ValueError):
+                lines.append(f"{k}: {v!s}")
     return "\n".join(lines)
 
 
 def _node_to_message(n: Node) -> list[dict[str, Any]]:
-    """Convert a single node to one or more Anthropic messages."""
+    """Convert a single node to one or more Anthropic messages.
+
+    SummaryNode is not converted here; it is handled by _chain_to_messages.
+    """
     if isinstance(n, UserPromptNode):
         content: str | list[Any]
         if isinstance(n.prompt, str):
@@ -111,14 +117,19 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
         ]
         return [{"role": "user", "content": tool_result_blocks}]
 
-    if isinstance(n, SummaryNode):
-        return [{"role": "user", "content": str(n.summary)}]
-
     return []
 
 
-def _chain_to_messages(session: "SessionCore") -> list[dict[str, Any]]:
-    """Convert chain of nodes to Anthropic messages list."""
+def _chain_to_messages(
+    session: "SessionCore",
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Convert chain of nodes to Anthropic messages list.
+
+    Returns (messages, system_injected) where system_injected is the text of
+    the first SummaryNode in the chain (hoisted to the Anthropic system param),
+    or None if no SummaryNode is present.  Subsequent SummaryNodes are rendered
+    as regular user messages so history context is preserved.
+    """
     messages: list[dict[str, Any]] = []
     node: Node | None = session.tail if hasattr(session, "tail") else None
     chain: list[Node] = []
@@ -127,11 +138,20 @@ def _chain_to_messages(session: "SessionCore") -> list[dict[str, Any]]:
         node = node.prev
     chain.reverse()
 
+    system_injected: str | None = None
     for n in chain:
+        if isinstance(n, SummaryNode):
+            if system_injected is None:
+                # First SummaryNode is lifted to the Anthropic system parameter.
+                system_injected = str(n.summary)
+            else:
+                # Subsequent SummaryNodes stay as user messages.
+                messages.append({"role": "user", "content": str(n.summary)})
+            continue
         for msg in _node_to_message(n):
             messages.append(msg)
 
-    return messages
+    return messages, system_injected
 
 
 _CONTEXT_OVERFLOW_SUBSTRINGS = (
@@ -255,6 +275,7 @@ class AnthropicBackend:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
+        system_injected: str | None = None,
     ) -> AsyncGenerator[Any, None]:
         """Inner generator that wraps the Anthropic stream with timeout and exception handling."""
         import anthropic
@@ -266,8 +287,10 @@ class AnthropicBackend:
         }
         if tools:
             kwargs["tools"] = tools
-        if self._system:
-            kwargs["system"] = self._system
+        # system_injected (from the first SummaryNode) takes priority; fall back to self._system.
+        effective_system = system_injected or self._system
+        if effective_system:
+            kwargs["system"] = effective_system
 
         try:
             async with asyncio.timeout(self._timeout):
@@ -291,7 +314,7 @@ class AnthropicBackend:
         """Stream response from Anthropic, yielding updates then a final BackendTurnResult."""
         async with self._sem:
             tool_map = session.get_turn_tool_map()
-            messages = _chain_to_messages(session)
+            messages, system_injected = _chain_to_messages(session)
             tools = _tool_map_to_anthropic_tools(tool_map) if tool_map else None
 
             _log_streaming_request(logger, "Anthropic", self._model, messages, tools)
@@ -305,7 +328,7 @@ class AnthropicBackend:
             usage: dict[str, int] | None = None
             finish_reason_raw = "end_turn"
 
-            async for event in self._generate_stream_inner(messages, tools):
+            async for event in self._generate_stream_inner(messages, tools, system_injected):
                 _handle_stream_event(
                     event,
                     text_chunks,
@@ -336,7 +359,7 @@ class AnthropicBackend:
                     )
                 )
 
-            finish_reason: Literal["completed", "tool_call", "cancelled"] = (
+            finish_reason: Literal["completed", "tool_call"] = (
                 "tool_call" if finish_reason_raw == "tool_use" else "completed"
             )
 

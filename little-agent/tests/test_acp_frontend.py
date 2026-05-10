@@ -8,14 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from little_agent.frontends.acp import AcpClient, _write_json
+from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.protocol import SessionUpdate
 from tests.mocks import MockAgent
 
 
-def test_write_json_outputs_single_line(capsys: pytest.CaptureFixture[str]) -> None:
-    """_write_json writes one line of JSON to stdout."""
-    _write_json({"key": "value"})
+@pytest.mark.asyncio
+async def test_write_json_outputs_single_line(capsys: pytest.CaptureFixture[str]) -> None:
+    """AcpClient._write_json writes one line of JSON to stdout."""
+    client = AcpClient()
+    await client._write_json({"key": "value"})
     out = capsys.readouterr().out
     assert out.endswith("\n")
     parsed = json.loads(out.strip())

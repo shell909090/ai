@@ -109,14 +109,14 @@ class SessionCore(Session):
                     prev=self.tail,
                     summary=memory_text,
                 )
-                self._append_node(mem_node)
+                self.append_node(mem_node)
 
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
             prompt=prompt,
         )
-        self._append_node(user_node)
+        self.append_node(user_node)
 
         partial_output = ""
         _overflow_retried = False
@@ -138,10 +138,6 @@ class SessionCore(Session):
                         return await self._handle_completed(result, did_stream)
                     case "tool_call":
                         partial_output = await self._handle_tool_call(result, partial_output)
-                    case "cancelled":
-                        assert self.tail is not None
-                        self.tail.freeze()
-                        return ("cancelled", partial_output)
                     case _:
                         raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
 
@@ -172,8 +168,10 @@ class SessionCore(Session):
             ratio = total_tokens / cw
             metric = f"tokens={total_tokens}"
         else:
-            char_count = sum(len(str(node.to_dict())) for node in self._iter_nodes())
-            ratio = (char_count / 4) / cw
+            char_count = sum(
+                len(str(node.to_dict()).encode("utf-8")) for node in self._iter_nodes()
+            )
+            ratio = (char_count / 3) / cw
             metric = f"chars={char_count} (fallback)"
 
         triggered = ratio > compress_ratio
@@ -254,7 +252,7 @@ class SessionCore(Session):
             prev=self.tail,
             text=result.output_text,
         )
-        self._append_node(assistant_node)
+        self.append_node(assistant_node)
         assistant_node.freeze()
         if not did_stream:
             await self.agent.client.update(
@@ -271,7 +269,7 @@ class SessionCore(Session):
         if self.agent.memory is not None:
             await self.agent.memory.remember(self)
 
-    def _append_node(self, node: Node) -> None:
+    def append_node(self, node: Node) -> None:
         if self.tail is not None:
             self.tail.freeze()
         self.tail = node

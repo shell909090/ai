@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol
 
 from little_agent.types import ContentBlock, JSONValue, PromptReturn
 
 if TYPE_CHECKING:
-    from little_agent.backends.protocol import Backend
-    from little_agent.frontends.protocol import Client
     from little_agent.tools.protocol import ToolRegistry
 
     from .nodes import Node
 
 
-@runtime_checkable
 class PermissionChecker(Protocol):
     """Protocol for permission checkers in the Chain of Responsibility."""
 
@@ -35,6 +32,10 @@ class Compressor(Protocol):
 class Session(Protocol):
     """Session protocol."""
 
+    id: str
+    cwd: str | None
+    tail: object  # Node | None; kept as object to avoid importing Node at runtime
+
     async def prompt(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
     ) -> PromptReturn: ...
@@ -53,13 +54,7 @@ class Agent(Protocol):
 
     tools: ToolRegistry
 
-    def __init__(
-        self,
-        client: Client,
-        backend: Backend,
-        tools: ToolRegistry,
-        compressor: Compressor | None = None,
-    ) -> None: ...
+    def __init__(self, *args: object, **kwargs: object) -> None: ...
 
     async def new(self, cwd: str | None = None) -> Session: ...
 

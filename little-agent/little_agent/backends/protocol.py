@@ -27,7 +27,7 @@ class BackendTurnResult:
 
     output_text: str
     tool_calls: list[BackendToolCall]
-    finish_reason: Literal["completed", "tool_call", "cancelled"]
+    finish_reason: Literal["completed", "tool_call"]
     usage: dict[str, int] | None = None
     thinking_text: str | None = None
 

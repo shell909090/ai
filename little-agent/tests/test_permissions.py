@@ -40,7 +40,7 @@ async def test_yesman_always_grants() -> None:
 async def test_blackwhitelist_blacklist_blocks() -> None:
     """A blacklisted pattern denies the tool."""
     terminal = YesManChecker()
-    checker = BlackWhiteListChecker(blacklist=["rm*"], whitelist=[], next=terminal)
+    checker = BlackWhiteListChecker(blacklist=["rm*"], whitelist=[], next_checker=terminal)
     assert await checker.request_permission(object(), "rm", {}) is False
     assert await checker.request_permission(object(), "rmdir", {}) is False
 
@@ -49,7 +49,9 @@ async def test_blackwhitelist_blacklist_blocks() -> None:
 async def test_blackwhitelist_whitelist_allows() -> None:
     """A whitelisted pattern (with no blacklist match) grants the tool."""
     terminal = YesManChecker()
-    checker = BlackWhiteListChecker(blacklist=[], whitelist=["echo", "read*"], next=terminal)
+    checker = BlackWhiteListChecker(
+        blacklist=[], whitelist=["echo", "read*"], next_checker=terminal
+    )
     assert await checker.request_permission(object(), "echo", {}) is True
     assert await checker.request_permission(object(), "read_file", {}) is True
 
@@ -58,7 +60,7 @@ async def test_blackwhitelist_whitelist_allows() -> None:
 async def test_blackwhitelist_blacklist_priority_over_whitelist() -> None:
     """Blacklist takes priority even when whitelist also matches."""
     terminal = YesManChecker()
-    checker = BlackWhiteListChecker(blacklist=["bash"], whitelist=["bash"], next=terminal)
+    checker = BlackWhiteListChecker(blacklist=["bash"], whitelist=["bash"], next_checker=terminal)
     assert await checker.request_permission(object(), "bash", {}) is False
 
 
@@ -76,7 +78,7 @@ async def test_blackwhitelist_no_match_delegates() -> None:
             return True
 
     next_checker = _RecordingChecker()
-    checker = BlackWhiteListChecker(blacklist=["rm"], whitelist=["echo"], next=next_checker)
+    checker = BlackWhiteListChecker(blacklist=["rm"], whitelist=["echo"], next_checker=next_checker)
     result = await checker.request_permission(object(), "add", {})
     assert result is True
     assert next_checker.called
@@ -195,7 +197,7 @@ async def test_permission_denies_tool_when_blacklisted() -> None:
     """BlackWhiteListChecker with blacklist blocks tool call with 'Permission denied'."""
     client = MockClient()
     provider = BuiltinToolProvider()
-    checker = BlackWhiteListChecker(blacklist=["add"], whitelist=[], next=YesManChecker())
+    checker = BlackWhiteListChecker(blacklist=["add"], whitelist=[], next_checker=YesManChecker())
 
     script = [
         BackendTurnResult(

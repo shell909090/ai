@@ -3,6 +3,7 @@
 import pytest
 
 from little_agent.agent.agent import AgentCore
+from little_agent.tools.protocol import ToolArgDef, ToolDef
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 
@@ -23,8 +24,17 @@ def mock_tools() -> MockToolProvider:
     """Return a mock tool provider."""
     return MockToolProvider(
         tools={
-            "echo": ("Echo tool", [("text", "string", "text", True)]),
-            "add": ("Add tool", [("a", "number", "a", True), ("b", "number", "b", True)]),
+            "echo": ToolDef(
+                desc="Echo tool",
+                args=[ToolArgDef(name="text", type="string", desc="text", required=True)],
+            ),
+            "add": ToolDef(
+                desc="Add tool",
+                args=[
+                    ToolArgDef(name="a", type="number", desc="a", required=True),
+                    ToolArgDef(name="b", type="number", desc="b", required=True),
+                ],
+            ),
         },
         responses={
             "echo": "echoed",

@@ -315,12 +315,12 @@ async def test_compress_all_or_nothing_on_failure() -> None:
 def test_apply_w_limit_trims_old_summaries() -> None:
     """When cumulative token count exceeds W, old SummaryNodes are discarded.
 
-    4 SummaryNodes, each with a 400-char summary (= 100 tokens each).
-    w_tokens=100: after the newest node (cumulative=100, not >100) the second
-    newest tips the total to 200 (>100) → cutoff at index 2 → discard indices 0,1
-    → discarded_count=2, chain retains nodes at positions 2 and 3.
+    4 SummaryNodes, each with a 400-char ASCII summary.
+    New formula: len(text.encode('utf-8')) // 3 = 400 // 3 = 133 tokens each.
+    w_tokens=133: newest node cumulative=133 (not >133); second tips to 266 (>133)
+    → cutoff at index 2 → discard indices 0,1 → discarded_count=2.
     """
-    summary_text = "x" * 400  # 400 chars → 400 // 4 = 100 tokens
+    summary_text = "x" * 400  # 400 ASCII bytes → 400 // 3 = 133 tokens
 
     s0 = SummaryNode(id="s0", prev=None, summary=summary_text)
     s1 = SummaryNode(id="s1", prev=s0, summary=summary_text)
@@ -328,7 +328,7 @@ def test_apply_w_limit_trims_old_summaries() -> None:
     s3 = SummaryNode(id="s3", prev=s2, summary=summary_text)
 
     chain = [s0, s1, s2, s3]
-    discarded, trimmed = _apply_w_limit(chain, w_tokens=100)
+    discarded, trimmed = _apply_w_limit(chain, w_tokens=133)
 
     assert discarded == 2
     assert len(trimmed) == 2

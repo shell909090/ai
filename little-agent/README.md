@@ -12,7 +12,7 @@ little-agent features:
 - **Protocol-based design** — backends, frontends, and tools are all swappable
 - **Multiple LLM backends** — OpenAI-compatible APIs and Anthropic Claude
 - **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)
-- **MCP tool support** — connect external tool servers via Model Context Protocol
+- **MCP tool support (planned)** — currently tools are loaded as Python modules via the `tools.providers` config
 - **Permission system** — Chain of Responsibility: per-tool allow/deny rules with user prompt fallback
 - **Memory** — persist and recall facts across sessions
 - **Auto-compression** — automatically summarize history when context window fills up

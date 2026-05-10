@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from typing import Any
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.protocol import Session
 from little_agent.backends.protocol import Backend, BackendTurnResult
 from little_agent.frontends.protocol import Client
-from little_agent.tools.exceptions import ToolExecutionError
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef, ToolProvider
 from little_agent.types import JSONValue, SessionUpdate
+
+# Type alias for a custom generate function
+GenerateFn = Callable[[object], AsyncIterator[SessionUpdate | BackendTurnResult]]
 
 
 class MockClient(Client):
@@ -42,14 +44,22 @@ class MockBackend(Backend):
         self._script = script or []
         self._index = 0
         self.sessions: list[object] = []
+        self._generate_fn: GenerateFn | None = None
 
     def set_script(self, script: list[BackendTurnResult]) -> None:
-        """Set a new script."""
+        """Set a new script and clear any custom generate function."""
         self._script = script
         self._index = 0
+        self._generate_fn = None
+
+    def set_generate_fn(self, fn: GenerateFn) -> None:
+        """Set a custom generate function, overriding the script-based behaviour."""
+        self._generate_fn = fn
 
     def generate(self, session: object) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
         """Return async iterator for scripted results."""
+        if self._generate_fn is not None:
+            return self._generate_fn(session)
         return self._gen(session)
 
     async def _gen(
@@ -136,7 +146,7 @@ class BuiltinToolProvider:
         a = args.get("a", 0)
         b = args.get("b", 0)
         if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
-            raise ToolExecutionError("Arguments must be numbers")
+            raise TypeError("Arguments must be numbers")
         return a + b
 
 

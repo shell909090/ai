@@ -353,7 +353,7 @@ class TestChainToMessages:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         node = UserPromptNode(id="1", prev=None, prompt="hello world")
         session = _make_session_with_tail(node)
-        msgs = mod._chain_to_messages(session)
+        msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "user"
         assert msgs[0]["content"] == "hello world"
@@ -363,7 +363,7 @@ class TestChainToMessages:
         n1 = UserPromptNode(id="1", prev=None, prompt="hi")
         n2 = AssistantResponseNode(id="2", prev=n1, text="hello back")
         session = _make_session_with_tail(n2)
-        msgs = mod._chain_to_messages(session)
+        msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assert msgs[1]["role"] == "assistant"
         content = msgs[1]["content"]
@@ -380,7 +380,7 @@ class TestChainToMessages:
             calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
         session = _make_session_with_tail(n2)
-        msgs = mod._chain_to_messages(session)
+        msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assistant_msg = msgs[1]
         assert assistant_msg["role"] == "assistant"
@@ -406,7 +406,7 @@ class TestChainToMessages:
             results={"c1": {"status": "completed", "content": "output text"}},
         )
         session = _make_session_with_tail(n3)
-        msgs = mod._chain_to_messages(session)
+        msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 3
         result_msg = msgs[2]
         assert result_msg["role"] == "user"
@@ -421,10 +421,10 @@ class TestChainToMessages:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = SummaryNode(id="1", prev=None, summary="summary text")
         session = _make_session_with_tail(n1)
-        msgs = mod._chain_to_messages(session)
-        assert len(msgs) == 1
-        assert msgs[0]["role"] == "user"
-        assert "summary text" in msgs[0]["content"]
+        msgs, system_injected = mod._chain_to_messages(session)
+        # First SummaryNode is lifted to system_injected, not kept in messages.
+        assert len(msgs) == 0
+        assert system_injected == "summary text"
 
     def test_parallel_tool_calls(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
@@ -438,7 +438,7 @@ class TestChainToMessages:
             },
         )
         session = _make_session_with_tail(n2)
-        msgs = mod._chain_to_messages(session)
+        msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assistant_msg = msgs[1]
         assert assistant_msg["role"] == "assistant"

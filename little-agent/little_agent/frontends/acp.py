@@ -18,23 +18,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _write_json(obj: dict[str, Any]) -> None:
-    """Write a JSON object as a single line to stdout."""
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
-
-
 class AcpClient(Client):
     """ACP frontend that communicates via newline-delimited JSON on stdin/stdout."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
+        self._stdout_lock = asyncio.Lock()
+
+    async def _write_json(self, obj: dict[str, Any]) -> None:
+        """Write a JSON object as a single line to stdout, protected by a lock."""
+        data = json.dumps(obj, ensure_ascii=False) + "\n"
+        async with self._stdout_lock:
+            sys.stdout.write(data)
+            sys.stdout.flush()
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Forward session updates to stdout as JSON."""
         session_id = getattr(session, "id", None)
-        _write_json(
+        await self._write_json(
             {
                 "type": "session/update",
                 "session_id": session_id,
@@ -53,7 +55,7 @@ class AcpClient(Client):
         session_id = getattr(session, "id", None)
         req_id = f"perm_{session_id}_{kind}_{id(payload)}"
 
-        _write_json(
+        await self._write_json(
             {
                 "type": "session/request_permission",
                 "id": req_id,
@@ -167,11 +169,11 @@ class AcpClient(Client):
             try:
                 msg = json.loads(line_str)
             except json.JSONDecodeError as exc:
-                _write_json({"error": f"Invalid JSON: {exc}"})
+                await self._write_json({"error": f"Invalid JSON: {exc}"})
                 continue
 
             if not isinstance(msg, dict):
-                _write_json({"error": "Request must be a JSON object"})
+                await self._write_json({"error": "Request must be a JSON object"})
                 continue
 
             msg_type = msg.get("type", "")
@@ -180,7 +182,7 @@ class AcpClient(Client):
                 continue
 
             response = await self._handle_request(agent, msg)
-            _write_json(response)
+            await self._write_json(response)
 
     def _handle_permission_response(self, msg: dict[str, Any]) -> None:
         """Resolve a pending permission future from a response message."""

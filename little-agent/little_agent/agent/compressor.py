@@ -82,7 +82,7 @@ def _apply_w_limit(chain: list[Node], w_tokens: int) -> tuple[int, list[Node]]:
     for idx in reversed(summary_indices):
         node = chain[idx]
         assert isinstance(node, SummaryNode)
-        cumulative += len(str(node.summary)) // 4
+        cumulative += len(str(node.summary).encode("utf-8")) // 3
         if cumulative > w_tokens:
             # Discard everything before this node (this node itself is kept)
             cutoff_idx = idx

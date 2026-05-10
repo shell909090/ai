@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
+from typing import cast
 
 import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
-from little_agent.agent.session import MAX_TURN_ITERATIONS
+from little_agent.agent.session import MAX_TURN_ITERATIONS, SessionCore
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
+from little_agent.tools.protocol import ToolArgDef, ToolDef
 from little_agent.types import JSONValue, PromptReturn, SessionUpdate
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
@@ -52,7 +54,7 @@ async def test_single_tool_call() -> None:
         ]
     )
     tools = MockToolProvider(
-        tools={"echo": ("Echo", [("text", "string", "text", True)])},
+        tools={"echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)])},
         responses={"echo": "echoed"},
     )
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -81,7 +83,7 @@ async def test_single_tool_call_with_output_text() -> None:
         ]
     )
     tools = MockToolProvider(
-        tools={"echo": ("Echo", [("text", "string", "text", True)])},
+        tools={"echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)])},
         responses={"echo": "echoed"},
     )
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -112,8 +114,14 @@ async def test_multiple_parallel_tool_calls() -> None:
     )
     tools = MockToolProvider(
         tools={
-            "echo": ("Echo", [("text", "string", "text", True)]),
-            "add": ("Add", [("a", "number", "a", True), ("b", "number", "b", True)]),
+            "echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)]),
+            "add": ToolDef(
+                desc="Add",
+                args=[
+                    ToolArgDef("a", "number", "a", True),
+                    ToolArgDef("b", "number", "b", True),
+                ],
+            ),
         },
         responses={"echo": "a", "add": 3},
     )
@@ -149,7 +157,7 @@ async def test_multi_turn_backend_tool_loop() -> None:
         ]
     )
     tools = MockToolProvider(
-        tools={"echo": ("Echo", [("text", "string", "text", True)])},
+        tools={"echo": ToolDef(desc="Echo", args=[ToolArgDef("text", "string", "text", True)])},
         responses={"echo": "ok"},
     )
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -174,7 +182,7 @@ async def test_tool_exception_captured() -> None:
         ]
     )
     tools = MockToolProvider(
-        tools={"bad": ("Bad tool", [])},
+        tools={"bad": ToolDef(desc="Bad tool", args=[])},
         errors={"bad"},
     )
     agent = AgentCore(client=client, backend=backend, tools=tools)
@@ -200,8 +208,10 @@ async def test_cancel_during_tool_execution() -> None:
         )
 
     backend = MockBackend()
-    backend.generate = slow_generate  # type: ignore[method-assign]
-    tools = MockToolProvider(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
+    backend.set_generate_fn(slow_generate)
+    tools = MockToolProvider(
+        tools={"echo": ToolDef(desc="Echo", args=[])}, responses={"echo": "ok"}
+    )
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
@@ -233,8 +243,8 @@ async def test_fork_shares_history() -> None:
     session = await agent.new()
     await session.prompt("hi")
     new_session = await session.fork()
-    assert new_session.id != session.id  # type: ignore[attr-defined]
-    assert new_session.tail is not None  # type: ignore[attr-defined]
+    assert new_session.id != session.id
+    assert new_session.tail is not None
 
 
 @pytest.mark.asyncio
@@ -249,7 +259,7 @@ async def test_fork_during_active_turn_raises() -> None:
         yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
-    backend.generate = slow_generate  # type: ignore[method-assign]
+    backend.set_generate_fn(slow_generate)
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
@@ -276,7 +286,7 @@ async def test_compress_during_active_turn_raises() -> None:
         yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
-    backend.generate = slow_generate  # type: ignore[method-assign]
+    backend.set_generate_fn(slow_generate)
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
@@ -303,7 +313,7 @@ async def test_pending_queue_full_raises() -> None:
         yield BackendTurnResult(output_text="", tool_calls=[], finish_reason="completed")
 
     backend = MockBackend()
-    backend.generate = slow_generate  # type: ignore[method-assign]
+    backend.set_generate_fn(slow_generate)
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
@@ -368,7 +378,9 @@ async def test_max_turn_iterations_exceeded() -> None:
         for i in range(25)
     ]
     backend = MockBackend(script)
-    tools = MockToolProvider(tools={"echo": ("Echo", [])}, responses={"echo": "ok"})
+    tools = MockToolProvider(
+        tools={"echo": ToolDef(desc="Echo", args=[])}, responses={"echo": "ok"}
+    )
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
     with pytest.raises(RuntimeError, match="Max turn iterations exceeded"):
@@ -434,7 +446,7 @@ async def test_save_returns_dict_with_chain() -> None:
     await session.prompt("hi")
     result = session.save()
     assert isinstance(result, dict)
-    assert result["id"] == session.id  # type: ignore[attr-defined]
+    assert result["id"] == session.id
     assert "chain" in result
     assert len(result["chain"]) == 2  # type: ignore[arg-type]
 
@@ -447,8 +459,8 @@ async def test_agent_load() -> None:
     tools = MockToolProvider()
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.load({"id": "test-id", "cwd": "/tmp"})
-    assert session.id == "test-id"  # type: ignore[attr-defined]
-    assert session.cwd == "/tmp"  # type: ignore[attr-defined]
+    assert session.id == "test-id"
+    assert session.cwd == "/tmp"
 
 
 @pytest.mark.asyncio
@@ -489,13 +501,14 @@ async def test_agent_load_with_chain() -> None:
         ],
     }
     session = await agent.load(data)
-    assert session.id == "test-id"  # type: ignore[attr-defined]
-    assert session.tail is not None  # type: ignore[attr-defined]
-    assert session.tail.kind == "assistant_response"  # type: ignore[attr-defined]
-    assert session.tail.text == "hi"  # type: ignore[attr-defined]
-    assert session.tail.prev is not None  # type: ignore[attr-defined]
-    assert session.tail.prev.kind == "user_prompt"  # type: ignore[attr-defined]
-    assert session.tail.prev.prompt == "hello"  # type: ignore[attr-defined]
+    session_core = cast(SessionCore, session)
+    assert session_core.id == "test-id"
+    assert session_core.tail is not None
+    assert session_core.tail.kind == "assistant_response"
+    assert session_core.tail.text == "hi"
+    assert session_core.tail.prev is not None
+    assert session_core.tail.prev.kind == "user_prompt"
+    assert session_core.tail.prev.prompt == "hello"
 
 
 @pytest.mark.asyncio
@@ -514,11 +527,13 @@ async def test_save_load_round_trip() -> None:
     saved = session.save()
 
     loaded_session = await agent.load(saved)
-    assert loaded_session.id == session.id  # type: ignore[attr-defined]
-    assert loaded_session.cwd == session.cwd  # type: ignore[attr-defined]
-    assert loaded_session.tail is not None  # type: ignore[attr-defined]
-    assert loaded_session.tail.kind == "assistant_response"  # type: ignore[attr-defined]
-    assert loaded_session.tail.text == "hello"  # type: ignore[attr-defined]
+    loaded_core = cast(SessionCore, loaded_session)
+    original_core = cast(SessionCore, session)
+    assert loaded_core.id == original_core.id
+    assert loaded_core.cwd == original_core.cwd
+    assert loaded_core.tail is not None
+    assert loaded_core.tail.kind == "assistant_response"
+    assert loaded_core.tail.text == "hello"
 
 
 @pytest.mark.asyncio
@@ -768,7 +783,8 @@ async def test_compress_task_holds_pending_queue() -> None:
     assert result1 == ("end_turn", "first")
 
     await compress_started.wait()
-    assert session._active_turn is True  # type: ignore[attr-defined]
+    # Cast to SessionCore to inspect internal state: _active_turn is held by compress task.
+    assert cast(SessionCore, session)._active_turn is True
 
     task2 = asyncio.create_task(session.prompt("second"))
     await asyncio.sleep(0.01)
@@ -938,10 +954,12 @@ async def test_cancel_interrupts_compress_task() -> None:
     assert result[0] == "end_turn"
 
     await compress_started.wait()
-    assert session._active_turn is True  # type: ignore[attr-defined]
+    # Cast to SessionCore to inspect internal state: _active_turn is held by compress task.
+    assert cast(SessionCore, session)._active_turn is True
 
     await session.cancel()
     await asyncio.sleep(0.1)
 
-    assert session._active_turn is False  # type: ignore[attr-defined]
+    # Cast to SessionCore to verify _active_turn is cleared after cancel.
+    assert cast(SessionCore, session)._active_turn is False
     assert len(cancelled_flag) == 1 and cancelled_flag[0] is True

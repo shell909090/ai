@@ -168,7 +168,7 @@
     <div id="chat-container"></div>
     <div id="status">Disconnected</div>
     <div id="input-area">
-        <input type="text" id="message-input" placeholder="Type a message..." disabled>
+        <input type="text" id="message-input" placeholder="Type a message..." disabled aria-label="Message input">
         <button id="send-btn" disabled>Send</button>
         <button id="cancelButton">Cancel</button>
     </div>
@@ -177,8 +177,8 @@
             <h3>Permission Request</h3>
             <p id="permission-text"></p>
             <div class="modal-buttons">
-                <button class="btn-deny" id="perm-deny">Deny</button>
-                <button class="btn-allow" id="perm-allow">Allow</button>
+                <button class="btn-deny" id="perm-deny" aria-label="Deny permission">Deny</button>
+                <button class="btn-allow" id="perm-allow" aria-label="Allow permission">Allow</button>
             </div>
         </div>
     </div>

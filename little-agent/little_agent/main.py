@@ -280,7 +280,11 @@ def main() -> None:
         context_window=backend.context_window,
     )
 
-    tools.register(TaskToolProvider(agent))
+    tools_cfg = config.get("tools", {})
+    if isinstance(tools_cfg, dict) and tools_cfg.get("task_tool", True):
+        tools.register(TaskToolProvider(agent))
+    elif not isinstance(tools_cfg, dict):
+        tools.register(TaskToolProvider(agent))
 
     if frontend_type == "web":
         from little_agent.frontends.web import WebClient as _WebClient

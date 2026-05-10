@@ -69,7 +69,10 @@ def _format_tool_result(result: dict[str, Any]) -> str:
         if isinstance(v, str):
             lines.append(f"{k}: {v}")
         else:
-            lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            try:
+                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            except (TypeError, ValueError):
+                lines.append(f"{k}: {v!s}")
     return "\n".join(lines)
 
 
@@ -387,7 +390,7 @@ class OpenAIBackend:
                 yield update
 
             elapsed = time.perf_counter() - start_time
-            finish_reason: Literal["completed", "tool_call", "cancelled"] = (
+            finish_reason: Literal["completed", "tool_call"] = (
                 "tool_call" if finish_reason_raw == "tool_calls" else "completed"
             )
 

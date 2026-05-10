@@ -9,6 +9,7 @@ lint:
 
 build:
 	find little_agent -name '*.py' | xargs uv run python -m py_compile
+	cd little_agent/frontends/static && npx tsc --project tsconfig.json
 
 unittest:
 	uv run pytest tests/ -v

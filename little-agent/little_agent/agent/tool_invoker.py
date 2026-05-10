@@ -62,7 +62,7 @@ class ToolInvoker:
                 for tc in result.tool_calls
             },
         )
-        self._session._append_node(node)
+        self._session.append_node(node)
         return node
 
     def _create_tool_result_node(self) -> ToolResultNode:
@@ -72,7 +72,7 @@ class ToolInvoker:
             prev=self._session.tail,
             results={},
         )
-        self._session._append_node(node)
+        self._session.append_node(node)
         return node
 
     async def _run_tool_gather(

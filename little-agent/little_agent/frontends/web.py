@@ -196,9 +196,19 @@ class WebClient(Client):
         app[AGENT_KEY] = agent
         app[CLIENT_KEY] = self
 
+        async def _add_csp_header(request: web.Request, response: web.StreamResponse) -> None:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:"
+            )
+
+        app.on_response_prepare.append(_add_csp_header)
+
         static_dir = Path(__file__).parent / "static"
         if static_dir.exists():
             app.router.add_static("/", static_dir, name="static")
+        else:
+            logger.warning("Static directory not found: %s", static_dir)
 
         app.router.add_get("/ws", self.handle_websocket)
 

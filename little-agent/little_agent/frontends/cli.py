@@ -77,7 +77,6 @@ class CliClient(Client):
     """CLI client implementation."""
 
     def __init__(self) -> None:
-        self._updates: list[SessionUpdate] = []
         self._buffer_type: _ChunkType | None = None
         self._buffer_parts: list[str] = []
         # Bounded to prevent unbounded growth if asyncio.to_thread is mistakenly
@@ -119,7 +118,6 @@ class CliClient(Client):
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Handle session update with buffering for consecutive same-type chunks."""
-        self._updates.append(update)
         if update.type in ("agent_message_chunk", "thinking_chunk"):
             chunk_type: _ChunkType = "agent" if update.type == "agent_message_chunk" else "thinking"
             text = str(update.data.get("text", ""))
@@ -155,7 +153,7 @@ class CliClient(Client):
 
                 def _read(f: asyncio.Future[str | None] = fut) -> None:
                     try:
-                        text: str | None = input()
+                        text: str | None = input("> ")
                     except (EOFError, KeyboardInterrupt):
                         text = None
                     try:
@@ -357,7 +355,6 @@ class CliClient(Client):
         try:
             while True:
                 try:
-                    print("> ", end="", flush=True)
                     user_input = await self._stdin_queue.get()
                 except asyncio.CancelledError:
                     print("\nGoodbye!")

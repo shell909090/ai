@@ -3,7 +3,6 @@
 import pytest
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.tools.exceptions import ToolExecutionError
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolMap
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
@@ -57,10 +56,10 @@ async def test_builtin_add() -> None:
 
 @pytest.mark.asyncio
 async def test_builtin_add_invalid_type_raises() -> None:
-    """Test builtin add with invalid types raises ToolExecutionError."""
+    """Test builtin add with invalid types raises TypeError."""
     manager = ToolManager()
     manager.register(BuiltinToolProvider())
-    with pytest.raises(ToolExecutionError):
+    with pytest.raises(TypeError):
         await manager["add"]({"a": "x", "b": "y"})
 
 

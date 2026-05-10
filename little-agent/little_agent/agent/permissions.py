@@ -35,11 +35,11 @@ class BlackWhiteListChecker:
         self,
         blacklist: list[str],
         whitelist: list[str],
-        next: PermissionChecker,
+        next_checker: PermissionChecker,
     ) -> None:
         self._blacklist = blacklist
         self._whitelist = whitelist
-        self._next = next
+        self._next = next_checker
 
     async def request_permission(
         self,
@@ -71,7 +71,9 @@ def build_permission_chain(
             whitelist_raw = cfg.get("whitelist", [])
             blacklist = [str(p) for p in blacklist_raw] if isinstance(blacklist_raw, list) else []
             whitelist = [str(p) for p in whitelist_raw] if isinstance(whitelist_raw, list) else []
-            checker = BlackWhiteListChecker(blacklist=blacklist, whitelist=whitelist, next=checker)
+            checker = BlackWhiteListChecker(
+                blacklist=blacklist, whitelist=whitelist, next_checker=checker
+            )
         else:
             logger.warning("Unknown permission checker type %r; skipping.", checker_type)
     return checker

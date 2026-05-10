@@ -168,17 +168,39 @@ class FileMemory:
             self._save_facts()
             logger.debug("Remembered %d new facts", len(new_facts))
 
+    _PREAMBLE_PHRASES = (
+        "here are",
+        "the following",
+        "based on",
+        "i have",
+        "i've",
+        "please note",
+        "note that",
+        "as requested",
+    )
+
     def _parse_facts(self, text: str) -> list[str]:
-        """Parse fact lines from LLM output."""
+        """Parse fact lines from LLM output, skipping noise and preambles."""
         facts: list[str] = []
         for line in text.strip().splitlines():
             line = line.strip()
+            if not line:
+                continue
             if line.upper() == "NONE":
                 continue
-            if line.startswith("-"):
-                facts.append(line[1:].strip())
-            elif line:
-                facts.append(line)
+            # Skip markdown headings
+            if line.startswith("#"):
+                continue
+            # Strip leading bullet marker before length/preamble checks
+            candidate = line[1:].strip() if line.startswith("-") else line
+            # Skip very short lines
+            if len(candidate) < 10:
+                continue
+            # Skip preamble phrases (case-insensitive)
+            lower = candidate.lower()
+            if any(lower.startswith(phrase) for phrase in self._PREAMBLE_PHRASES):
+                continue
+            facts.append(candidate)
         return facts
 
     async def recall(self) -> str:
