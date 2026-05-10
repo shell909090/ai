@@ -277,7 +277,10 @@ def main() -> None:
     if frontend_type == "web":
         cfg = config.get("frontend", {})
         sessions_dir_raw = cfg.get("sessions_dir") if isinstance(cfg, dict) else None
-        sessions_dir = Path(str(sessions_dir_raw)).expanduser() if sessions_dir_raw else None
+        if sessions_dir_raw:
+            sessions_dir: Path | None = Path(str(sessions_dir_raw)).expanduser()
+        else:
+            sessions_dir = Path("~/.local/state/little_agent/sessions").expanduser()
         client: CliClient | WebClient | AcpClient = WebClient(sessions_dir=sessions_dir)
     elif frontend_type == "acp":
         client = AcpClient()

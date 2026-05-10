@@ -32,12 +32,7 @@ class WebClient(Client):
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
         self._sessions: dict[str, Session] = {}
         self._active: dict[web.WebSocketResponse, str | None] = {}
-        if sessions_dir is None:
-            self._sessions_dir: Path | None = Path(
-                "~/.local/state/little_agent/sessions"
-            ).expanduser()
-        else:
-            self._sessions_dir = sessions_dir
+        self._sessions_dir: Path | None = sessions_dir  # None disables persistence
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Send update to WebSocket clients subscribed to this session."""
@@ -112,17 +107,6 @@ class WebClient(Client):
             self._active.pop(ws, None)
             self._websockets.discard(ws)
 
-    async def _broadcast(self, message: dict[str, Any]) -> None:
-        """Send a JSON message to all connected WebSockets."""
-        data = json.dumps(message, ensure_ascii=False)
-        dead: set[web.WebSocketResponse] = set()
-        for ws in self._websockets:
-            try:
-                await ws.send_str(data)
-            except Exception:
-                dead.add(ws)
-        self._websockets -= dead
-
     def add_websocket(self, ws: web.WebSocketResponse) -> None:
         """Register a new WebSocket connection."""
         self._websockets.add(ws)
@@ -142,11 +126,15 @@ class WebClient(Client):
         try:
             session_id = session.id
             path = self._sessions_dir / f"{session_id}.json"
-            data = session.save()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            data = json.dumps(session.save(), ensure_ascii=False)
+            await asyncio.to_thread(self._sync_write_text, path, data)
         except Exception:
             logger.exception("Failed to auto-save session %s", getattr(session, "id", "?"))
+
+    def _sync_write_text(self, path: Path, text: str) -> None:
+        """Write text to path, creating parent dirs; called via asyncio.to_thread."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
 
     def _read_preview(self, session_id: str) -> str:
         """Read first user_prompt record from JSONL and return its prompt (max 50 chars)."""
@@ -175,27 +163,10 @@ class WebClient(Client):
 
     async def _list_sessions(self) -> list[dict[str, Any]]:
         """List sessions from disk and memory, sorted by updated_at descending."""
-        result: dict[str, dict[str, Any]] = {}
-
-        if self._sessions_dir is not None and self._sessions_dir.exists():
-            for json_path in self._sessions_dir.glob("*.json"):
-                try:
-                    raw = json.loads(json_path.read_text(encoding="utf-8"))
-                    sid = raw.get("id")
-                    if not isinstance(sid, str):
-                        continue
-                    mtime = json_path.stat().st_mtime
-                    updated_at = datetime.fromtimestamp(mtime, tz=UTC).isoformat()
-                    preview = self._read_preview(sid)
-                    result[sid] = {
-                        "id": sid,
-                        "updated_at": updated_at,
-                        "preview": preview,
-                    }
-                except Exception:
-                    logger.exception("Failed to read session file %s", json_path)
-
-        # Overlay memory sessions (add those not already on disk)
+        if self._sessions_dir is not None:
+            result = await asyncio.to_thread(self._sync_scan_sessions_dir)
+        else:
+            result = {}
         for sid in self._sessions:
             if sid not in result:
                 result[sid] = {
@@ -203,8 +174,26 @@ class WebClient(Client):
                     "updated_at": datetime.now(UTC).isoformat(),
                     "preview": "",
                 }
-
         return sorted(result.values(), key=lambda x: x["updated_at"], reverse=True)
+
+    def _sync_scan_sessions_dir(self) -> dict[str, dict[str, Any]]:
+        """Scan sessions_dir for .json files; called via asyncio.to_thread."""
+        result: dict[str, dict[str, Any]] = {}
+        if self._sessions_dir is None or not self._sessions_dir.exists():
+            return result
+        for json_path in self._sessions_dir.glob("*.json"):
+            try:
+                raw = json.loads(json_path.read_text(encoding="utf-8"))
+                sid = raw.get("id")
+                if not isinstance(sid, str):
+                    continue
+                mtime = json_path.stat().st_mtime
+                updated_at = datetime.fromtimestamp(mtime, tz=UTC).isoformat()
+                preview = self._read_preview(sid)
+                result[sid] = {"id": sid, "updated_at": updated_at, "preview": preview}
+            except Exception:
+                logger.exception("Failed to read session file %s", json_path)
+        return result
 
     async def _resume_session(self, agent: Agent, session_id: str) -> Session | None:
         """Return session from memory or load from disk JSON. None if not found."""
@@ -216,7 +205,8 @@ class WebClient(Client):
         if not path.exists():
             return None
         try:
-            data: JSONValue = json.loads(path.read_text(encoding="utf-8"))
+            text = await asyncio.to_thread(path.read_text, "utf-8")
+            data: JSONValue = json.loads(text)
             return await agent.load(data)
         except Exception:
             logger.exception("Failed to load session %s from disk", session_id)
@@ -229,6 +219,10 @@ class WebClient(Client):
         path = self._sessions_dir / f"session_{session_id}.jsonl"
         if not path.exists():
             return []
+        return await asyncio.to_thread(self._sync_read_history, path)
+
+    def _sync_read_history(self, path: Path) -> list[dict[str, Any]]:
+        """Read and parse a JSONL history file; called via asyncio.to_thread."""
         records: list[dict[str, Any]] = []
         try:
             with open(path, encoding="utf-8") as f:
@@ -243,7 +237,7 @@ class WebClient(Client):
                     except json.JSONDecodeError:
                         pass
         except OSError:
-            logger.exception("Failed to read history for session %s", session_id)
+            logger.exception("Failed to read history file %s", path)
         return records
 
     async def _delete_session(self, session_id: str) -> None:
@@ -253,14 +247,15 @@ class WebClient(Client):
             return
         json_path = self._sessions_dir / f"{session_id}.json"
         jsonl_path = self._sessions_dir / f"session_{session_id}.jsonl"
-        try:
-            json_path.unlink(missing_ok=True)
-        except Exception:
-            logger.exception("Failed to delete %s", json_path)
-        try:
-            jsonl_path.unlink(missing_ok=True)
-        except Exception:
-            logger.exception("Failed to delete %s", jsonl_path)
+        await asyncio.to_thread(self._sync_delete_files, json_path, jsonl_path)
+
+    def _sync_delete_files(self, *paths: Path) -> None:
+        """Unlink files, ignoring missing; called via asyncio.to_thread."""
+        for p in paths:
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                logger.exception("Failed to delete %s", p)
 
     # ------------------------------------------------------------------
     # WebSocket handler
@@ -424,7 +419,8 @@ class WebClient(Client):
             from little_agent.agent.logger import FileLogger
 
             template = str(self._sessions_dir / "session_{session_id}.jsonl")
-            agent.loggers.append(FileLogger(template))
+            if not any(getattr(lg, "_template", None) == template for lg in agent.loggers):
+                agent.loggers.append(FileLogger(template))
             self._sessions_dir.mkdir(parents=True, exist_ok=True)
 
         app = web.Application()

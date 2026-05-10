@@ -29,6 +29,7 @@ class FileLogger:
         self._rebuilt: set[str] = set()
 
         # For fixed filenames (no {session_id}), rebuild last_tail_ids at init time.
+        # Called synchronously here because no event loop exists at startup.
         if "{session_id}" not in filename_template:
             path = self._resolve_path("")
             if path.exists():
@@ -65,18 +66,30 @@ class FileLogger:
         except OSError:
             logger.exception("Failed to scan FileLogger file %s", path)
 
+    def _sync_append(self, path: Path, nodes: list[Any], session_id: str) -> None:
+        """Append serialised nodes to path; called via asyncio.to_thread inside the lock."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for n in nodes:
+                record: dict[str, Any] = {
+                    "session_id": session_id,
+                    "created_at": n.created_at.isoformat(),
+                    **n.to_dict(),
+                }
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
     async def log(self, session: Any) -> None:
         """Append new nodes from session.tail back to the last logged node."""
         session_id: str = session.id
         path = self._resolve_path(session_id)
         lock = self._get_lock(path)
 
-        # Lazy rebuild for per-session-id filenames.
+        # Lazy rebuild for per-session-id filenames (run in thread — blocks on file I/O).
         path_key = str(path)
         if path_key not in self._rebuilt:
             self._rebuilt.add(path_key)
             if path.exists():
-                self._scan_file(path)
+                await asyncio.to_thread(self._scan_file, path)
 
         stop_id = self._last_tail_ids.get(session_id)
 
@@ -95,16 +108,8 @@ class FileLogger:
 
         nodes.reverse()  # write oldest-first
 
-        path.parent.mkdir(parents=True, exist_ok=True)
         async with lock:
-            with open(path, "a", encoding="utf-8") as f:
-                for n in nodes:
-                    record: dict[str, Any] = {
-                        "session_id": session_id,
-                        "created_at": n.created_at.isoformat(),
-                        **n.to_dict(),
-                    }
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            await asyncio.to_thread(self._sync_append, path, nodes, session_id)
 
         assert session.tail is not None
         self._last_tail_ids[session_id] = session.tail.id
