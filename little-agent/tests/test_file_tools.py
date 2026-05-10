@@ -180,3 +180,16 @@ async def test_new_str_not_string_raises(tmp_path: Path) -> None:
     target.write_text("content")
     with pytest.raises(ValueError):
         await mgr["edit_file"]({"path": str(target), "new_str": 123})
+
+
+@pytest.mark.asyncio
+async def test_pos_negative_len_returns_error(tmp_path: Path) -> None:
+    """Negative len returns an error string and leaves the file unchanged."""
+    mgr = _make_manager()
+    target = tmp_path / "neg.txt"
+    original = "hello world"
+    target.write_text(original)
+    result = await mgr["edit_file"]({"path": str(target), "pos": 5, "len": -3, "new_str": "x"})
+    assert isinstance(result, str)
+    assert "error" in result.lower()
+    assert target.read_text() == original

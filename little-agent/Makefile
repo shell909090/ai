@@ -1,4 +1,4 @@
-.PHONY: fmt lint build unittest test install dev run
+.PHONY: fmt lint build clean unittest test install dev run
 
 fmt:
 	uv run ruff format little_agent tests
@@ -10,6 +10,11 @@ lint:
 build:
 	find little_agent -name '*.py' | xargs uv run python -m py_compile
 	cd little_agent/frontends/static && npx tsc --project tsconfig.json
+
+clean:
+	find little_agent -name '*.pyc' -delete
+	find little_agent -name '__pycache__' -type d -exec rm -rf {} +
+	rm -f little_agent/frontends/static/app.js
 
 unittest:
 	uv run pytest tests/ -v
@@ -23,5 +28,5 @@ install:
 dev:
 	uv sync --extra dev
 
-run:
+run: build
 	uv run python -m little_agent.main --config .config.yaml

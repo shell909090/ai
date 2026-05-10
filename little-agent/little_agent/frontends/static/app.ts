@@ -121,6 +121,11 @@ let sessionList: SessionInfo[] = [];
 // Track live tool-call bubbles by call_id so tool_call_update can recolor them.
 const toolCallElements: Map<string, HTMLDivElement> = new Map();
 
+// While waiting for session/history, buffer session/update events so they don't
+// interleave with the history render, then replay them afterwards.
+let historyPending: boolean = false;
+let pendingUpdates: SessionUpdatePayload[] = [];
+
 const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
 const messageInput = document.getElementById("message-input") as HTMLInputElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
@@ -287,9 +292,11 @@ function sendMessage(msg: ClientMessage): void {
 
 function resumeSession(id: string): void {
     setActiveSession(id);
-    // Clear chat immediately to avoid stale content while history loads.
+    // Clear chat immediately; buffer any incoming updates until history arrives.
     chatContainer.innerHTML = "";
     toolCallElements.clear();
+    historyPending = true;
+    pendingUpdates = [];
     sendMessage({ type: "session/resume", session_id: id });
 }
 
@@ -428,7 +435,7 @@ function renderHistory(nodes: SessionHistoryNode[]): void {
                 break;
             case "tool_call": {
                 // output_text is pre-call reasoning; render as agent message if present.
-                if (node.output_text) {
+                if (node.output_text?.trim()) {
                     appendMessage("agent", node.output_text);
                 }
                 const calls = (node.calls ?? {}) as Record<string, CallData>;
@@ -482,7 +489,13 @@ function handleMessage(msg: ServerMessage): void {
         case "session/history":
             // Ignore stale histories from rapid session switches.
             if (msg.session_id === sessionId) {
+                historyPending = false;
                 renderHistory(msg.nodes);
+                // Replay updates that arrived while history was loading.
+                for (const u of pendingUpdates) {
+                    handleUpdate(u);
+                }
+                pendingUpdates = [];
             }
             break;
         case "session/fork_response":
@@ -514,7 +527,12 @@ function handleMessage(msg: ServerMessage): void {
         case "session/update":
             // Ignore updates for sessions other than the currently active one.
             if (!msg.session_id || msg.session_id === sessionId) {
-                handleUpdate(msg.update);
+                if (historyPending) {
+                    // Buffer until history has rendered to prevent interleaving.
+                    pendingUpdates.push(msg.update);
+                } else {
+                    handleUpdate(msg.update);
+                }
             }
             break;
         case "session/request_permission":

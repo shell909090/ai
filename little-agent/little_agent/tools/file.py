@@ -108,6 +108,8 @@ class FileToolProvider:
             return content.replace(old_str, new_str, 1), None
         actual_pos = len(content) if pos == -1 else int(pos)  # type: ignore[arg-type]
         actual_len = int(len_val) if isinstance(len_val, int) else 0
+        if actual_len < 0:
+            raise ValueError("len must be non-negative")
         return content[:actual_pos] + new_str + content[actual_pos + actual_len :], None
 
     async def _edit_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
