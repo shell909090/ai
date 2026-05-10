@@ -20,7 +20,13 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._utils import _log_streaming_request, _log_streaming_response
+from ._utils import (
+    _format_tool_result,
+    _is_context_overflow,
+    _log_streaming_request,
+    _log_streaming_response,
+    _tool_def_to_json_schema,
+)
 from .exceptions import (
     BackendError,
     BackendRateLimitError,
@@ -37,43 +43,17 @@ logger = logging.getLogger(__name__)
 
 def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
     """Convert ToolMap to OpenAI function definitions."""
-    functions = []
-    for name, tooldef in tool_map.items():
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for arg in tooldef.args:
-            properties[arg.name] = {"type": arg.type, "description": arg.desc}
-            if arg.required:
-                required.append(arg.name)
-        functions.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": tooldef.desc,
-                    "parameters": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": required,
-                    },
-                },
-            }
-        )
-    return functions
-
-
-def _format_tool_result(result: dict[str, Any]) -> str:
-    """Format tool result dict as multi-line k: v text."""
-    lines = []
-    for k, v in result.items():
-        if isinstance(v, str):
-            lines.append(f"{k}: {v}")
-        else:
-            try:
-                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
-            except (TypeError, ValueError):
-                lines.append(f"{k}: {v!s}")
-    return "\n".join(lines)
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": tooldef.desc,
+                "parameters": _tool_def_to_json_schema(tooldef),
+            },
+        }
+        for name, tooldef in tool_map.items()
+    ]
 
 
 def _node_to_message(n: Node) -> list[dict[str, Any]]:
@@ -288,13 +268,6 @@ _CONTEXT_OVERFLOW_SUBSTRINGS = (
 )
 
 
-def _is_context_overflow(e: Any) -> bool:
-    if getattr(e, "code", None) == "context_length_exceeded":
-        return True
-    msg = str(e).lower()
-    return any(sub in msg for sub in _CONTEXT_OVERFLOW_SUBSTRINGS)
-
-
 class OpenAIBackend:
     """OpenAI backend implementation."""
 
@@ -344,7 +317,9 @@ class OpenAIBackend:
         except TimeoutError as e:
             raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
         except openai.BadRequestError as e:
-            if _is_context_overflow(e):
+            if _is_context_overflow(
+                e, _CONTEXT_OVERFLOW_SUBSTRINGS, code="context_length_exceeded"
+            ):
                 raise ContextOverflowError(str(e)) from e
             raise BackendError(str(e)) from e
         except openai.RateLimitError as e:

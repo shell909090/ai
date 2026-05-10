@@ -20,7 +20,13 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._utils import _log_streaming_request, _log_streaming_response
+from ._utils import (
+    _format_tool_result,
+    _is_context_overflow,
+    _log_streaming_request,
+    _log_streaming_response,
+    _tool_def_to_json_schema,
+)
 from .exceptions import (
     BackendError,
     BackendRateLimitError,
@@ -37,40 +43,14 @@ logger = logging.getLogger(__name__)
 
 def _tool_map_to_anthropic_tools(tool_map: ToolMap) -> list[dict[str, Any]]:
     """Convert ToolMap to Anthropic tool definitions."""
-    tools = []
-    for name, tooldef in tool_map.items():
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for arg in tooldef.args:
-            properties[arg.name] = {"type": arg.type, "description": arg.desc}
-            if arg.required:
-                required.append(arg.name)
-        tools.append(
-            {
-                "name": name,
-                "description": tooldef.desc,
-                "input_schema": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
-            }
-        )
-    return tools
-
-
-def _format_tool_result_content(result: dict[str, Any]) -> str:
-    """Format a tool result dict as a string for Anthropic tool_result content."""
-    lines = []
-    for k, v in result.items():
-        if isinstance(v, str):
-            lines.append(f"{k}: {v}")
-        else:
-            try:
-                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
-            except (TypeError, ValueError):
-                lines.append(f"{k}: {v!s}")
-    return "\n".join(lines)
+    return [
+        {
+            "name": name,
+            "description": tooldef.desc,
+            "input_schema": _tool_def_to_json_schema(tooldef),
+        }
+        for name, tooldef in tool_map.items()
+    ]
 
 
 def _node_to_message(n: Node) -> list[dict[str, Any]]:
@@ -116,7 +96,7 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
             {
                 "type": "tool_result",
                 "tool_use_id": call_id,
-                "content": _format_tool_result_content(result),
+                "content": _format_tool_result(result),
             }
             for call_id, result in n.results.items()
         ]
@@ -164,12 +144,6 @@ _CONTEXT_OVERFLOW_SUBSTRINGS = (
     "too many tokens",
     "maximum context length",
 )
-
-
-def _is_context_overflow(e: Any) -> bool:
-    """Check if an exception indicates context overflow."""
-    msg = str(e).lower()
-    return any(sub in msg for sub in _CONTEXT_OVERFLOW_SUBSTRINGS)
 
 
 def _extract_usage(usage_obj: Any) -> dict[str, int]:
@@ -305,7 +279,7 @@ class AnthropicBackend:
         except TimeoutError as e:
             raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
         except anthropic.BadRequestError as e:
-            if _is_context_overflow(e):
+            if _is_context_overflow(e, _CONTEXT_OVERFLOW_SUBSTRINGS):
                 raise ContextOverflowError(str(e)) from e
             raise BackendError(str(e)) from e
         except anthropic.RateLimitError as e:

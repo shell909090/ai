@@ -1,9 +1,12 @@
-"""Shared logging helpers for backend streaming requests and responses."""
+"""Shared helpers for backend implementations."""
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
+
+from little_agent.tools.protocol import ToolDef
 
 
 def _log_streaming_request(
@@ -49,3 +52,44 @@ def _log_streaming_response(
         usage.get("output_tokens") if usage else None,
         elapsed,
     )
+
+
+def _format_tool_result(result: dict[str, Any]) -> str:
+    """Format a tool result dict as multi-line k: v text."""
+    lines = []
+    for k, v in result.items():
+        if isinstance(v, str):
+            lines.append(f"{k}: {v}")
+        else:
+            try:
+                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            except (TypeError, ValueError):
+                lines.append(f"{k}: {v!s}")
+    return "\n".join(lines)
+
+
+def _tool_def_to_json_schema(tooldef: ToolDef) -> dict[str, Any]:
+    """Convert a ToolDef to a JSON Schema object (the inner schema body)."""
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for arg in tooldef.args:
+        properties[arg.name] = {"type": arg.type, "description": arg.desc}
+        if arg.required:
+            required.append(arg.name)
+    return {"type": "object", "properties": properties, "required": required}
+
+
+def _is_context_overflow(
+    e: Any,
+    substrings: tuple[str, ...],
+    code: str | None = None,
+) -> bool:
+    """Return True iff exception indicates a context-length overflow.
+
+    Matches by SDK ``code`` attribute (when ``code`` is given) or by
+    case-insensitive substring search on ``str(e)``.
+    """
+    if code is not None and getattr(e, "code", None) == code:
+        return True
+    msg = str(e).lower()
+    return any(sub in msg for sub in substrings)

@@ -494,23 +494,25 @@ class TestChainToMessages:
 
 
 # ---------------------------------------------------------------------------
-# Tests: _format_tool_result_content
+# Tests: _format_tool_result (now in _utils)
 # ---------------------------------------------------------------------------
 
 
 class TestFormatToolResultContent:
-    """Tests for _format_tool_result_content."""
+    """Tests for _format_tool_result via _utils."""
 
     def test_string_passthrough(self) -> None:
-        mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
+        from little_agent.backends._utils import _format_tool_result
+
         result = {"status": "completed", "content": "some text"}
-        text = mod._format_tool_result_content(result)
+        text = _format_tool_result(result)
         assert "some text" in text
 
     def test_non_string_json_dumps(self) -> None:
-        mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
+        from little_agent.backends._utils import _format_tool_result
+
         result = {"status": "completed", "content": {"key": "value"}}
-        text = mod._format_tool_result_content(result)
+        text = _format_tool_result(result)
         assert '"key"' in text
         assert '"value"' in text
 
