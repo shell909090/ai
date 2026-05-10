@@ -456,19 +456,27 @@ async def f(args: dict[str, JSONValue]) -> JSONValue:
 ### 3.5 内置 Bash Tool
 
 - name: `bash`
-- description: `Execute a shell command and return stdout/stderr`
+- description: `Execute a shell command and return stdout, stderr and exit code`
 - 参数：
   - `command` (string, required)：要执行的 shell 命令。
   - `cwd` (string, optional)：工作目录。
   - `env` (object, optional)：环境变量键值对。
   - `stdin` (string, optional)：标准输入内容。
 
+返回结构：
+
+```json
+{"stdout": "<string>", "stderr": "<string>", "returncode": <int>}
+```
+
+超时时返回 `{"stdout": "", "stderr": "Command timed out after 30 seconds", "returncode": -1}`。
+
 实现要点：
 
 1. 使用 `asyncio.create_subprocess_shell` 异步执行命令。
-2. 捕获 stdout 与 stderr，返回合并后的字符串输出。
-3. 命令超时时间默认 30 秒，超时后 kill 进程并返回超时信息。
-4. 命令执行失败（非零退出码）返回 stderr 内容，不抛异常（让模型自行判断）。
+2. 分别捕获 stdout 与 stderr，连同 returncode 作为 dict 返回，不合并。
+3. 命令超时时间默认 30 秒，超时后 kill 进程并返回超时结构。
+4. 命令执行失败（非零退出码）正常返回结构，不抛异常（让模型自行判断）。
 5. `cwd` / `env` / `stdin` 通过 `create_subprocess_shell` 和 `communicate()` 传入。
 
 注册方式：启动脚本先加载配置文件中的 `tools.providers` 列表，然后将 `BashToolProvider` append 到列表末尾，统一调用 `ToolManager.register()`。
@@ -492,6 +500,72 @@ async def f(args: dict[str, JSONValue]) -> JSONValue:
 4. `inheritance=true` 时，从当前 session 倒推到第一个没有 `frozen` 属性的 node 做 fork，加 `UserPromptNode`，然后执行。
 5. 发起子任务后 tool call 不会超时；每个 task 有 300s 超时。
 6. 子任务的 tool 集合排除 `create_task`，避免递归；子任务复用主 agent 与主 `ToolManager`，无需独立的 sub-ToolManager。
+
+### 3.7 内置 Http Tool
+
+- name: `http`
+- description: `Send an HTTP request and return status, headers and body`
+- 参数：
+  - `url` (string, required)：请求 URL。
+  - `method` (string, optional)：HTTP 方法，默认 `GET`。
+  - `headers` (object, optional)：请求头键值对 `{k: v}`。
+  - `body` (string, optional)：请求体。
+  - `timeout` (number, optional)：超时秒数，默认 30。
+
+返回结构：
+
+```json
+{"status": <int>, "headers": {"<k>": "<v>", ...}, "body": "<string>"}
+```
+
+网络错误时返回 `{"status": -1, "headers": {}, "body": "<error message>"}`。
+
+实现要点：
+
+1. 使用 `aiohttp.ClientSession` 发起异步请求。
+2. 响应 headers 序列化为 `dict[str, str]`。
+3. 响应 body 以 UTF-8 解码（`errors="replace"`）。
+4. 超时与网络异常均捕获，返回 status=-1 结构，不抛异常。
+
+---
+
+### 3.8 内置 File Tools
+
+#### write_file
+
+- name: `write_file`
+- description: `Write content to a file, creating parent directories as needed`
+- 参数：
+  - `path` (string, required)：目标文件路径。
+  - `content` (string, required)：写入内容。
+  - `encoding` (string, optional)：编码，默认 `utf-8`。
+
+返回：成功时返回 `"Written <n> bytes to <path>"`；失败时返回错误信息字符串，不抛异常。
+
+实现要点：
+
+1. 写入前自动创建父目录（`Path.mkdir(parents=True, exist_ok=True)`）。
+2. 以 `"w"` 模式覆盖写入。
+
+#### edit_file
+
+- name: `edit_file`
+- description: `Replace an exact string in a file`
+- 参数：
+  - `path` (string, required)：目标文件路径。
+  - `old_str` (string, required)：待替换的精确字符串。
+  - `new_str` (string, required)：替换后的字符串。
+  - `encoding` (string, optional)：编码，默认 `utf-8`。
+
+返回：成功时返回 `"Replaced 1 occurrence in <path>"`；`old_str` 不存在时返回错误信息，不修改文件，不抛异常。
+
+实现要点：
+
+1. 读取全文，检查 `old_str` 是否存在；不存在直接返回错误。
+2. 只替换第一次出现（`str.replace(old, new, 1)`），避免意外多替换。
+3. 写回时使用相同编码。
+
+---
 
 ## 4. ACP 协议与 Frontend
 

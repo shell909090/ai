@@ -803,6 +803,26 @@ async def test_watch_cancel_loop_backs_off_during_permission(
     assert client._stdin_queue.qsize() == 1
 
 
+# --- readline slash-command history tests ---
+
+
+@pytest.mark.asyncio
+async def test_run_slash_command_not_recorded_in_readline(
+    client: CliClient, agent: _MockAgent
+) -> None:
+    """run() calls readline.remove_history_item when user enters a slash command."""
+    mock_readline = MagicMock()
+    mock_readline.get_current_history_length.return_value = 1
+    with patch.dict("sys.modules", {"readline": mock_readline}):
+        client._stdin_queue.put_nowait("/list-tools")
+        client._stdin_queue.put_nowait("/quit")
+        with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+            with patch("builtins.print"):
+                await client.run(agent)
+    mock_readline.get_current_history_length.assert_called()
+    assert mock_readline.remove_history_item.call_count == 2
+
+
 # --- _setup_readline tests ---
 
 

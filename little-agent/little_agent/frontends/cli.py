@@ -33,6 +33,16 @@ _SLASH_COMMANDS = [
 _ChunkType = Literal["thinking", "agent"]
 
 
+def _remove_last_history() -> None:
+    """Remove the last readline history entry; no-op if readline is unavailable."""
+    try:
+        import readline as _rl
+
+        _rl.remove_history_item(_rl.get_current_history_length() - 1)
+    except (ImportError, ValueError):
+        pass
+
+
 def _setup_readline() -> Path | None:
     """Configure readline history and tab completion. Returns history file path or None."""
     try:
@@ -327,6 +337,7 @@ class CliClient(Client):
                     continue
 
                 if stripped.startswith("/"):
+                    _remove_last_history()
                     session, should_continue = await self._handle_command(agent, session, stripped)
                     if not should_continue:
                         break

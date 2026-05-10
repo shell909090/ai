@@ -1,5 +1,7 @@
 """Tests for bash tool provider."""
 
+from __future__ import annotations
+
 import pytest
 
 from little_agent.tools.bash import BashToolProvider
@@ -25,8 +27,9 @@ async def test_bash_echo() -> None:
     """Test bash tool executes echo command."""
     mgr = _make_manager()
     result = await mgr["bash"]({"command": "echo hello"})
-    assert isinstance(result, str)
-    assert "hello" in result
+    assert isinstance(result, dict)
+    assert "hello" in result["stdout"]
+    assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
@@ -34,8 +37,9 @@ async def test_bash_stderr_included() -> None:
     """Test bash tool includes stderr in output."""
     mgr = _make_manager()
     result = await mgr["bash"]({"command": "echo error >&2"})
-    assert isinstance(result, str)
-    assert "error" in result
+    assert isinstance(result, dict)
+    assert "error" in result["stderr"]
+    assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
@@ -61,8 +65,9 @@ async def test_bash_timeout() -> None:
     mgr = ToolManager()
     mgr.register(provider)
     result = await mgr["bash"]({"command": "sleep 60"})
-    assert isinstance(result, str)
-    assert "timed out" in result
+    assert isinstance(result, dict)
+    assert "timed out" in result["stderr"]
+    assert result["returncode"] == -1
 
 
 @pytest.mark.asyncio
@@ -74,8 +79,9 @@ async def test_bash_cwd() -> None:
     mgr = _make_manager()
     with tempfile.TemporaryDirectory() as tmpdir:
         result = await mgr["bash"]({"command": "pwd", "cwd": tmpdir})
-        assert isinstance(result, str)
-        assert os.path.realpath(tmpdir) in os.path.realpath(result.strip())
+        assert isinstance(result, dict)
+        assert os.path.realpath(tmpdir) in os.path.realpath(result["stdout"].strip())
+        assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
@@ -85,8 +91,9 @@ async def test_bash_env() -> None:
     result = await mgr["bash"](
         {"command": "echo $LITTLE_AGENT_TEST_VAR", "env": {"LITTLE_AGENT_TEST_VAR": "hello123"}}
     )
-    assert isinstance(result, str)
-    assert "hello123" in result
+    assert isinstance(result, dict)
+    assert "hello123" in result["stdout"]
+    assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
@@ -94,8 +101,9 @@ async def test_bash_stdin() -> None:
     """Test bash tool passes stdin to process."""
     mgr = _make_manager()
     result = await mgr["bash"]({"command": "cat", "stdin": "hello from stdin"})
-    assert isinstance(result, str)
-    assert "hello from stdin" in result
+    assert isinstance(result, dict)
+    assert "hello from stdin" in result["stdout"]
+    assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
@@ -103,8 +111,9 @@ async def test_bash_backward_compat_no_new_params() -> None:
     """Test bash tool still works without the new optional params."""
     mgr = _make_manager()
     result = await mgr["bash"]({"command": "echo compat"})
-    assert isinstance(result, str)
-    assert "compat" in result
+    assert isinstance(result, dict)
+    assert "compat" in result["stdout"]
+    assert result["returncode"] == 0
 
 
 def test_bash_tool_lists_new_params() -> None:

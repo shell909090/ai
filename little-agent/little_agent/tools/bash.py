@@ -78,9 +78,14 @@ class BashToolProvider:
                 pass
             if not timed_out:
                 raise
-            return f"Command timed out after {self._TIMEOUT} seconds"
+            return {
+                "stdout": "",
+                "stderr": f"Command timed out after {self._TIMEOUT} seconds",
+                "returncode": -1,
+            }
 
-        output = stdout.decode("utf-8", errors="replace")
-        if stderr:
-            output += "\n" + stderr.decode("utf-8", errors="replace")
-        return output
+        return {
+            "stdout": stdout.decode("utf-8", errors="replace"),
+            "stderr": stderr.decode("utf-8", errors="replace"),
+            "returncode": proc.returncode,
+        }
