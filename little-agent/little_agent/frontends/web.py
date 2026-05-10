@@ -206,6 +206,12 @@ class WebClient(Client):
 
         static_dir = Path(__file__).parent / "static"
         if static_dir.exists():
+            index = static_dir / "index.html"
+
+            async def _serve_index(request: web.Request) -> web.StreamResponse:
+                return web.FileResponse(index)
+
+            app.router.add_get("/", _serve_index)
             app.router.add_static("/", static_dir, name="static")
         else:
             logger.warning("Static directory not found: %s", static_dir)
