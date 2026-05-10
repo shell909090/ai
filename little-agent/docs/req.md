@@ -6,11 +6,11 @@
 
 本期聚焦最小能力闭环：对话 + tools = agent。
 
-## 2. 本期目标
+## 2. 目标
 
 实现一个可在命令行中运行的最小 Agent 系统，满足以下条件：
 
-1. 用户可以通过 CLI 与 Agent 进行多轮对话。
+1. 用户可以通过 CLI/ACP/Web 与 Agent 进行多轮对话。
 2. Agent 在对话过程中可以按需调用 tools。
 3. tools 支持通过配置文件注册；本期所有已注册 tool 对 agent 可见（动态子集选择推迟，见 §4.4）。
 4. 整个系统的交互过程在架构上与 ACP（Agent Client Protocol）等效对齐。
@@ -18,8 +18,6 @@
 6. 产品长期规划包含三个 Frontend：CLI、Web、ACP。
 
 ## 3. 范围
-
-### 3.1 本期包含
 
 1. CLI 交互入口。
 2. 为未来 `web` 与原生 `acp` frontend 预留统一接口边界。
@@ -36,10 +34,6 @@
 13. 运行时动态 tool 子集选择
 14. Backend streaming
 
-### 3.2 本期不包含
-
-1. HTTP API。
-
 ## 4. 核心需求
 
 ### 4.1 Agent 基本能力
@@ -48,6 +42,8 @@
 2. Agent 必须支持在一次 prompt turn 中执行零次或多次 tool 调用。
 3. Agent 必须在工具结果返回后继续完成本轮推理，直到本轮结束。
 4. 会话压缩：长对话自动压缩历史消息，降低 token 消耗。
+5. 权限系统：每次 tool 调用经过 Permission 决策；支持配置黑白名单规则，未命中时默认询问 Client（用户）；支持 yesman 模式（全部放行）。
+6. 会话日志（session logger）：支持注入一个或多个 logger，将对话历史持久化为只写记录；内置 FileLogger，每节点追加一行 JSON，支持多 session 共存。
 
 ### 4.2 ACP 等效架构
 
@@ -71,7 +67,7 @@
 6. 本期至少需要支持 MCP Tool 的核心字段：`name`、`description`、`inputSchema`。
 7. 加载配置中仍需记录插件加载入口。
 
-### 4.4 Tool 选择子集（本期推迟）
+### 4.4 Tool 选择子集
 
 运行时动态 tool 子集选择是后续版本目标，本期不实现。
 
@@ -87,6 +83,8 @@
 2. 内置 bash tool：允许 Agent 执行 shell 命令并返回输出。
 3. Bash tool 扩展：支持自定义 `cwd`、`env` 和 `stdin` 参数。
 4. Task tool：允许 Agent 创建子任务（子会话），独立执行并返回结果。
+5. HTTP tool：允许 Agent 发送 HTTP 请求，返回状态码、响应头和 body；
+6. Edit File tool：创建、全量覆写或局部编辑文件；支持字符串匹配替换和位置区间操作；文件不存在时可选自动创建。
 
 ### 4.6 CLI 要求
 
@@ -94,17 +92,26 @@
 2. 用户可以发送 prompt 并看到 Agent 回复。
 3. 用户应能看到基本的 tool 调用过程或结果摘要。
 4. 本期 CLI 只需满足最小可用，不追求复杂交互体验。
-5. CLI 支持 `/exit` 指令（与 `/quit` 等效）。
-6. CLI 支持 `/list-tools` 指令，列出当前已注册的所有 tools。
-7. CLI 消息显示分离：模型回复的"思考"与"显示"内容分离输出，每条消息 strip 前后空白。
-8. CLI 支持 readline：方向键召回历史指令、指令历史持久化、Tab 补全。
+5. CLI 支持 `/exit`（与 `/quit` 等效）、`/cancel`（取消当前 turn）、`/new`（创建新 session）、`/fork`（从当前 session 分叉）、`/list-tools`（列出已注册 tools）、`/save <path>`（序列化 session 到文件）、`/load <path>`（从文件恢复 session）。
+6. CLI 消息显示分离：模型回复的"思考"与"显示"内容分离输出，每条消息 strip 前后空白。
+7. CLI 支持 readline：方向键召回历史指令、指令历史持久化、Tab 补全。
 
 ### 4.7 Backend 要求
 
 1. Backend 性能计数：每次请求记录 input/output token、执行时间、缓存信息，通过 INFO 级别日志输出。
 2. Backend 调用超时：API 调用应有超时控制，防止网络异常导致 session 挂死。
 3. 多模型支持：配置支持多个 backend 定义，不同组件（如主对话、压缩）可使用不同模型。
-4. 支持通过配置为 OpenAI backend 指定 base_url，以兼容兼容 API 代理（如 LiteLLM）或本地模型。
+4. 支持通过配置为 OpenAI backend 指定 base_url，以兼容 API 代理（如 LiteLLM）或本地模型。
+5. 支持 Anthropic backend：使用原生流式 API，thinking/reasoning 内容与正文分离输出；支持 `system` prompt 和 `max_tokens` 独立配置。
+
+### 4.8 Web UI 要求
+
+1. 用户可以在 Web 界面中选择或创建会话，发送 prompt 并查看 Agent 的流式响应。
+2. 发送 prompt 后，界面应自动滚动到新消息位置；Agent 响应流式输出期间，若用户处于底部则持续跟随滚动；用户主动向上翻阅时暂停自动滚动。
+3. Agent 执行期间（从发送 prompt 到收到 `session/prompt_response`），界面应显示明确的加载中状态（如 spinner 或禁用输入），让用户清晰感知系统正在工作。
+4. Agent 执行期间，用户可以点击取消按钮中断当前 turn（等价于 ACP `session/cancel`）；取消后界面恢复可输入状态，并显示已被取消的部分输出。
+5. 界面展示 tool 调用的名称、参数摘要及返回结果，并区分 completed / failed / cancelled 状态。
+6. 界面支持查看历史会话列表并恢复任意会话。
 
 ## 5. 非功能需求
 
@@ -127,14 +134,7 @@
 2. 关键模块职责要清晰，避免 UI、协议适配、业务逻辑混杂。
 3. 日志系统需要支持调试模式开关。
 
-## 6. 待设计阶段明确的问题
-
-1. 同进程内 ACP 等效实现的异步策略如何落地。
-2. Tool 描述格式采用何种最小结构。
-3. LLM 抽象层的最小接口如何定义。
-4. CLI 如何暴露“本轮可用 tool 子集”的输入方式。
-
-## 7. 验收标准
+## 6. 验收标准
 
 1. 可以从 CLI 启动一个 Agent 会话。
 2. 用户输入一个 prompt 后，系统能够完成一次 prompt turn。
