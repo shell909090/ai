@@ -43,6 +43,7 @@ type SessionUpdatePayload =
 
 interface SessionUpdateMsg {
     type: "session/update";
+    session_id?: string;
     update: SessionUpdatePayload;
 }
 
@@ -117,6 +118,9 @@ let sessionId: string | null = null;
 let isProcessing: boolean = false;
 let sessionList: SessionInfo[] = [];
 
+// Track live tool-call bubbles by call_id so tool_call_update can recolor them.
+const toolCallElements: Map<string, HTMLDivElement> = new Map();
+
 const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
 const messageInput = document.getElementById("message-input") as HTMLInputElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
@@ -130,6 +134,110 @@ const permDenyBtn = document.getElementById("perm-deny") as HTMLButtonElement;
 const sessionListEl = document.getElementById("session-list") as HTMLDivElement;
 
 let pendingPermId: string | null = null;
+
+// --- Formatting helpers ---
+
+function formatArgs(args: Record<string, unknown>): string {
+    const lines: string[] = [];
+    for (const [k, v] of Object.entries(args)) {
+        const val = typeof v === "string" ? v : JSON.stringify(v, null, 2);
+        lines.push(`${k}: ${val}`);
+    }
+    return lines.join("\n");
+}
+
+function formatResult(content: unknown, maxLines: number = 20): string {
+    let text: string;
+    if (typeof content === "string") {
+        text = content;
+    } else if (content !== null && typeof content === "object") {
+        const obj = content as Record<string, unknown>;
+        text = Object.entries(obj)
+            .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+            .join("\n");
+    } else {
+        text = String(content ?? "");
+    }
+    const lines = text.split("\n");
+    if (lines.length > maxLines) {
+        return lines.slice(0, maxLines).join("\n") + `\n...${lines.length - maxLines} more lines...`;
+    }
+    return text;
+}
+
+// --- Tool call bubble helpers ---
+
+function createToolCallBubble(callId: string, callData: CallData): HTMLDivElement {
+    const div = document.createElement("div");
+    div.className = "message tool-call";
+    div.dataset.type = "tool-call";
+    div.dataset.callId = callId;
+    div.dataset.streaming = "false";
+
+    const toolName = String(callData?.tool_name ?? "unknown");
+
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = toolName;
+    div.appendChild(label);
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.className = "tool-call-summary";
+    summary.textContent = callId;
+    details.appendChild(summary);
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const args = (callData?.arguments ?? {}) as Record<string, unknown>;
+    const argsText = formatArgs(args);
+    if (argsText) {
+        const argsDiv = document.createElement("div");
+        argsDiv.className = "content tool-args-content";
+        argsDiv.textContent = argsText;
+        details.appendChild(argsDiv);
+    }
+
+    div.appendChild(details);
+    return div;
+}
+
+function updateToolCallBubble(elem: HTMLDivElement, status: string, content: unknown): void {
+    elem.classList.remove("tool-call");
+    if (status === "completed") {
+        elem.classList.add("tool-call-completed");
+    } else if (status === "failed") {
+        elem.classList.add("tool-call-failed");
+    } else {
+        elem.classList.add("tool-call-cancelled");
+    }
+
+    const details = elem.querySelector("details");
+    if (details && content !== undefined && content !== null && content !== "") {
+        const resultDiv = document.createElement("div");
+        resultDiv.className = "content tool-result-content";
+        resultDiv.textContent = formatResult(content);
+        details.appendChild(resultDiv);
+    }
+}
+
+// --- Scroll helper ---
+
+function scrollIfNearBottom(): void {
+    const isNearBottom =
+        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
+    if (isNearBottom) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+// --- Streaming message state ---
+
+function finalizeStreaming(): void {
+    const lastMsg = chatContainer.lastElementChild as HTMLElement | null;
+    if (lastMsg && lastMsg.dataset.streaming === "true") {
+        lastMsg.dataset.streaming = "false";
+    }
+}
 
 function connect(): void {
     const protocol: string = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -179,6 +287,9 @@ function sendMessage(msg: ClientMessage): void {
 
 function resumeSession(id: string): void {
     setActiveSession(id);
+    // Clear chat immediately to avoid stale content while history loads.
+    chatContainer.innerHTML = "";
+    toolCallElements.clear();
     sendMessage({ type: "session/resume", session_id: id });
 }
 
@@ -201,7 +312,6 @@ function setActiveSession(id: string | null): void {
     } else {
         sessionInfo.textContent = "No session";
     }
-    // Update sidebar highlighting
     const items = sessionListEl.querySelectorAll(".session-item");
     items.forEach((item) => {
         const el = item as HTMLElement;
@@ -299,20 +409,54 @@ function renderSessionList(sessions: SessionInfo[]): void {
 
 function renderHistory(nodes: SessionHistoryNode[]): void {
     chatContainer.innerHTML = "";
+    toolCallElements.clear();
+
+    // Local map for pairing tool_call / tool_result nodes during history replay.
+    const historyCallMap = new Map<string, HTMLDivElement>();
+
     for (const node of nodes) {
         switch (node.kind) {
             case "user_prompt":
-                appendMessage("user", node.prompt ?? "");
+                if (node.prompt) {
+                    appendMessage("user", node.prompt);
+                }
                 break;
             case "assistant_response":
-                appendMessage("agent", node.text ?? "");
+                if (node.text && node.text.trim()) {
+                    appendMessage("agent", node.text);
+                }
                 break;
-            case "tool_call":
-                appendMessage("tool-call", node.output_text ?? JSON.stringify(node.calls ?? {}));
+            case "tool_call": {
+                // output_text is pre-call reasoning; render as agent message if present.
+                if (node.output_text) {
+                    appendMessage("agent", node.output_text);
+                }
+                const calls = (node.calls ?? {}) as Record<string, CallData>;
+                for (const [callId, callData] of Object.entries(calls)) {
+                    const bubble = createToolCallBubble(callId, callData as CallData);
+                    chatContainer.appendChild(bubble);
+                    historyCallMap.set(callId, bubble);
+                    scrollIfNearBottom();
+                }
                 break;
-            case "tool_result":
-                appendMessage("tool-result", node.output_text ?? JSON.stringify(node.results ?? {}));
+            }
+            case "tool_result": {
+                const results = (node.results ?? {}) as Record<
+                    string,
+                    { status?: unknown; content?: unknown }
+                >;
+                for (const [callId, resultData] of Object.entries(results)) {
+                    const elem = historyCallMap.get(callId);
+                    if (elem) {
+                        updateToolCallBubble(
+                            elem,
+                            String(resultData?.status ?? "unknown"),
+                            resultData?.content
+                        );
+                    }
+                }
                 break;
+            }
         }
     }
 }
@@ -324,7 +468,6 @@ function handleMessage(msg: ServerMessage): void {
             sendMessage({ type: "session/list" });
             break;
         case "session/list_response": {
-            // Sort by updated_at descending
             const sorted = [...msg.sessions].sort(
                 (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
             );
@@ -337,8 +480,10 @@ function handleMessage(msg: ServerMessage): void {
             break;
         }
         case "session/history":
-            setActiveSession(msg.session_id);
-            renderHistory(msg.nodes);
+            // Ignore stale histories from rapid session switches.
+            if (msg.session_id === sessionId) {
+                renderHistory(msg.nodes);
+            }
             break;
         case "session/fork_response":
             setActiveSession(msg.session_id);
@@ -347,7 +492,6 @@ function handleMessage(msg: ServerMessage): void {
         case "session/delete_response": {
             const deletedId = msg.session_id;
             const wasActive = sessionId === deletedId;
-            // Remove from local list
             const remaining = sessionList.filter((s) => s.id !== deletedId);
             renderSessionList(remaining);
             if (wasActive) {
@@ -356,6 +500,7 @@ function handleMessage(msg: ServerMessage): void {
                 } else {
                     setActiveSession(null);
                     chatContainer.innerHTML = "";
+                    toolCallElements.clear();
                     createSession();
                 }
             }
@@ -364,12 +509,13 @@ function handleMessage(msg: ServerMessage): void {
         case "session/prompt_response":
             isProcessing = false;
             updateInputState();
-            if (msg.text) {
-                appendMessage("agent", msg.text);
-            }
+            // Streaming already rendered the text via agent_message_chunk; skip duplicate.
             break;
         case "session/update":
-            handleUpdate(msg.update);
+            // Ignore updates for sessions other than the currently active one.
+            if (!msg.session_id || msg.session_id === sessionId) {
+                handleUpdate(msg.update);
+            }
             break;
         case "session/request_permission":
             showPermissionModal(msg.id, msg.kind, msg.payload);
@@ -384,26 +530,40 @@ function handleMessage(msg: ServerMessage): void {
 
 function handleUpdate(update: SessionUpdatePayload): void {
     switch (update.type) {
-        case "agent_message_chunk":
-            appendOrUpdateMessage("agent", String(update.data?.text ?? ""), "Agent");
+        case "agent_message_chunk": {
+            // Skip empty chunks to avoid creating empty bubbles (e.g. thinking-only turns).
+            const text = String(update.data?.text ?? "");
+            if (text) {
+                appendOrUpdateMessage("agent", text, "Agent");
+            }
             break;
-        case "thinking_chunk":
-            appendOrUpdateMessage("thinking", String(update.data?.text ?? ""), "Thinking");
+        }
+        case "thinking_chunk": {
+            const text = String(update.data?.text ?? "");
+            if (text) {
+                appendOrUpdateMessage("thinking", text, "Thinking");
+            }
             break;
+        }
         case "tool_call": {
+            finalizeStreaming();
             const calls: Record<string, CallData> = update.data?.calls ?? {};
             for (const [callId, callData] of Object.entries(calls)) {
-                const toolName: unknown = callData?.tool_name ?? "unknown";
-                const args: string = JSON.stringify(callData?.arguments ?? {});
-                appendMessage("tool-call", `${callId}: ${String(toolName)}\n${args}`);
+                const bubble = createToolCallBubble(callId, callData);
+                chatContainer.appendChild(bubble);
+                toolCallElements.set(callId, bubble);
+                scrollIfNearBottom();
             }
             break;
         }
         case "tool_call_update": {
-            const status: unknown = update.data?.status ?? "unknown";
+            const status = String(update.data?.status ?? "unknown");
             const content: unknown = update.data?.content ?? "";
-            const callId: unknown = update.data?.call_id ?? "";
-            appendMessage("tool-result", `${String(callId)}: ${String(status)}\n${String(content)}`);
+            const callId = String(update.data?.call_id ?? "");
+            const elem = toolCallElements.get(callId);
+            if (elem) {
+                updateToolCallBubble(elem, status, content);
+            }
             break;
         }
     }
@@ -416,11 +576,11 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
         if (contentEl) {
             contentEl.textContent += text;
         }
-        const isNearBottom: boolean =
-            chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
-        if (isNearBottom) {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
+        scrollIfNearBottom();
+        return;
+    }
+    // Don't create a new bubble for blank initial content (e.g. thinking-only turns).
+    if (!text.trim()) {
         return;
     }
     const div: HTMLDivElement = document.createElement("div");
@@ -438,18 +598,11 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    const isNearBottom2: boolean =
-        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
-    if (isNearBottom2) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
+    scrollIfNearBottom();
 }
 
 function appendMessage(type: string, text: string): void {
-    const lastMsg = chatContainer.lastElementChild as HTMLElement | null;
-    if (lastMsg && lastMsg.dataset.streaming === "true") {
-        lastMsg.dataset.streaming = "false";
-    }
+    finalizeStreaming();
     const div: HTMLDivElement = document.createElement("div");
     div.className = `message ${type}`;
     div.dataset.type = type;
@@ -459,11 +612,7 @@ function appendMessage(type: string, text: string): void {
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    const isNearBottom: boolean =
-        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
-    if (isNearBottom) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
+    scrollIfNearBottom();
 }
 
 function updateInputState(): void {
@@ -523,8 +672,8 @@ function showPermissionModal(
     payload: { arguments?: unknown } | undefined
 ): void {
     pendingPermId = reqId;
-    const args: string = JSON.stringify(payload?.arguments ?? {});
-    permissionText.textContent = `Allow tool "${kind}" with arguments: ${args}`;
+    const args: string = JSON.stringify(payload?.arguments ?? {}, null, 2);
+    permissionText.textContent = `Allow tool "${kind}" with arguments:\n${args}`;
     permissionModal.classList.add("active");
 }
 

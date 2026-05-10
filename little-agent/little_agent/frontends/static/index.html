@@ -129,6 +129,61 @@
             margin-bottom: 0.25rem;
             opacity: 0.7;
         }
+        .message .content {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .message.tool-call-completed {
+            align-self: flex-start;
+            background: #1a3020;
+            border: 1px solid #2d6a4f;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .message.tool-call-failed {
+            align-self: flex-start;
+            background: #3a1020;
+            border: 1px solid #6a2d2d;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .message.tool-call-cancelled {
+            align-self: flex-start;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .message details {
+            margin-top: 0.25rem;
+        }
+        .message details summary.tool-call-summary {
+            cursor: pointer;
+            user-select: none;
+            color: #aaa;
+            font-size: 0.8rem;
+            list-style: none;
+            padding: 0.15rem 0;
+        }
+        .message details summary.tool-call-summary::before {
+            content: "▶ ";
+            font-size: 0.65rem;
+        }
+        .message details[open] summary.tool-call-summary::before {
+            content: "▼ ";
+        }
+        .tool-args-content {
+            margin-top: 0.35rem;
+            padding-top: 0.35rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #ccc;
+        }
+        .tool-result-content {
+            margin-top: 0.35rem;
+            padding-top: 0.35rem;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            color: #a0d0a0;
+        }
         #input-area {
             padding: 1rem 1.5rem;
             background: #16213e;
