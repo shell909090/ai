@@ -137,7 +137,9 @@ class SessionCore(Session):
                     case "completed":
                         return await self._handle_completed(result, did_stream)
                     case "tool_call":
-                        partial_output = await self._handle_tool_call(result, partial_output)
+                        partial_output = await self._handle_tool_call(
+                            result, partial_output, did_stream
+                        )
                     case _:
                         raise RuntimeError(f"Unknown finish_reason: {result.finish_reason}")
 
@@ -261,6 +263,7 @@ class SessionCore(Session):
             id=str(uuid.uuid4()),
             prev=self.tail,
             text=result.output_text,
+            thinking=result.thinking_text or "",
         )
         self.append_node(assistant_node)
         assistant_node.freeze()
@@ -329,8 +332,10 @@ class SessionCore(Session):
         """Rebuild tail from serialized chain data."""
         self.tail = _rebuild_chain(chain)
 
-    async def _handle_tool_call(self, result: BackendTurnResult, partial_output: str) -> str:
+    async def _handle_tool_call(
+        self, result: BackendTurnResult, partial_output: str, did_stream: bool = False
+    ) -> str:
         """Delegate tool-call handling to ToolInvoker."""
         from .tool_invoker import ToolInvoker
 
-        return await ToolInvoker(self).invoke(result, partial_output)
+        return await ToolInvoker(self).invoke(result, partial_output, did_stream)

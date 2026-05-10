@@ -24,10 +24,12 @@ class ToolInvoker:
     def __init__(self, session: SessionCore) -> None:
         self._session = session
 
-    async def invoke(self, result: BackendTurnResult, partial_output: str) -> str:
+    async def invoke(
+        self, result: BackendTurnResult, partial_output: str, did_stream: bool = False
+    ) -> str:
         """Handle a tool_call result and return the updated partial_output."""
         partial_output = result.output_text or partial_output
-        if result.output_text:
+        if result.output_text and not did_stream:
             await self._session.agent.client.update(
                 self._session,
                 SessionUpdate(
@@ -58,6 +60,7 @@ class ToolInvoker:
             id=str(uuid.uuid4()),
             prev=self._session.tail,
             output_text=result.output_text or "",
+            thinking=result.thinking_text or "",
             calls={
                 tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
                 for tc in result.tool_calls

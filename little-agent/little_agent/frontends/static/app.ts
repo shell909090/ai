@@ -76,6 +76,7 @@ interface SessionHistoryNode {
     created_at?: string;
     prompt?: string;
     text?: string;
+    thinking?: string;
     output_text?: string;
     calls?: Record<string, unknown>;
     results?: Record<string, unknown>;
@@ -429,14 +430,20 @@ function renderHistory(nodes: SessionHistoryNode[]): void {
                 }
                 break;
             case "assistant_response":
+                if (node.thinking?.trim()) {
+                    appendMessage("thinking", node.thinking, "Thinking");
+                }
                 if (node.text && node.text.trim()) {
-                    appendMessage("agent", node.text);
+                    appendMessage("agent", node.text, "Agent");
                 }
                 break;
             case "tool_call": {
+                if (node.thinking?.trim()) {
+                    appendMessage("thinking", node.thinking, "Thinking");
+                }
                 // output_text is pre-call reasoning; render as agent message if present.
                 if (node.output_text?.trim()) {
-                    appendMessage("agent", node.output_text);
+                    appendMessage("agent", node.output_text, "Agent");
                 }
                 const calls = (node.calls ?? {}) as Record<string, CallData>;
                 for (const [callId, callData] of Object.entries(calls)) {
@@ -619,12 +626,18 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
     scrollIfNearBottom();
 }
 
-function appendMessage(type: string, text: string): void {
+function appendMessage(type: string, text: string, label?: string): void {
     finalizeStreaming();
     const div: HTMLDivElement = document.createElement("div");
     div.className = `message ${type}`;
     div.dataset.type = type;
     div.dataset.streaming = "false";
+    if (label) {
+        const labelEl: HTMLDivElement = document.createElement("div");
+        labelEl.className = "label";
+        labelEl.textContent = label;
+        div.appendChild(labelEl);
+    }
     const contentEl: HTMLDivElement = document.createElement("div");
     contentEl.className = "content";
     contentEl.textContent = text;

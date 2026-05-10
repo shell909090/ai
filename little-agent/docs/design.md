@@ -52,6 +52,7 @@ class UserPromptNode(Node):
 class AssistantResponseNode(Node):
     kind: ClassVar[str] = "assistant_response"
     text: str
+    thinking: str = ""                  # 模型思考文本（reasoning/thinking），可为空
     frozen: bool = False
 
 
@@ -59,6 +60,7 @@ class AssistantResponseNode(Node):
 class ToolCallNode(Node):
     kind: ClassVar[str] = "tool_call"
     output_text: str                    # tool call 前的 reasoning/说明，可为空
+    thinking: str = ""                  # 模型思考文本（reasoning/thinking），可为空
     calls: dict[str, dict[str, Any]]    # call_id -> {tool_name, arguments}
 
 
@@ -85,6 +87,7 @@ class SummaryNode(Node):
    - 追加新节点时旧尾若可变，立刻冻结。
    - session 被 fork 时当前尾若可变，立刻冻结。
    - 当前 turn 结束或被取消时，尾节点立刻冻结。
+6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填（`AnthropicBackend._node_to_message` 等只读 `text` / `output_text`）。空字符串时序列化跳过该字段，节省体积。
 
 ### 2.2 Session 状态
 
@@ -141,11 +144,11 @@ class SummaryNode(Node):
 1. 已有活跃 turn：进入 pending 队列，满则抛 `SessionBusyError`；否则占据。
 2. 追加 `UserPromptNode`，旧尾若可变先冻结。
 3. 主循环（上限 `MAX_TURN_ITERATIONS=20`）：
-   1. 调用 `Backend.generate(session)` 得到 async iterator。遍历产出：`SessionUpdate` 通过 `client.update()` 转发；`BackendTurnResult` 保存为 `result` 退出遍历；context-overflow 错误进入 §2.6.4 in-turn retry。
-   2. `finish_reason == "completed"`：追加 `AssistantResponseNode`（冻结），返回 `("end_turn", output_text)`。
+   1. 调用 `Backend.generate(session)` 得到 async iterator。遍历产出：`SessionUpdate` 通过 `client.update()` 转发；`BackendTurnResult` 保存为 `result` 退出遍历；context-overflow 错误进入 §2.6.4 in-turn retry。遍历过程中记录 `did_stream`：若至少 yield 过一次 `agent_message_chunk`，则 frontend 已收到流式可见文本。
+   2. `finish_reason == "completed"`：追加 `AssistantResponseNode`（含 `text=output_text`、`thinking=thinking_text`，冻结）。仅在 `did_stream=False` 时补发一条全量 `agent_message_chunk`，避免与流式重复。返回 `("end_turn", output_text)`。
    3. `finish_reason == "tool_call"`：
-      - `result.output_text` 非空时存入 `ToolCallNode.output_text`。
-      - 追加 `ToolCallNode`（冻结），通过 `Client.update` 通知 frontend。
+      - `result.output_text` 非空时存入 `ToolCallNode.output_text`；`result.thinking_text` 非空时存入 `ToolCallNode.thinking`。
+      - 追加 `ToolCallNode`（冻结），通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
       - 追加 `ToolResultNode`（可变）。
       - 检查每个 tool name 是否在 `allowed_tools` 内；不在则记 `failed`，不调用。
       - 通过 permission chain 检查；deny 则记 `failed`，不调用。
@@ -614,7 +617,7 @@ class Backend(Protocol):
 | `SummaryNode`（链首）| 提升为 `system` 参数，不进 messages |
 | `SummaryNode`（链中）| `{role: user, content: summary_text}` |
 
-约束：assistant 与 user message 严格交替；`ToolResultNode` 紧接 `ToolCallNode` 所在 assistant message 后。
+约束：assistant 与 user message 严格交替；`ToolResultNode` 紧接 `ToolCallNode` 所在 assistant message 后。`AssistantResponseNode.thinking` 与 `ToolCallNode.thinking` 不参与 messages 回填，仅供前端 reload history 时还原 thinking bubble。
 
 #### 工具定义
 

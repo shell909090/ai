@@ -57,6 +57,7 @@ class AssistantResponseNode(Node):
 
     kind: ClassVar[str] = "assistant_response"
     text: str = ""
+    thinking: str = ""
     frozen: bool = False
 
     def freeze(self) -> None:
@@ -66,6 +67,8 @@ class AssistantResponseNode(Node):
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)
         base["text"] = self.text
+        if self.thinking:
+            base["thinking"] = self.thinking
         return base
 
     @classmethod
@@ -73,7 +76,8 @@ class AssistantResponseNode(Node):
         text = data.get("text", "")
         if not isinstance(text, str):
             raise ValueError("AssistantResponseNode 'text' must be a string")
-        return cls(id=data["id"], prev=prev, text=text, frozen=True)
+        thinking = str(data.get("thinking") or "")
+        return cls(id=data["id"], prev=prev, text=text, thinking=thinking, frozen=True)
 
 
 @dataclass(slots=True)
@@ -82,21 +86,27 @@ class ToolCallNode(Node):
 
     kind: ClassVar[str] = "tool_call"
     output_text: str = ""
+    thinking: str = ""
     calls: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)
         base["output_text"] = self.output_text
+        if self.thinking:
+            base["thinking"] = self.thinking
         base["calls"] = self.calls  # type: ignore[assignment]
         return base
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
         output_text = str(data.get("output_text") or "")
+        thinking = str(data.get("thinking") or "")
         calls = data.get("calls", {})
         if not isinstance(calls, dict):
             raise ValueError("ToolCallNode 'calls' must be a dict")
-        return cls(id=data["id"], prev=prev, output_text=output_text, calls=calls)
+        return cls(
+            id=data["id"], prev=prev, output_text=output_text, thinking=thinking, calls=calls
+        )
 
 
 @dataclass(slots=True)
