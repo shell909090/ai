@@ -144,6 +144,11 @@ class SessionCore(Session):
             raise RuntimeError("Max turn iterations exceeded")
         finally:
             await self._update_memory()
+            for _logger in self.agent.loggers:
+                try:
+                    await _logger.log(self)
+                except Exception:
+                    logger.exception("Logger %s failed", _logger)
             self._schedule_compress_if_needed(last_result)
 
     def _iter_nodes(self) -> Iterator["Node"]:

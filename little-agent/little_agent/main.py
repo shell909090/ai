@@ -233,6 +233,25 @@ def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str
     return None
 
 
+def _load_loggers(config: dict[str, Any]) -> list[Any]:
+    """Load session loggers from config list."""
+    loggers_cfg = config.get("loggers", [])
+    if not isinstance(loggers_cfg, list):
+        return []
+    from little_agent.agent.logger import FileLogger
+
+    result: list[Any] = []
+    for cfg in loggers_cfg:
+        if not isinstance(cfg, dict):
+            continue
+        if cfg.get("type") == "file":
+            filename = str(cfg.get("filename", "session_{session_id}.jsonl"))
+            result.append(FileLogger(filename))
+        else:
+            logger.warning("Unknown logger type: %s", cfg.get("type"))
+    return result
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
@@ -251,11 +270,15 @@ def main() -> None:
     backend, backends_config = _load_backend(config)
     compressor = _load_compressor(config, backend, backends_config)
     memory = _load_memory(config, backend, backends_config)
+    loggers = _load_loggers(config)
 
     frontend_type = config.get("frontend", {}).get("type", "cli")
 
     if frontend_type == "web":
-        client: CliClient | WebClient | AcpClient = WebClient()
+        cfg = config.get("frontend", {})
+        sessions_dir_raw = cfg.get("sessions_dir") if isinstance(cfg, dict) else None
+        sessions_dir = Path(str(sessions_dir_raw)).expanduser() if sessions_dir_raw else None
+        client: CliClient | WebClient | AcpClient = WebClient(sessions_dir=sessions_dir)
     elif frontend_type == "acp":
         client = AcpClient()
     else:
@@ -275,6 +298,7 @@ def main() -> None:
         compressor=compressor,
         permissions=permissions,
         memory=memory,
+        loggers=loggers,
         compress_ratio=compress_ratio,
         context_window=backend.context_window,
     )

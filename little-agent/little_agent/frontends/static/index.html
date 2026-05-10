@@ -21,9 +21,62 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
         #header h1 { font-size: 1.2rem; color: #e94560; }
         #session-info { font-size: 0.85rem; color: #aaa; }
+        #main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+        }
+        #session-sidebar {
+            width: 220px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        #sidebar-toolbar {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.5rem 0.5rem;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .sidebar-btn {
+            flex: 1;
+            padding: 0.35rem 0.5rem;
+            border: 1px solid #0f3460;
+            border-radius: 0.35rem;
+            background: #1a1a2e;
+            color: #ccc;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            text-align: center;
+        }
+        .sidebar-btn:hover { background: #0f3460; color: #eee; }
+        .sidebar-btn.danger:hover { background: #4a1020; color: #e94560; border-color: #e94560; }
+        #session-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .session-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #0f3460;
+            background: transparent;
+            transition: background 0.1s;
+        }
+        #chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
         #chat-container {
             flex: 1;
             overflow-y: auto;
@@ -82,6 +135,7 @@
             border-top: 1px solid #0f3460;
             display: flex;
             gap: 0.5rem;
+            flex-shrink: 0;
         }
         #message-input {
             flex: 1;
@@ -123,6 +177,7 @@
             font-size: 0.8rem;
             color: #888;
             background: #16213e;
+            flex-shrink: 0;
         }
         #permission-modal {
             display: none;
@@ -165,12 +220,24 @@
         <h1>Little Agent</h1>
         <div id="session-info">No session</div>
     </div>
-    <div id="chat-container"></div>
-    <div id="status">Disconnected</div>
-    <div id="input-area">
-        <input type="text" id="message-input" placeholder="Type a message..." disabled aria-label="Message input">
-        <button id="send-btn" disabled>Send</button>
-        <button id="cancelButton">Cancel</button>
+    <div id="main-area">
+        <div id="session-sidebar">
+            <div id="sidebar-toolbar">
+                <button class="sidebar-btn" id="new-session-btn" aria-label="New session">New</button>
+                <button class="sidebar-btn" id="fork-session-btn" aria-label="Fork session">Fork</button>
+                <button class="sidebar-btn danger" id="delete-session-btn" aria-label="Delete session">Delete</button>
+            </div>
+            <div id="session-list"></div>
+        </div>
+        <div id="chat-area">
+            <div id="chat-container"></div>
+            <div id="status">Disconnected</div>
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Type a message..." disabled aria-label="Message input">
+                <button id="send-btn" disabled>Send</button>
+                <button id="cancelButton">Cancel</button>
+            </div>
+        </div>
     </div>
     <div id="permission-modal">
         <div class="modal-content">

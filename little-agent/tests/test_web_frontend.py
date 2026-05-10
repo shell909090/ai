@@ -25,11 +25,11 @@ class _TestWebClient(WebClient):
 
 
 @pytest.fixture
-async def web_client_fixture():
-    """Create a test web server with a mock agent."""
+async def web_client_fixture(tmp_path):
+    """Create a test web server with a mock agent, isolated sessions dir."""
     backend = MockBackend()
     tools = MockToolProvider()
-    client = _TestWebClient()
+    client = _TestWebClient(sessions_dir=tmp_path)
     agent = AgentCore(client=client, backend=backend, tools=tools)
 
     app = web.Application()
@@ -59,7 +59,7 @@ async def test_websocket_connect_and_create_session(web_client_fixture) -> None:
 
     async with test_client.ws_connect("/ws") as ws:
         await ws.send_json({"type": "session/new"})
-        response = await ws.receive_json()
+        response = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
 
         assert response.get("type") == "session/new_response"
         assert "session_id" in response
@@ -85,7 +85,7 @@ async def test_websocket_prompt_and_response(web_client_fixture) -> None:
 
     async with test_client.ws_connect("/ws") as ws:
         await ws.send_json({"type": "session/new"})
-        new_resp = await ws.receive_json()
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
         session_id = new_resp["session_id"]
 
         await ws.send_json(
@@ -111,17 +111,19 @@ async def test_websocket_prompt_and_response(web_client_fixture) -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_update_broadcast(web_client_fixture) -> None:
-    """Test that agent updates are broadcast via WebSocket."""
+    """Test that agent updates are sent to the subscribed WebSocket connection."""
     test_client, web_client, agent = web_client_fixture
 
     async with test_client.ws_connect("/ws") as ws:
-        # Simulate an update from the agent side
-        from little_agent.agent.session import SessionCore
+        # Create session via WS so this connection becomes subscribed
+        await ws.send_json({"type": "session/new"})
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        session_id = new_resp["session_id"]
 
-        session = await agent.new()
-        assert isinstance(session, SessionCore)
+        # Look up the session from the server-wide _sessions dict
+        sess = web_client._sessions[session_id]
         await web_client.update(
-            session,
+            sess,
             SessionUpdate(type="agent_message_chunk", data={"text": "test chunk"}),
         )
 
@@ -137,11 +139,15 @@ async def test_websocket_permission_request(web_client_fixture) -> None:
     test_client, web_client, agent = web_client_fixture
 
     async with test_client.ws_connect("/ws") as ws:
-        session = await agent.new()
+        # Create session via WS so this connection is subscribed
+        await ws.send_json({"type": "session/new"})
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        session_id = new_resp["session_id"]
+        sess = web_client._sessions[session_id]
 
         # Start permission request in background
         perm_task = asyncio.create_task(
-            web_client.request_permission(session, "bash", {"arguments": {"cmd": "ls"}})
+            web_client.request_permission(sess, "bash", {"arguments": {"cmd": "ls"}})
         )
 
         # Wait for the permission request message
@@ -251,21 +257,20 @@ async def test_webclient_run_uses_provided_host_and_port() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T79: WebSocket session isolation — sessions from different connections don't overlap
+# T96: Sessions are server-wide (globally shared across connections)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_websocket_sessions_are_isolated_across_connections(web_client_fixture) -> None:
-    """Sessions created in one WebSocket connection are invisible to a second connection.
+async def test_websocket_sessions_are_globally_shared(web_client_fixture) -> None:
+    """Sessions are server-wide — connection B can use a session created by connection A.
 
-    Each call to handle_websocket maintains its own `sessions` dict.  A session_id
-    returned by connection A must not be found when connection B looks it up.
+    After T96, _sessions is stored on WebClient, not per-connection.  A session_id
+    returned by connection A must be accessible when connection B uses it.
     """
     test_client, web_client, agent = web_client_fixture
 
     session_id_a: str = ""
-    session_id_b: str = ""
 
     async with test_client.ws_connect("/ws") as ws_a:
         await ws_a.send_json({"type": "session/new"})
@@ -273,27 +278,150 @@ async def test_websocket_sessions_are_isolated_across_connections(web_client_fix
         assert resp_a.get("type") == "session/new_response"
         session_id_a = resp_a["session_id"]
 
-    async with test_client.ws_connect("/ws") as ws_b:
-        await ws_b.send_json({"type": "session/new"})
-        resp_b = await asyncio.wait_for(ws_b.receive_json(), timeout=2.0)
-        assert resp_b.get("type") == "session/new_response"
-        session_id_b = resp_b["session_id"]
+    assert session_id_a, "Connection A must have received a session_id"
 
-        # Now try to use session_id_a in connection B — it must be unknown.
+    backend = agent.backend
+    assert isinstance(backend, MockBackend)
+    backend.set_script(
+        [BackendTurnResult(output_text="hi", tool_calls=[], finish_reason="completed")]
+    )
+
+    async with test_client.ws_connect("/ws") as ws_b:
+        # B can use A's session — no error expected
         await ws_b.send_json(
             {
                 "type": "session/prompt",
                 "session_id": session_id_a,
-                "prompt": "hello from B using A's session",
+                "prompt": "hello from B",
             }
         )
-        error_resp = await asyncio.wait_for(ws_b.receive_json(), timeout=2.0)
-        assert "error" in error_resp, (
-            f"Expected an error response when using cross-connection session_id; got: {error_resp}"
-        )
-        assert session_id_a in error_resp["error"], (
-            f"Error should mention the unknown session_id; got: {error_resp['error']!r}"
+
+        # Drain until prompt_response
+        messages = []
+        for _ in range(5):
+            msg = await asyncio.wait_for(ws_b.receive_json(), timeout=2.0)
+            messages.append(msg)
+            if msg.get("type") == "session/prompt_response":
+                break
+
+        prompt_resp = [m for m in messages if m.get("type") == "session/prompt_response"]
+        assert prompt_resp, f"Expected prompt_response, got: {messages}"
+        assert "error" not in prompt_resp[0], (
+            f"Expected no error when using cross-connection session_id; got: {prompt_resp[0]}"
         )
 
-    # Sanity: the two sessions should have different IDs.
-    assert session_id_a != session_id_b
+
+# ---------------------------------------------------------------------------
+# T96: session/list message handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_list_empty(web_client_fixture) -> None:
+    """On connect, session/list returns an empty sessions list."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/list"})
+        response = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+
+        assert response.get("type") == "session/list_response"
+        assert "sessions" in response
+        assert response["sessions"] == []
+
+
+@pytest.mark.asyncio
+async def test_session_list_after_create(web_client_fixture) -> None:
+    """After creating a session, session/list returns it with required fields."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/new"})
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        assert new_resp.get("type") == "session/new_response"
+        session_id = new_resp["session_id"]
+
+        await ws.send_json({"type": "session/list"})
+        list_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+
+        assert list_resp.get("type") == "session/list_response"
+        sessions = list_resp["sessions"]
+        assert len(sessions) >= 1
+
+        ids = [s["id"] for s in sessions]
+        assert session_id in ids, f"Expected {session_id!r} in session list: {ids}"
+
+        matched = next(s for s in sessions if s["id"] == session_id)
+        assert "updated_at" in matched, "Session entry must have 'updated_at'"
+        assert "preview" in matched, "Session entry must have 'preview'"
+
+
+# ---------------------------------------------------------------------------
+# T96: session/fork message handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_fork(web_client_fixture) -> None:
+    """Forking a session creates a new session with a different ID."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/new"})
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        assert new_resp.get("type") == "session/new_response"
+        original_id = new_resp["session_id"]
+
+        await ws.send_json({"type": "session/fork", "session_id": original_id})
+        fork_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+
+        assert fork_resp.get("type") == "session/fork_response"
+        assert "session_id" in fork_resp
+        forked_id = fork_resp["session_id"]
+        assert forked_id != original_id, "Forked session must have a different ID"
+
+
+# ---------------------------------------------------------------------------
+# T96: session/delete message handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_delete(web_client_fixture) -> None:
+    """Deleting a session removes it from the server-wide sessions store."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/new"})
+        new_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        assert new_resp.get("type") == "session/new_response"
+        session_id = new_resp["session_id"]
+
+        assert session_id in web_client._sessions, "Session must exist before deletion"
+
+        await ws.send_json({"type": "session/delete", "session_id": session_id})
+        del_resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+
+        assert del_resp.get("type") == "session/delete_response"
+        assert session_id not in web_client._sessions, (
+            "Session must be removed from _sessions after deletion"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T96: session/resume with unknown session_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_resume_unknown(web_client_fixture) -> None:
+    """Resuming an unknown session_id returns an error response."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/resume", "session_id": "nonexistent-session-id"})
+        response = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+
+        assert "error" in response, (
+            f"Expected error response for unknown session_id; got: {response}"
+        )

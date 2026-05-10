@@ -58,12 +58,54 @@ interface ErrorMsg {
     error: string;
 }
 
+interface SessionInfo {
+    id: string;
+    updated_at: string;
+    preview: string;
+}
+
+interface SessionListResponseMsg {
+    type: "session/list_response";
+    sessions: SessionInfo[];
+}
+
+interface SessionHistoryNode {
+    kind: string;
+    id: string;
+    created_at?: string;
+    prompt?: string;
+    text?: string;
+    output_text?: string;
+    calls?: Record<string, unknown>;
+    results?: Record<string, unknown>;
+}
+
+interface SessionHistoryMsg {
+    type: "session/history";
+    session_id: string;
+    nodes: SessionHistoryNode[];
+}
+
+interface SessionForkResponseMsg {
+    type: "session/fork_response";
+    session_id: string;
+}
+
+interface SessionDeleteResponseMsg {
+    type: "session/delete_response";
+    session_id: string;
+}
+
 type ServerMessage =
     | SessionNewResponseMsg
     | SessionPromptResponseMsg
     | SessionUpdateMsg
     | SessionRequestPermissionMsg
-    | ErrorMsg;
+    | ErrorMsg
+    | SessionListResponseMsg
+    | SessionHistoryMsg
+    | SessionForkResponseMsg
+    | SessionDeleteResponseMsg;
 
 interface ClientMessage {
     type: string;
@@ -73,6 +115,7 @@ interface ClientMessage {
 let ws: WebSocket | null = null;
 let sessionId: string | null = null;
 let isProcessing: boolean = false;
+let sessionList: SessionInfo[] = [];
 
 const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
 const messageInput = document.getElementById("message-input") as HTMLInputElement;
@@ -84,6 +127,7 @@ const permissionModal = document.getElementById("permission-modal") as HTMLDivEl
 const permissionText = document.getElementById("permission-text") as HTMLParagraphElement;
 const permAllowBtn = document.getElementById("perm-allow") as HTMLButtonElement;
 const permDenyBtn = document.getElementById("perm-deny") as HTMLButtonElement;
+const sessionListEl = document.getElementById("session-list") as HTMLDivElement;
 
 let pendingPermId: string | null = null;
 
@@ -95,7 +139,7 @@ function connect(): void {
         statusEl.textContent = "Connected";
         messageInput.disabled = false;
         sendBtn.disabled = false;
-        createSession();
+        sendMessage({ type: "session/list" });
     };
 
     ws.onmessage = (event: MessageEvent): void => {
@@ -133,12 +177,190 @@ function sendMessage(msg: ClientMessage): void {
     }
 }
 
+function resumeSession(id: string): void {
+    setActiveSession(id);
+    sendMessage({ type: "session/resume", session_id: id });
+}
+
+function forkSession(): void {
+    if (!sessionId) return;
+    sendMessage({ type: "session/fork", session_id: sessionId });
+}
+
+function deleteSession(): void {
+    if (!sessionId) return;
+    const confirmed = window.confirm("Delete this session?");
+    if (!confirmed) return;
+    sendMessage({ type: "session/delete", session_id: sessionId });
+}
+
+function setActiveSession(id: string | null): void {
+    sessionId = id;
+    if (id) {
+        sessionInfo.textContent = `Session: ${id.slice(0, 8)}...`;
+    } else {
+        sessionInfo.textContent = "No session";
+    }
+    // Update sidebar highlighting
+    const items = sessionListEl.querySelectorAll(".session-item");
+    items.forEach((item) => {
+        const el = item as HTMLElement;
+        if (el.dataset.sessionId === id) {
+            el.style.background = "#0f3460";
+        } else {
+            el.style.background = "transparent";
+        }
+    });
+}
+
+function formatSessionDate(updated_at: string): string {
+    const date = new Date(updated_at);
+    const now = new Date();
+    const isToday =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+    if (isToday) {
+        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function renderSessionList(sessions: SessionInfo[]): void {
+    sessionList = sessions;
+    sessionListEl.innerHTML = "";
+
+    if (sessions.length === 0) {
+        const placeholder = document.createElement("div");
+        placeholder.style.cssText =
+            "padding: 1rem 0.75rem; color: #666; font-size: 0.85rem; text-align: center;";
+        placeholder.textContent = "No sessions";
+        sessionListEl.appendChild(placeholder);
+        return;
+    }
+
+    for (const session of sessions) {
+        const item = document.createElement("div");
+        item.className = "session-item";
+        item.dataset.sessionId = session.id;
+        item.style.cssText =
+            "padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid #0f3460;" +
+            "background: " + (session.id === sessionId ? "#0f3460" : "transparent") + ";";
+
+        const topRow = document.createElement("div");
+        topRow.style.cssText =
+            "display: flex; justify-content: space-between; align-items: baseline;" +
+            "font-size: 0.8rem; color: #ccc; margin-bottom: 0.2rem;";
+
+        const idSpan = document.createElement("span");
+        idSpan.textContent = session.id.slice(0, 8);
+        idSpan.style.cssText = "font-family: monospace; font-weight: 600;";
+
+        const dateSpan = document.createElement("span");
+        dateSpan.textContent = formatSessionDate(session.updated_at);
+        dateSpan.style.cssText = "color: #888; font-size: 0.75rem;";
+
+        topRow.appendChild(idSpan);
+        topRow.appendChild(dateSpan);
+
+        const preview = document.createElement("div");
+        const previewText = session.preview.length > 40
+            ? session.preview.slice(0, 40) + "…"
+            : session.preview;
+        preview.textContent = previewText;
+        preview.style.cssText =
+            "font-size: 0.75rem; color: #888; white-space: nowrap; overflow: hidden;" +
+            "text-overflow: ellipsis;";
+
+        item.appendChild(topRow);
+        item.appendChild(preview);
+
+        item.addEventListener("mouseenter", () => {
+            if (item.dataset.sessionId !== sessionId) {
+                item.style.background = "#1e2d4e";
+            }
+        });
+        item.addEventListener("mouseleave", () => {
+            if (item.dataset.sessionId !== sessionId) {
+                item.style.background = "transparent";
+            }
+        });
+
+        item.addEventListener("click", () => {
+            const sid = item.dataset.sessionId;
+            if (sid) {
+                resumeSession(sid);
+            }
+        });
+
+        sessionListEl.appendChild(item);
+    }
+}
+
+function renderHistory(nodes: SessionHistoryNode[]): void {
+    chatContainer.innerHTML = "";
+    for (const node of nodes) {
+        switch (node.kind) {
+            case "user_prompt":
+                appendMessage("user", node.prompt ?? "");
+                break;
+            case "assistant_response":
+                appendMessage("agent", node.text ?? "");
+                break;
+            case "tool_call":
+                appendMessage("tool-call", node.output_text ?? JSON.stringify(node.calls ?? {}));
+                break;
+            case "tool_result":
+                appendMessage("tool-result", node.output_text ?? JSON.stringify(node.results ?? {}));
+                break;
+        }
+    }
+}
+
 function handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
         case "session/new_response":
-            sessionId = msg.session_id;
-            sessionInfo.textContent = `Session: ${sessionId?.slice(0, 8) ?? "unknown"}...`;
+            setActiveSession(msg.session_id);
+            sendMessage({ type: "session/list" });
             break;
+        case "session/list_response": {
+            // Sort by updated_at descending
+            const sorted = [...msg.sessions].sort(
+                (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            );
+            renderSessionList(sorted);
+            if (sorted.length > 0) {
+                resumeSession(sorted[0].id);
+            } else {
+                createSession();
+            }
+            break;
+        }
+        case "session/history":
+            setActiveSession(msg.session_id);
+            renderHistory(msg.nodes);
+            break;
+        case "session/fork_response":
+            setActiveSession(msg.session_id);
+            sendMessage({ type: "session/list" });
+            break;
+        case "session/delete_response": {
+            const deletedId = msg.session_id;
+            const wasActive = sessionId === deletedId;
+            // Remove from local list
+            const remaining = sessionList.filter((s) => s.id !== deletedId);
+            renderSessionList(remaining);
+            if (wasActive) {
+                if (remaining.length > 0) {
+                    resumeSession(remaining[0].id);
+                } else {
+                    setActiveSession(null);
+                    chatContainer.innerHTML = "";
+                    createSession();
+                }
+            }
+            break;
+        }
         case "session/prompt_response":
             isProcessing = false;
             updateInputState();
@@ -279,6 +501,20 @@ cancelBtn.addEventListener("click", (): void => {
     if (sessionId) {
         sendMessage({ type: "session/cancel", session_id: sessionId });
     }
+});
+
+const newSessionBtn = document.getElementById("new-session-btn") as HTMLButtonElement;
+const forkSessionBtn = document.getElementById("fork-session-btn") as HTMLButtonElement;
+const deleteSessionBtn = document.getElementById("delete-session-btn") as HTMLButtonElement;
+
+newSessionBtn.addEventListener("click", (): void => {
+    createSession();
+});
+forkSessionBtn.addEventListener("click", (): void => {
+    forkSession();
+});
+deleteSessionBtn.addEventListener("click", (): void => {
+    deleteSession();
 });
 
 function showPermissionModal(
