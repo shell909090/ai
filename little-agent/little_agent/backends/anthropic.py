@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Literal
 
 from little_agent.agent.nodes import (
@@ -20,18 +20,12 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
+from ._base import _StreamingBackend
 from ._utils import (
     _format_tool_result,
-    _is_context_overflow,
     _log_streaming_request,
     _log_streaming_response,
     _tool_def_to_json_schema,
-)
-from .exceptions import (
-    BackendError,
-    BackendRateLimitError,
-    BackendTimeoutError,
-    ContextOverflowError,
 )
 from .protocol import BackendToolCall, BackendTurnResult
 
@@ -219,7 +213,7 @@ def _update_metadata(
     return finish_reason_raw, usage
 
 
-class AnthropicBackend:
+class AnthropicBackend(_StreamingBackend):
     """Anthropic backend implementation."""
 
     def __init__(
@@ -235,20 +229,18 @@ class AnthropicBackend:
     ) -> None:
         import anthropic
 
+        super().__init__(
+            model=model,
+            timeout=timeout,
+            max_concurrency=max_concurrency,
+            context_window=context_window,
+        )
         if base_url is not None:
             self._client = anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url)
         else:
             self._client = anthropic.AsyncAnthropic(api_key=api_key)
-        self._model = model
-        self._timeout = timeout
-        self._sem = asyncio.Semaphore(max_concurrency)
-        self.context_window = context_window
         self._system = system
         self._max_tokens = max_tokens
-
-    def generate(self, session: "SessionCore") -> AsyncIterator[SessionUpdate | BackendTurnResult]:
-        """Return async iterator streaming Anthropic response."""
-        return self._generate_stream(session)
 
     async def _generate_stream_inner(
         self,
@@ -276,18 +268,10 @@ class AnthropicBackend:
                 async with self._client.messages.stream(**kwargs) as stream:
                     async for event in stream:
                         yield event
-        except TimeoutError as e:
-            raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
-        except anthropic.BadRequestError as e:
-            if _is_context_overflow(e, _CONTEXT_OVERFLOW_SUBSTRINGS):
-                raise ContextOverflowError(str(e)) from e
-            raise BackendError(str(e)) from e
-        except anthropic.RateLimitError as e:
-            raise BackendRateLimitError(str(e)) from e
-        except anthropic.APIError as e:
-            raise BackendError(str(e)) from e
+        except (TimeoutError, anthropic.APIError) as e:
+            self._raise_mapped(e, anthropic, _CONTEXT_OVERFLOW_SUBSTRINGS)
 
-    async def _generate_stream(
+    async def _stream(
         self, session: "SessionCore"
     ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         """Stream response from Anthropic, yielding updates then a final BackendTurnResult."""

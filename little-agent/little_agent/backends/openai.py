@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Literal
 
 from little_agent.agent.nodes import (
@@ -20,18 +20,12 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
+from ._base import _StreamingBackend
 from ._utils import (
     _format_tool_result,
-    _is_context_overflow,
     _log_streaming_request,
     _log_streaming_response,
     _tool_def_to_json_schema,
-)
-from .exceptions import (
-    BackendError,
-    BackendRateLimitError,
-    BackendTimeoutError,
-    ContextOverflowError,
 )
 from .protocol import BackendToolCall, BackendTurnResult
 
@@ -268,7 +262,7 @@ _CONTEXT_OVERFLOW_SUBSTRINGS = (
 )
 
 
-class OpenAIBackend:
+class OpenAIBackend(_StreamingBackend):
     """OpenAI backend implementation."""
 
     def __init__(
@@ -282,18 +276,16 @@ class OpenAIBackend:
     ) -> None:
         import openai
 
+        super().__init__(
+            model=model,
+            timeout=timeout,
+            max_concurrency=max_concurrency,
+            context_window=context_window,
+        )
         if base_url is not None:
             self._client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         else:
             self._client = openai.AsyncOpenAI(api_key=api_key)
-        self._model = model
-        self._timeout = timeout
-        self._sem = asyncio.Semaphore(max_concurrency)
-        self.context_window = context_window
-
-    def generate(self, session: SessionCore) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
-        """Return async iterator streaming OpenAI response."""
-        return self._generate_stream(session)
 
     async def _open_stream(
         self,
@@ -314,20 +306,12 @@ class OpenAIBackend:
                 ),
                 timeout=self._timeout,
             )
-        except TimeoutError as e:
-            raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
-        except openai.BadRequestError as e:
-            if _is_context_overflow(
-                e, _CONTEXT_OVERFLOW_SUBSTRINGS, code="context_length_exceeded"
-            ):
-                raise ContextOverflowError(str(e)) from e
-            raise BackendError(str(e)) from e
-        except openai.RateLimitError as e:
-            raise BackendRateLimitError(str(e)) from e
-        except openai.APIError as e:
-            raise BackendError(str(e)) from e
+        except (TimeoutError, openai.APIError) as e:
+            self._raise_mapped(
+                e, openai, _CONTEXT_OVERFLOW_SUBSTRINGS, code="context_length_exceeded"
+            )
 
-    async def _generate_stream(
+    async def _stream(
         self, session: SessionCore
     ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""

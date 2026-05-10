@@ -206,7 +206,11 @@ def _make_unrelated_event() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-class _FakeBadRequestError(Exception):
+class _FakeAPIError(Exception):
+    """Stand-in for anthropic.APIError (base of all SDK errors)."""
+
+
+class _FakeBadRequestError(_FakeAPIError):
     """Stand-in for anthropic.BadRequestError."""
 
     def __init__(self, message: str = "") -> None:
@@ -214,12 +218,8 @@ class _FakeBadRequestError(Exception):
         self.message = message
 
 
-class _FakeRateLimitError(Exception):
+class _FakeRateLimitError(_FakeAPIError):
     """Stand-in for anthropic.RateLimitError."""
-
-
-class _FakeAPIError(Exception):
-    """Stand-in for anthropic.APIError."""
 
 
 # ---------------------------------------------------------------------------
@@ -708,6 +708,8 @@ async def test_anthropic_backend_overflow_error_by_message(message: str) -> None
 
     mock_anthropic = MagicMock()
     mock_anthropic.BadRequestError = _FakeBadRequestError
+    mock_anthropic.RateLimitError = _FakeRateLimitError
+    mock_anthropic.APIError = _FakeAPIError
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         tools = ToolManager()
         client_mock = MockClient()
