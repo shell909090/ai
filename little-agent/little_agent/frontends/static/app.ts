@@ -117,6 +117,7 @@ interface ClientMessage {
 let ws: WebSocket | null = null;
 let sessionId: string | null = null;
 let isProcessing: boolean = false;
+let autoScroll: boolean = true;
 let sessionList: SessionInfo[] = [];
 
 // Track live tool-call bubbles by call_id so tool_call_update can recolor them.
@@ -131,6 +132,7 @@ const chatContainer = document.getElementById("chat-container") as HTMLDivElemen
 const messageInput = document.getElementById("message-input") as HTMLInputElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const cancelBtn = document.getElementById("cancelButton") as HTMLButtonElement;
+const spinnerEl = document.getElementById("spinner") as HTMLDivElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const sessionInfo = document.getElementById("session-info") as HTMLDivElement;
 const permissionModal = document.getElementById("permission-modal") as HTMLDivElement;
@@ -226,13 +228,15 @@ function updateToolCallBubble(elem: HTMLDivElement, status: string, content: unk
     }
 }
 
-// --- Scroll helper ---
+// --- Scroll helpers ---
 
-function scrollIfNearBottom(): void {
-    const isNearBottom =
-        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
-    if (isNearBottom) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+function scrollToBottom(): void {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function scrollIfAutoScroll(): void {
+    if (autoScroll) {
+        scrollToBottom();
     }
 }
 
@@ -450,7 +454,7 @@ function renderHistory(nodes: SessionHistoryNode[]): void {
                     const bubble = createToolCallBubble(callId, callData as CallData);
                     chatContainer.appendChild(bubble);
                     historyCallMap.set(callId, bubble);
-                    scrollIfNearBottom();
+                    scrollIfAutoScroll();
                 }
                 break;
             }
@@ -497,7 +501,9 @@ function handleMessage(msg: ServerMessage): void {
             // Ignore stale histories from rapid session switches.
             if (msg.session_id === sessionId) {
                 historyPending = false;
+                autoScroll = true;
                 renderHistory(msg.nodes);
+                scrollToBottom();
                 // Replay updates that arrived while history was loading.
                 for (const u of pendingUpdates) {
                     handleUpdate(u);
@@ -529,6 +535,7 @@ function handleMessage(msg: ServerMessage): void {
         case "session/prompt_response":
             isProcessing = false;
             updateInputState();
+            scrollIfAutoScroll();
             // Streaming already rendered the text via agent_message_chunk; skip duplicate.
             break;
         case "session/update":
@@ -577,7 +584,7 @@ function handleUpdate(update: SessionUpdatePayload): void {
                 const bubble = createToolCallBubble(callId, callData);
                 chatContainer.appendChild(bubble);
                 toolCallElements.set(callId, bubble);
-                scrollIfNearBottom();
+                scrollIfAutoScroll();
             }
             break;
         }
@@ -601,7 +608,7 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
         if (contentEl) {
             contentEl.textContent += text;
         }
-        scrollIfNearBottom();
+        scrollIfAutoScroll();
         return;
     }
     // Don't create a new bubble for blank initial content (e.g. thinking-only turns).
@@ -623,7 +630,7 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    scrollIfNearBottom();
+    scrollIfAutoScroll();
 }
 
 function appendMessage(type: string, text: string, label?: string): void {
@@ -643,16 +650,17 @@ function appendMessage(type: string, text: string, label?: string): void {
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    scrollIfNearBottom();
+    scrollIfAutoScroll();
 }
 
 function updateInputState(): void {
     messageInput.disabled = isProcessing;
     sendBtn.disabled = isProcessing;
+    spinnerEl.style.display = isProcessing ? "inline-block" : "none";
     cancelBtn.style.display = isProcessing ? "inline-block" : "none";
-    if (isProcessing) {
-        statusEl.textContent = "Processing...";
-    } else {
+    if (!isProcessing) {
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.disabled = false;
         statusEl.textContent = "Connected";
     }
 }
@@ -661,6 +669,7 @@ function sendPrompt(): void {
     const text: string = messageInput.value.trim();
     if (!text || !sessionId || isProcessing) return;
 
+    autoScroll = true;
     appendMessage("user", text);
     messageInput.value = "";
     isProcessing = true;
@@ -679,6 +688,8 @@ messageInput.addEventListener("keypress", (e: KeyboardEvent): void => {
 });
 cancelBtn.addEventListener("click", (): void => {
     if (sessionId) {
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = "Cancelling…";
         sendMessage({ type: "session/cancel", session_id: sessionId });
     }
 });
@@ -733,6 +744,12 @@ permDenyBtn.addEventListener("click", (): void => {
         });
     }
     hidePermissionModal();
+});
+
+chatContainer.addEventListener("scroll", (): void => {
+    const distanceFromBottom =
+        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+    autoScroll = distanceFromBottom <= 50;
 });
 
 connect();

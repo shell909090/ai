@@ -227,6 +227,18 @@
             display: none;
         }
         #cancelButton:hover { opacity: 0.9; }
+        #cancelButton:disabled { opacity: 0.6; cursor: not-allowed; }
+        #spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #333;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            display: none;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         #status {
             padding: 0.5rem 1.5rem;
             font-size: 0.8rem;
@@ -290,6 +302,7 @@
             <div id="input-area">
                 <input type="text" id="message-input" placeholder="Type a message..." disabled aria-label="Message input">
                 <button id="send-btn" disabled>Send</button>
+                <div id="spinner"></div>
                 <button id="cancelButton">Cancel</button>
             </div>
         </div>
