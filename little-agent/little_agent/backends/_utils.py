@@ -16,7 +16,7 @@ def _log_streaming_request(
     messages: list[Any],
     tools: list[Any] | None,
 ) -> None:
-    """Log a streaming request at DEBUG level (metadata only, no content)."""
+    """Log a streaming request. Metadata at DEBUG; full payload only when DEBUG is active."""
     roles = [m.get("role", "?") if isinstance(m, dict) else "?" for m in messages]
     tool_names = [
         (t.get("function", {}).get("name") or t.get("name", "?")) if isinstance(t, dict) else "?"
@@ -30,6 +30,11 @@ def _log_streaming_request(
         roles,
         tool_names,
     )
+    if logger.isEnabledFor(logging.DEBUG):
+        payload: dict[str, Any] = {"model": model, "messages": messages}
+        if tools:
+            payload["tools"] = tools
+        logger.debug("%s request payload: %s", name, json.dumps(payload, ensure_ascii=False))
 
 
 def _log_streaming_response(

@@ -241,7 +241,14 @@ uv run python -m little_agent.main --config config.yaml
 
 # Override log level at runtime
 uv run python -m little_agent.main --config config.yaml --loglevel DEBUG
+
+# One-shot CLI mode (send a single prompt, print the response, exit)
+uv run python -m little_agent.main --config config.yaml --prompt "Hello, agent!"
 ```
+
+The Makefile's `make run` target uses `~/.config/little_agent/config.yaml` as the
+default config path. Pass `--config` explicitly when invoking the module to
+override it.
 
 ### CLI commands
 

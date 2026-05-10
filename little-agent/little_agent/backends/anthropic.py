@@ -201,6 +201,14 @@ def _process_event(event: Any, acc: _StreamAccumulator) -> SessionUpdate | None:
     return None
 
 
+def _log_anthropic_event(logger: logging.Logger, event: Any) -> None:
+    """Log one Anthropic stream event as raw JSON at DEBUG level."""
+    if hasattr(event, "model_dump_json"):
+        logger.debug("SSE event: %s", event.model_dump_json(exclude_unset=True))
+    else:
+        logger.debug("SSE event: %r", event)
+
+
 class AnthropicBackend(_StreamingBackend):
     """Anthropic backend implementation."""
 
@@ -275,6 +283,8 @@ class AnthropicBackend(_StreamingBackend):
             acc = _StreamAccumulator(finish_reason_raw="end_turn")
 
             async for event in self._generate_stream_inner(messages, tools, system_injected):
+                if logger.isEnabledFor(logging.DEBUG):
+                    _log_anthropic_event(logger, event)
                 update = _process_event(event, acc)
                 if update is not None:
                     yield update

@@ -187,7 +187,8 @@ def _process_delta(delta: Any, acc: _StreamAccumulator) -> tuple[str | None, lis
     updates: list[SessionUpdate] = []
     if delta.content:
         raw_content = delta.content
-    reasoning = getattr(delta, "reasoning_content", None)
+    reasoning_raw = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+    reasoning = reasoning_raw if isinstance(reasoning_raw, str) else None
     if reasoning:
         acc.thinking.append(reasoning)
         updates.append(SessionUpdate(type="thinking_chunk", data={"text": reasoning}))
@@ -218,6 +219,43 @@ def _extract_chunk_usage(usage_obj: Any) -> dict[str, int]:
         if cached is not None:
             usage["cached_tokens"] = cached
     return usage
+
+
+def _postprocess_orphaned_think(acc: _StreamAccumulator) -> None:
+    """Strip orphaned </think> from acc.text and, when needed, recover thinking content.
+
+    Two scenarios handled:
+    1. Vendor sends thinking via delta.reasoning AND emits </think> in delta.content
+       (e.g. stepfun): acc.thinking already populated; just strip the tag from text.
+    2. Vendor strips <think> but leaves thinking text + </think> in delta.content
+       (e.g. older LiteLLM behaviour): acc.thinking empty; move content before </think>
+       into acc.thinking.
+    """
+    full_text = "".join(acc.text)
+    close_idx = full_text.find(_CLOSE_TAG)
+    if close_idx == -1:
+        return
+    text_part = full_text[close_idx + len(_CLOSE_TAG) :]
+    if acc.thinking:
+        # Thinking already captured via delta.reasoning/reasoning_content.
+        # The </think> in delta.content is redundant — strip it.
+        logger.debug(
+            "stripping orphaned </think> from output (thinking already set); text_after_chars=%d",
+            len(text_part),
+        )
+        acc.text = [text_part] if text_part else []
+    else:
+        # No thinking accumulated yet — content before </think> is the thinking text.
+        thinking_part = full_text[:close_idx]
+        logger.debug(
+            "orphaned </think>: <think> was stripped by proxy/model; "
+            "thinking_chars=%d text_after_chars=%d thinking_preview=%r",
+            len(thinking_part),
+            len(text_part),
+            thinking_part[:200],
+        )
+        acc.thinking = [thinking_part] if thinking_part else []
+        acc.text = [text_part] if text_part else []
 
 
 def _build_tool_calls(tool_blocks: dict[int, dict[str, Any]]) -> list[BackendToolCall]:
@@ -324,6 +362,8 @@ class OpenAIBackend(_StreamingBackend):
                 if chunk.choices:
                     delta = chunk.choices[0].delta
                     fr = chunk.choices[0].finish_reason
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug("SSE chunk: %s", chunk.model_dump_json(exclude_unset=True))
                     if fr is not None:
                         acc.finish_reason_raw = fr
                     raw_content, direct_updates = _process_delta(delta, acc)
@@ -337,6 +377,8 @@ class OpenAIBackend(_StreamingBackend):
 
             for update in _drain_parser(parser.flush(), acc):
                 yield update
+
+            _postprocess_orphaned_think(acc)
 
             elapsed = time.perf_counter() - start_time
             finish_reason: Literal["completed", "tool_call"] = (

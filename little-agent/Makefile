@@ -29,4 +29,4 @@ dev:
 	uv sync --extra dev
 
 run: build
-	uv run python -m little_agent.main --config .config.yaml
+	uv run python -m little_agent.main --config ~/.config/little_agent/config.yaml

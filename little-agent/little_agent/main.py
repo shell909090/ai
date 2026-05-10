@@ -271,6 +271,9 @@ def main() -> None:
     parser.add_argument(
         "--loglevel", default=None, help="Override log level (DEBUG/INFO/WARNING/ERROR)"
     )
+    parser.add_argument(
+        "--prompt", default=None, help="Send an initial prompt automatically on startup (CLI only)"
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -331,6 +334,13 @@ def main() -> None:
             port_raw = cfg.get("port", 8080) if isinstance(cfg, dict) else 8080
             port = int(port_raw) if isinstance(port_raw, (int, float)) else 8080
             asyncio.run(client.run(agent, host=str(host), port=port))
+        else:
+            asyncio.run(client.run(agent))
+    elif frontend_type == "cli":
+        from little_agent.frontends.cli import CliClient as _CliClient
+
+        if isinstance(client, _CliClient):
+            asyncio.run(client.run(agent, initial_prompt=args.prompt))
         else:
             asyncio.run(client.run(agent))
     else:

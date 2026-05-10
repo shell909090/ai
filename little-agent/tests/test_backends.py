@@ -20,6 +20,7 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
+from little_agent.backends._base import _StreamAccumulator
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.openai import (
     OpenAIBackend,
@@ -27,6 +28,7 @@ from little_agent.backends.openai import (
     _chain_to_messages,
     _format_tool_result,
     _node_to_message,
+    _postprocess_orphaned_think,
     _tool_map_to_openai_functions,
 )
 from little_agent.backends.protocol import BackendTurnResult
@@ -346,6 +348,47 @@ async def test_openai_backend_generate_with_reasoning() -> None:
     thinking_updates = [u for u in updates if u.type == "thinking_chunk"]
     assert len(thinking_updates) == 1
     assert thinking_updates[0].data["text"] == "I think therefore I am"
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_generate_with_reasoning_field() -> None:
+    """Test delta.reasoning (vendor-specific, e.g. stepfun) is routed to thinking_text."""
+    client = MockClient()
+    tools = ToolManager()
+    backend = OpenAIBackend(model="step-3.6", api_key="test-key")
+
+    chunk1 = MagicMock()
+    chunk1.choices = [MagicMock()]
+    chunk1.choices[0].delta.content = ""
+    chunk1.choices[0].delta.tool_calls = None
+    chunk1.choices[0].delta.reasoning_content = None
+    chunk1.choices[0].delta.reasoning = "vendor thinking"
+    chunk1.choices[0].finish_reason = None
+    chunk1.usage = None
+
+    chunk2 = MagicMock()
+    chunk2.choices = [MagicMock()]
+    chunk2.choices[0].delta.content = "answer"
+    chunk2.choices[0].delta.tool_calls = None
+    chunk2.choices[0].delta.reasoning_content = None
+    chunk2.choices[0].delta.reasoning = None
+    chunk2.choices[0].finish_reason = "stop"
+    chunk2.usage = None
+
+    backend._client.chat.completions.create = AsyncMock(  # type: ignore[method-assign]
+        return_value=_FakeStream([chunk1, chunk2])
+    )
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    result, updates = await _collect(backend.generate(session))  # type: ignore[arg-type]
+    assert result.thinking_text == "vendor thinking"
+    assert result.output_text == "answer"
+
+    thinking_updates = [u for u in updates if u.type == "thinking_chunk"]
+    assert len(thinking_updates) == 1
+    assert thinking_updates[0].data["text"] == "vendor thinking"
 
 
 @pytest.mark.asyncio
@@ -672,3 +715,145 @@ def test_tool_call_node_empty_output_text_in_messages_openai() -> None:
     assert msg["role"] == "assistant"
     assert "content" not in msg
     assert "tool_calls" in msg
+
+
+# ---------------------------------------------------------------------------
+# _postprocess_orphaned_think
+# ---------------------------------------------------------------------------
+
+
+def test_postprocess_orphaned_think_moves_thinking_before_close_tag() -> None:
+    """When </think> present but no reasoning_content, thinking portion is extracted."""
+    acc = _StreamAccumulator()
+    acc.text = ["I wonder about this.\n", "</think>\n", "Here is my answer."]
+    _postprocess_orphaned_think(acc)
+    assert "".join(acc.thinking) == "I wonder about this.\n"
+    assert "".join(acc.text) == "\nHere is my answer."
+
+
+def test_postprocess_orphaned_think_no_close_tag_unchanged() -> None:
+    """When no </think> in text, accumulator is unchanged."""
+    acc = _StreamAccumulator()
+    acc.text = ["Plain response without any tags."]
+    _postprocess_orphaned_think(acc)
+    assert acc.thinking == []
+    assert "".join(acc.text) == "Plain response without any tags."
+
+
+def test_postprocess_orphaned_think_strips_tag_when_thinking_already_set() -> None:
+    """When acc.thinking is set (e.g. via delta.reasoning), </think> is stripped from text."""
+    acc = _StreamAccumulator()
+    acc.thinking = ["Already extracted thinking"]
+    acc.text = ["</think>", "actual response"]
+    _postprocess_orphaned_think(acc)
+    assert acc.thinking == ["Already extracted thinking"]
+    assert "".join(acc.text) == "actual response"
+
+
+def test_postprocess_orphaned_think_strips_tag_with_prefix_when_thinking_set() -> None:
+    """Prefix before </think> is discarded when thinking is already set."""
+    acc = _StreamAccumulator()
+    acc.thinking = ["via delta.reasoning"]
+    acc.text = ["junk before tag</think>after tag"]
+    _postprocess_orphaned_think(acc)
+    assert acc.thinking == ["via delta.reasoning"]
+    assert "".join(acc.text) == "after tag"
+
+
+def test_postprocess_orphaned_think_only_close_tag_no_text_after() -> None:
+    """Thinking content with </think> at end and no trailing text."""
+    acc = _StreamAccumulator()
+    acc.text = ["thinking only</think>"]
+    _postprocess_orphaned_think(acc)
+    assert "".join(acc.thinking) == "thinking only"
+    assert acc.text == []
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_orphaned_close_tag_extracted_as_thinking() -> None:
+    """When LiteLLM strips <think> but leaves </think> in delta.content, thinking is correct."""
+    client = MockClient()
+    tools = ToolManager()
+    backend = OpenAIBackend(model="gpt-4", api_key="test-key")
+
+    # Simulate LiteLLM stripping <think>: thinking content comes in delta.content
+    # without the opening tag, but </think> is present at the end.
+    chunks = []
+    for text in ["thinking content", "</think>", "visible answer"]:
+        c = MagicMock()
+        c.choices = [MagicMock()]
+        c.choices[0].delta.content = text
+        c.choices[0].delta.tool_calls = None
+        c.choices[0].delta.reasoning_content = None
+        c.choices[0].delta.reasoning = None
+        c.choices[0].finish_reason = None
+        c.usage = None
+        chunks.append(c)
+
+    final = MagicMock()
+    final.choices = [MagicMock()]
+    final.choices[0].delta.content = None
+    final.choices[0].delta.tool_calls = None
+    final.choices[0].delta.reasoning_content = None
+    final.choices[0].delta.reasoning = None
+    final.choices[0].finish_reason = "stop"
+    final.usage = None
+    chunks.append(final)
+
+    backend._client.chat.completions.create = AsyncMock(return_value=_FakeStream(chunks))  # type: ignore[method-assign]
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    result, _ = await _collect(backend.generate(session))  # type: ignore[arg-type]
+    assert result.thinking_text == "thinking content"
+    assert result.output_text == "visible answer"
+
+
+@pytest.mark.asyncio
+async def test_openai_backend_reasoning_field_with_orphaned_close_tag() -> None:
+    """Stepfun pattern: delta.reasoning carries thinking; delta.content carries </think>."""
+    client = MockClient()
+    tools = ToolManager()
+    backend = OpenAIBackend(model="step-3.6", api_key="test-key")
+
+    # Chunk 1: thinking via delta.reasoning, content empty
+    c1 = MagicMock()
+    c1.choices = [MagicMock()]
+    c1.choices[0].delta.content = ""
+    c1.choices[0].delta.tool_calls = None
+    c1.choices[0].delta.reasoning_content = None
+    c1.choices[0].delta.reasoning = "I am thinking"
+    c1.choices[0].finish_reason = None
+    c1.usage = None
+
+    # Chunk 2: end-of-thinking signal as </think> in content
+    c2 = MagicMock()
+    c2.choices = [MagicMock()]
+    c2.choices[0].delta.content = "</think>"
+    c2.choices[0].delta.tool_calls = None
+    c2.choices[0].delta.reasoning_content = None
+    c2.choices[0].delta.reasoning = None
+    c2.choices[0].finish_reason = None
+    c2.usage = None
+
+    # Chunk 3: actual response
+    c3 = MagicMock()
+    c3.choices = [MagicMock()]
+    c3.choices[0].delta.content = "Here is my answer"
+    c3.choices[0].delta.tool_calls = None
+    c3.choices[0].delta.reasoning_content = None
+    c3.choices[0].delta.reasoning = None
+    c3.choices[0].finish_reason = "stop"
+    c3.usage = None
+
+    backend._client.chat.completions.create = AsyncMock(  # type: ignore[method-assign]
+        return_value=_FakeStream([c1, c2, c3])
+    )
+
+    agent = AgentCore(client=client, backend=backend, tools=tools)
+    session = await agent.new()
+
+    result, _ = await _collect(backend.generate(session))  # type: ignore[arg-type]
+    assert result.thinking_text == "I am thinking"
+    assert result.output_text == "Here is my answer"

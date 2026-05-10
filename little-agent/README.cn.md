@@ -236,7 +236,13 @@ uv run python -m little_agent.main --config config.yaml
 
 # 临时覆盖日志级别
 uv run python -m little_agent.main --config config.yaml --loglevel DEBUG
+
+# 一次性模式（发送单个 prompt，打印回复后退出）
+uv run python -m little_agent.main --config config.yaml --prompt "你好"
 ```
+
+Makefile 的 `make run` 默认使用 `~/.config/little_agent/config.yaml` 作为配置路径，
+直接以模块方式启动时通过 `--config` 显式指定即可覆盖。
 
 ### CLI 命令
 

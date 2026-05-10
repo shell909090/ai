@@ -346,36 +346,48 @@ class CliClient(Client):
                 except (asyncio.CancelledError, Exception):
                     pass
 
-    async def run(self, agent: Agent) -> None:
-        """Run the CLI interactive loop."""
+    async def _run_loop(self, agent: Agent, session: "Session") -> None:
+        """Inner interactive loop; separated to keep run() complexity below threshold."""
+        while True:
+            try:
+                user_input = await self._stdin_queue.get()
+            except asyncio.CancelledError:
+                print("\nGoodbye!")
+                break
+
+            if user_input is None:  # EOF
+                print("\nGoodbye!")
+                break
+
+            stripped = user_input.strip()
+            if not stripped:
+                continue
+
+            if stripped.startswith("/"):
+                _remove_last_history()
+                session, should_continue = await self._handle_command(agent, session, stripped)
+                if not should_continue:
+                    break
+                continue
+
+            await self._do_prompt(session, user_input)
+
+    async def run(self, agent: Agent, initial_prompt: str | None = None) -> None:
+        """Run the CLI.
+
+        With initial_prompt: one-shot mode — send the prompt, print the response, exit.
+        Without initial_prompt: interactive loop.
+        """
         history_file = _setup_readline()
         session = await agent.new()
+        if initial_prompt is not None:
+            print(f"> {initial_prompt}")
+            await self._do_prompt(session, initial_prompt)
+            return
         print("Little Agent CLI. Commands: /new /save <path> /load <path> /cancel /fork /quit")
         reader_task = asyncio.create_task(self._stdin_reader())
         try:
-            while True:
-                try:
-                    user_input = await self._stdin_queue.get()
-                except asyncio.CancelledError:
-                    print("\nGoodbye!")
-                    break
-
-                if user_input is None:  # EOF
-                    print("\nGoodbye!")
-                    break
-
-                stripped = user_input.strip()
-                if not stripped:
-                    continue
-
-                if stripped.startswith("/"):
-                    _remove_last_history()
-                    session, should_continue = await self._handle_command(agent, session, stripped)
-                    if not should_continue:
-                        break
-                    continue
-
-                await self._do_prompt(session, user_input)
+            await self._run_loop(agent, session)
         finally:
             reader_task.cancel()
             try:
