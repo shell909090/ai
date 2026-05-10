@@ -240,8 +240,8 @@ async def test_webclient_run_uses_provided_host_and_port() -> None:
         """Allow one event-loop cycle so site.start() runs, then raise CancelledError."""
         raise asyncio.CancelledError
 
-    with patch("little_agent.frontends.web.web.AppRunner", return_value=_FakeRunner()):
-        with patch("little_agent.frontends.web.web.TCPSite", side_effect=_FakeSite):
+    with patch("little_agent.frontends.web.server.web.AppRunner", return_value=_FakeRunner()):
+        with patch("little_agent.frontends.web.server.web.TCPSite", side_effect=_FakeSite):
             # run() loops forever; cancel it immediately after setup.
             try:
                 await asyncio.wait_for(

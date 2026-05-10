@@ -1,5 +1,19 @@
 {
+  "scripts": {
+    "build": "esbuild src/app.ts --bundle --format=iife --outfile=app.js --target=es2020",
+    "lint": "eslint 'src/**/*.ts' && tsc --noEmit",
+    "fmt": "prettier --write 'src/**/*.ts'",
+    "test": "vitest run"
+  },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "esbuild": "^0.24.0",
+    "prettier": "^3.3.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "vitest": "^2.0.0",
+    "happy-dom": "^15.0.0"
   }
 }

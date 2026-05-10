@@ -527,9 +527,9 @@ ACP 映射：`prompt` ↔ `session/prompt`；`cancel` ↔ `session/cancel`。`fo
 
 ### 4.5 CliClient
 
-职责：实现 `Client` + `run(agent)`，处理取消、退出、`/` 命令；readline 集成（方向键、`~/.little_agent_history`、Tab 补全）。
+职责：实现 `Client` + `run(agent)`，处理取消、退出、`/` 命令；使用 `prompt_toolkit` 提供 async input、历史（`~/.little_agent_history`）、Tab 补全。
 
-stdin 架构：`_stdin_reader` 后台 task 通过 `asyncio.to_thread(input)` 阻塞读，结果送入 `_stdin_queue`（maxsize=32 兜底防 OOM）。`run()` 主循环在 agent 空闲时消费；prompt turn 期间并发的 `_watch_cancel_loop` 监听 `/cancel`，其他输入 put back。`_permission_done`（`asyncio.Event`）协调 `request_permission` 与 `_watch_cancel_loop` 防争抢。
+stdin 架构：`CliClient` 持有一个 `prompt_toolkit.PromptSession`（注入以便测试 mock）。`run()` 主循环调用 `prompt_session.prompt_async("> ")`；agent 执行期间通过 `asyncio.create_task` + `try/except KeyboardInterrupt` 捕获 Ctrl-C 并调 `session.cancel()`；`request_permission` 直接调 `prompt_session.prompt_async("[Allow x? y/N] ")`，无需 stdin 队列或事件协调。`patch_stdout()` 保证 agent 流式输出不破坏 prompt 行。
 
 显示规则：
 
@@ -537,7 +537,7 @@ stdin 架构：`_stdin_reader` 后台 task 通过 `asyncio.to_thread(input)` 阻
 2. 输出前 `strip()`。
 3. `tool_call` 显示 tool 名 + 多行 `k: v` 参数（非字符串值用 `json.dumps`）；超 5 行截断尾部并显示 `...{n} lines...`。
 
-命令：`/quit` `/exit` `/cancel` `/fork` `/new` `/save <path>` `/load <path>` `/list-tools`。
+命令（idle 期间输入）：`/quit` `/exit` `/fork` `/new` `/save <path>` `/load <path>` `/list-tools`。取消：Ctrl-C（agent 执行期）或 `KeyboardInterrupt`（idle 期退出）。`/cancel` 作为 `/cancel` 命令仍有效（等价于 Ctrl-C，在 idle 期间输入无实际 agent 可取消时静默忽略）。
 
 ### 4.6 WebClient
 

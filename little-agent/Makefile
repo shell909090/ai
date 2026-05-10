@@ -1,32 +1,61 @@
-.PHONY: fmt lint build clean unittest test install dev run
+.PHONY: fmt fmt-py fmt-ts lint lint-py lint-ts build build-py build-ts \
+        unittest unittest-py unittest-ts test clean ts-deps install dev run
 
-fmt:
+_STATIC := little_agent/frontends/static
+
+# ── top-level aliases ──────────────────────────────────────────────────────
+fmt: fmt-py fmt-ts
+lint: lint-py lint-ts
+build: build-py build-ts
+unittest: unittest-py unittest-ts
+
+# ── Python ──────────���──────────────────────────────────────────────────────
+fmt-py:
 	uv run ruff format little_agent tests
 
-lint:
+lint-py:
 	uv run ruff check little_agent tests
 	uv run mypy little_agent --strict
 
-build:
+build-py:
 	find little_agent -name '*.py' | xargs uv run python -m py_compile
-	cd little_agent/frontends/static && npx tsc --project tsconfig.json
 
+unittest-py:
+	uv run pytest tests/ -v
+
+test: unittest-py
+	uv run pytest tests/ --cov=little_agent --cov-report=term-missing
+
+# ── TypeScript ──────────────────────────────────────────────────────────────
+fmt-ts:
+	cd $(_STATIC) && npx prettier --write 'src/**/*.ts'
+
+lint-ts:
+	cd $(_STATIC) && npx eslint 'src/**/*.ts' && npx tsc --noEmit
+
+build-ts:
+	cd $(_STATIC) && npx esbuild src/app.ts --bundle --format=iife \
+	    --outfile=app.js --target=es2020
+
+unittest-ts:
+	cd $(_STATIC) && npx vitest run
+
+ts-deps:
+	cd $(_STATIC) && npm ci
+
+# ── housekeeping ────────────────────────────────────────────────────────────
 clean:
 	find little_agent -name '*.pyc' -delete
 	find little_agent -name '__pycache__' -type d -exec rm -rf {} +
-	rm -f little_agent/frontends/static/app.js
-
-unittest:
-	uv run pytest tests/ -v
-
-test: unittest
-	uv run pytest tests/ --cov=little_agent --cov-report=term-missing
+	rm -f $(_STATIC)/app.js
 
 install:
 	uv sync
+	cd $(_STATIC) && npm install
 
 dev:
 	uv sync --extra dev
+	cd $(_STATIC) && npm install
 
 run: build
 	uv run python -m little_agent.main --config ~/.config/little_agent/config.yaml

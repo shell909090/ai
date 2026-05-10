@@ -1,14 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
-    "module": "none",
-    "ignoreDeprecations": "6.0",
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "bundler",
     "strict": true,
-    "noEmit": false,
-    "outDir": ".",
-    "rootDir": ".",
-    "lib": ["ES2017", "DOM"]
+    "noEmit": true,
+    "lib": ["ES2020", "DOM"],
+    "skipLibCheck": true
   },
-  "include": ["app.ts"],
-  "exclude": []
+  "include": ["src/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules"]
 }

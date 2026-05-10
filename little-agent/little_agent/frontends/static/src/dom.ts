@@ -1,0 +1,15 @@
+export const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
+export const messageInput = document.getElementById("message-input") as HTMLInputElement;
+export const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+export const cancelBtn = document.getElementById("cancelButton") as HTMLButtonElement;
+export const spinnerEl = document.getElementById("spinner") as HTMLDivElement;
+export const statusEl = document.getElementById("status") as HTMLDivElement;
+export const sessionInfo = document.getElementById("session-info") as HTMLDivElement;
+export const permissionModal = document.getElementById("permission-modal") as HTMLDivElement;
+export const permissionText = document.getElementById("permission-text") as HTMLParagraphElement;
+export const permAllowBtn = document.getElementById("perm-allow") as HTMLButtonElement;
+export const permDenyBtn = document.getElementById("perm-deny") as HTMLButtonElement;
+export const sessionListEl = document.getElementById("session-list") as HTMLDivElement;
+export const newSessionBtn = document.getElementById("new-session-btn") as HTMLButtonElement;
+export const forkSessionBtn = document.getElementById("fork-session-btn") as HTMLButtonElement;
+export const deleteSessionBtn = document.getElementById("delete-session-btn") as HTMLButtonElement;

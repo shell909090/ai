@@ -71,6 +71,31 @@
             background: transparent;
             transition: background 0.1s;
         }
+        .session-item-active { background: #0f3460; }
+        .session-item-hover { background: #1e2d4e; }
+        .session-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-size: 0.8rem;
+            color: #ccc;
+            margin-bottom: 0.2rem;
+        }
+        .session-id { font-family: monospace; font-weight: 600; }
+        .session-date { color: #888; font-size: 0.75rem; }
+        .session-preview {
+            font-size: 0.75rem;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .session-placeholder {
+            padding: 1rem 0.75rem;
+            color: #666;
+            font-size: 0.85rem;
+            text-align: center;
+        }
         #chat-area {
             flex: 1;
             display: flex;

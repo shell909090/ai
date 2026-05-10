@@ -14,5 +14,4 @@ docs/tasks.md
 htmlcov/
 
 node_modules/
-package-lock.json
 little_agent/frontends/static/app.js
