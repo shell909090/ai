@@ -154,9 +154,6 @@ class SessionCore(Session):
 
     def _schedule_compress_if_needed(self, last_result: BackendTurnResult | None) -> None:
         """Evaluate §7.6.2 trigger criteria; schedule post-turn compress if triggered."""
-        if self.agent.compressor is None:
-            return
-
         cw = self.agent.context_window
         compress_ratio = self.agent.compress_ratio
 
@@ -183,8 +180,16 @@ class SessionCore(Session):
             triggered,
         )
 
-        if triggered:
-            self._compress_task = asyncio.create_task(self._run_post_turn_compress())
+        if not triggered:
+            return
+        if self.agent.compressor is None:
+            logger.warning(
+                "compress would trigger (ratio=%.3f > R=%.2f) but no compressor configured",
+                ratio,
+                compress_ratio,
+            )
+            return
+        self._compress_task = asyncio.create_task(self._run_post_turn_compress())
 
     async def _run_post_turn_compress(self) -> None:
         """Background task: compress history then resume the pending queue."""

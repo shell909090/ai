@@ -26,6 +26,7 @@ from little_agent.backends.openai import (
     _build_tool_calls,
     _chain_to_messages,
     _format_tool_result,
+    _node_to_message,
     _tool_map_to_openai_functions,
 )
 from little_agent.backends.protocol import BackendTurnResult
@@ -629,3 +630,44 @@ async def test_openai_backend_semaphore_releases_on_exception() -> None:
 
     result, _ = await asyncio.wait_for(_collect(backend.generate(session2)), timeout=1.0)  # type: ignore[arg-type]
     assert result.finish_reason == "completed"
+
+
+# ---------------------------------------------------------------------------
+# ToolCallNode.output_text in OpenAI _node_to_message
+# ---------------------------------------------------------------------------
+
+
+def test_tool_call_node_output_text_in_messages_openai() -> None:
+    """OpenAI _node_to_message includes content when output_text is non-empty."""
+    n = ToolCallNode(
+        id="n1",
+        prev=None,
+        output_text="I will use bash",
+        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+    )
+    msgs = _node_to_message(n)
+    assert len(msgs) == 1
+    msg = msgs[0]
+    assert msg["role"] == "assistant"
+    # content must be set to the output_text
+    assert msg.get("content") == "I will use bash"
+    # tool_calls must still be present
+    assert "tool_calls" in msg
+    assert len(msg["tool_calls"]) == 1
+    assert msg["tool_calls"][0]["function"]["name"] == "bash"
+
+
+def test_tool_call_node_empty_output_text_in_messages_openai() -> None:
+    """OpenAI _node_to_message omits content key when output_text is empty."""
+    n = ToolCallNode(
+        id="n2",
+        prev=None,
+        output_text="",
+        calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
+    )
+    msgs = _node_to_message(n)
+    assert len(msgs) == 1
+    msg = msgs[0]
+    assert msg["role"] == "assistant"
+    assert "content" not in msg
+    assert "tool_calls" in msg

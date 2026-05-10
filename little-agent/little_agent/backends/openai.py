@@ -95,7 +95,10 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
             }
             for call_id, call_data in n.calls.items()
         ]
-        return [{"role": "assistant", "tool_calls": tool_calls}]
+        msg: dict[str, Any] = {"role": "assistant", "tool_calls": tool_calls}
+        if n.output_text:
+            msg["content"] = n.output_text
+        return [msg]
     if isinstance(n, ToolResultNode):
         return [
             {

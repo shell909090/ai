@@ -181,16 +181,30 @@ def _load_backend(config: dict[str, Any]) -> Any:
 def _load_compressor(
     config: dict[str, Any], primary_backend: Any, backends_config: dict[str, Any]
 ) -> Any:
-    """Load compressor if backends.compressor is configured."""
-    compressor_cfg = backends_config.get("compressor")
-    if not isinstance(compressor_cfg, dict):
-        return None
+    """Load compressor, defaulting to primary backend when no dedicated backend is configured.
+
+    Set ``compressor: false`` in config to disable compression entirely.
+    """
     from little_agent.agent.compressor import LLMCompressor
 
-    compressor_backend = _build_backend(compressor_cfg, "compressor")
-    compressor_section = config.get("compressor") or {}
-    keep_turns = int(compressor_section.get("keep_turns", 5))
-    compressed_window = float(compressor_section.get("compressed_window", 0.2))
+    compressor_section = config.get("compressor")
+    # Explicit opt-out.
+    if compressor_section is False:
+        return None
+
+    if not isinstance(compressor_section, dict):
+        compressor_section = {}
+
+    # Use a dedicated compressor backend if configured; otherwise fall back to primary.
+    compressor_cfg = backends_config.get("compressor")
+    compressor_backend = (
+        _build_backend(compressor_cfg, "compressor")
+        if isinstance(compressor_cfg, dict)
+        else primary_backend
+    )
+
+    keep_turns = int(compressor_section.get("keep_turns", 3))
+    compressed_window = float(compressor_section.get("compressed_window", 0.15))
     compressed_window_tokens = int(compressed_window * primary_backend.context_window)
     return LLMCompressor(
         compressor_backend,
@@ -265,7 +279,7 @@ def main() -> None:
     permissions = _load_permissions(config, client)
 
     agent_cfg = config.get("agent") or {}
-    compress_ratio = float(agent_cfg.get("R", 0.5))
+    compress_ratio = float(agent_cfg.get("R", 0.75))
     if not (0 < compress_ratio <= 1):
         raise ValueError(f"agent.R must be in range (0, 1], got {compress_ratio}")
 

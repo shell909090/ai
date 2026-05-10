@@ -10,6 +10,7 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
+from little_agent.agent.nodes import ToolCallNode, UserPromptNode
 from little_agent.agent.session import MAX_TURN_ITERATIONS, SessionCore
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
@@ -963,3 +964,27 @@ async def test_cancel_interrupts_compress_task() -> None:
     # Cast to SessionCore to verify _active_turn is cleared after cancel.
     assert cast(SessionCore, session)._active_turn is False
     assert len(cancelled_flag) == 1 and cancelled_flag[0] is True
+
+
+# ---------------------------------------------------------------------------
+# ToolCallNode.output_text serialization round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_tool_call_node_output_text_preserved_in_chain() -> None:
+    """ToolCallNode.output_text survives to_dict / from_dict round-trip."""
+    prev = UserPromptNode(id="n0", prev=None, prompt="go")
+    node = ToolCallNode(
+        id="n1",
+        prev=prev,
+        output_text="I will use bash",
+        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+    )
+
+    serialized = node.to_dict()
+    assert serialized.get("output_text") == "I will use bash"
+
+    restored = ToolCallNode.from_dict(serialized, prev=prev)
+    assert isinstance(restored, ToolCallNode)
+    assert restored.output_text == "I will use bash"
+    assert restored.calls == node.calls

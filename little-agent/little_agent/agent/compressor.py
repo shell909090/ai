@@ -38,6 +38,8 @@ def _nodes_to_text(nodes: list[Node]) -> str:
             parts.append(f"Assistant: {n.text}")
         elif isinstance(n, ToolCallNode):
             calls_str = json.dumps(n.calls, ensure_ascii=False)
+            if n.output_text:
+                parts.append(f"Assistant: {n.output_text}")
             parts.append(f"[Tool calls: {calls_str}]")
         elif isinstance(n, ToolResultNode):
             results_str = json.dumps(n.results, ensure_ascii=False)
@@ -135,13 +137,13 @@ class LLMCompressor:
     def __init__(
         self,
         backend: Backend,
-        keep_turns: int = 5,
+        keep_turns: int = 3,
         compressed_window_tokens: int = 0,
     ) -> None:
         """Initialize LLMCompressor with backend and tuning parameters."""
-        if keep_turns < 3:
-            logger.warning("keep_turns=%d is too small; forcing to 3", keep_turns)
-            keep_turns = 3
+        if keep_turns < 1:
+            logger.warning("keep_turns=%d is too small; forcing to 1", keep_turns)
+            keep_turns = 1
         self._backend = backend
         self._keep_turns = keep_turns
         self._compressed_window_tokens = compressed_window_tokens
@@ -175,9 +177,15 @@ class LLMCompressor:
             if isinstance(n, UserPromptNode)
         ]
         if len(user_indices) <= self._keep_turns:
+            logger.info(
+                "compress: skipped — only %d user turns, keep_turns=%d",
+                len(user_indices),
+                self._keep_turns,
+            )
             return tail
         preserve_start_idx = user_indices[-self._keep_turns]
         if preserve_start_idx <= compress_start:
+            logger.info("compress: skipped — no nodes between summary boundary and preserve zone")
             return tail
 
         # Step 4: split zones

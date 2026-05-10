@@ -339,7 +339,7 @@ def test_main_agent_default_compress_ratio() -> None:
     mock_config = _mock_config({"api_key": "k"})
     mock_agent_cls = _run_main_with_config(mock_config)
     kwargs = mock_agent_cls.call_args.kwargs
-    assert kwargs["compress_ratio"] == 0.5
+    assert kwargs["compress_ratio"] == 0.75
 
 
 def test_main_agent_custom_compress_ratio() -> None:

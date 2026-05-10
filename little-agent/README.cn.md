@@ -45,7 +45,7 @@ frontend:
   type: cli                          # cli | web | acp
 ```
 
-### Anthropic 后端
+### 最简配置（Anthropic）
 
 ```yaml
 backends:
@@ -54,6 +54,46 @@ backends:
     model: claude-opus-4-5
     api_key: "sk-ant-..."            # 或设置 ANTHROPIC_API_KEY 环境变量
     system: "You are a helpful assistant."   # 可选系统提示词
+
+frontend:
+  type: cli
+```
+
+### 自动压缩
+
+little-agent 在上下文窗口接近上限时自动压缩会话历史。**无需任何配置**，压缩默认开启，使用主后端执行总结。
+
+当 `(input_tokens + output_tokens) / context_window` 超过 `agent.R`（默认 0.75）时，最旧的若干轮次被总结为 `SummaryNode`，原始历史被丢弃。最近 `compressor.keep_turns`（默认 3）轮次始终完整保留。
+
+**调整压缩参数：**
+
+```yaml
+agent:
+  R: 0.75                            # 上下文占用率超过 70% 时触发压缩（默认 0.75）
+
+compressor:
+  keep_turns: 3                      # 保留最近若干轮完整历史（默认 3）
+  compressed_window: 0.15            # 旧摘要总量超过 context_window 的 20% 时丢弃（默认 0.15）
+```
+
+**使用专用的低成本压缩后端（可选——节省费用）：**
+
+```yaml
+backends:
+  primary:
+    type: openai
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+  compressor:                        # 省略时自动使用 primary 后端
+    type: openai
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+```
+
+**完全禁用压缩：**
+
+```yaml
+compressor: false
 ```
 
 ### 完整配置示例
@@ -64,11 +104,11 @@ backends:
     type: openai
     model: gpt-4o
     api_key_env: OPENAI_API_KEY      # 从环境变量读取密钥
-    base_url: https://api.openai.com/v1   # 可选，代理时覆盖
+    base_url: https://api.openai.com/v1   # 可选，用于代理或本地模型
     timeout: 60.0
     max_concurrency: 1
     context_window: 128000
-  compressor:                        # 压缩专用后端（可选）
+  compressor:                        # 可选；省略时复用 primary 后端进行压缩
     type: openai
     model: gpt-4o-mini
     api_key_env: OPENAI_API_KEY
@@ -77,27 +117,22 @@ frontend:
   type: cli                          # cli | web | acp
 
 agent:
-  R: 0.7                             # token 占用率超过该值时触发压缩（0 < R ≤ 1）
+  R: 0.75                            # 上下文占用率超过该值时触发压缩（默认 0.75）
 
 compressor:
-  keep_turns: 5                      # 保留最近若干轮不压缩
-  compressed_window: 0.2             # 压缩目标大小占 context_window 的比例
+  keep_turns: 3                      # 保留最近若干轮完整历史（默认 3）
+  compressed_window: 0.15            # 旧摘要总量上限，占 context_window 的比例（默认 0.15）
+  # 设置 compressor: false 可完全禁用压缩。
 
-permissions:                          # 检查器列表，从上到下依次执行
+permissions:                         # 检查器列表，从上到下依次执行
   - type: blackwhitelist             # 黑名单优先于白名单；无匹配则询问用户
     blacklist:
       - "dangerous_tool"             # 始终拒绝
     whitelist:
       - "read_file"                  # 始终放行，不询问
       - "list_dir"
-  # 未匹配的工具转交用户决定（运行时弹出提示）
-  #
-  # 放行所有工具（适合自动化测试）：
-  # permissions:
-  #   - type: yesman
-  #
-  # 每次均询问用户（省略 permissions 时的默认行为）：
-  # permissions: []   # 或直接不写该字段
+  # 放行所有工具：  - type: yesman
+  # 每次均询问（默认）：省略 permissions 字段或设为 []
 
 memory:
   type: file
@@ -105,7 +140,8 @@ memory:
   backend: primary                   # 用于记忆总结的后端
 
 tools:
-  providers: []                      # MCP 服务器配置列表
+  providers: []                      # Python 模块工具列表
+  task_tool: true                    # 设为 false 可禁用内置 create_task 工具
 
 logging:
   version: 1
@@ -123,6 +159,75 @@ logging:
       level: INFO
       handlers: [console]
 ```
+
+### 配置参考
+
+#### `backends.primary` / `backends.compressor`
+
+`primary` 和 `compressor` 使用相同的字段。  
+`compressor` 为可选——省略时直接复用 primary 后端执行压缩。
+
+| 字段 | 是否必填 | 默认值 | 说明 |
+|------|----------|--------|------|
+| `type` | **必填** | — | `openai` 或 `anthropic` |
+| `model` | **必填** | — | 模型名称，如 `gpt-4o`、`claude-opus-4-5` |
+| `api_key` | 二选一 | — | 直接填写 API Key，与 `api_key_env` 互斥 |
+| `api_key_env` | 二选一 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 存放 API Key 的环境变量名 |
+| `base_url` | 否 | 各厂商默认地址 | 覆盖 API 端点（代理、本地模型、LiteLLM） |
+| `timeout` | 否 | `60.0` | 请求超时时间（秒） |
+| `max_concurrency` | 否 | `1` | 该后端最大并发请求数 |
+| `context_window` | 否 | `128000` | 模型 token 上限，用于计算压缩触发比例 |
+| `system` | 否 | — | 系统提示词（**仅 Anthropic**） |
+| `max_tokens` | 否 | `8192` | 单次请求最大输出 token 数（**仅 Anthropic**） |
+
+`api_key` 与 `api_key_env` 至少有一个能解析到非空值。
+
+#### `agent`
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `R` | `0.75` | 压缩触发比例：`total_tokens / context_window > R` 时触发压缩 |
+
+#### `compressor`
+
+设置 `compressor: false` 可完全禁用压缩。
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `keep_turns` | `3` | 最近若干轮完整保留，不参与压缩 |
+| `compressed_window` | `0.15` | 旧摘要节点总量超过 `context_window` 的该比例时开始丢弃 |
+
+#### `frontend`
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `type` | `cli` | `cli`、`web` 或 `acp` |
+| `host` | `127.0.0.1` | 监听地址（**仅 web**） |
+| `port` | `8080` | 监听端口（**仅 web**） |
+
+#### `permissions`
+
+检查器列表，从上到下依次执行。省略或设为 `[]` 表示每次工具调用均询问用户。
+
+| 类型 | 字段 | 行为 |
+|------|------|------|
+| `blackwhitelist` | `blacklist`、`whitelist`（工具名称模式列表，支持 fnmatch） | 黑名单优先；命中黑名单 → 拒绝；命中白名单 → 放行；无匹配 → 交给下一个检查器 |
+| `yesman` | — | 无条件放行所有工具 |
+
+#### `memory`
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `type` | — | `file`（当前唯一支持的类型） |
+| `path` | — | 存储记忆的 JSONL 文件路径 |
+| `backend` | `primary` | 用于记忆总结的后端名称 |
+
+#### `tools`
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `providers` | `[]` | Python 模块提供者列表，每项格式为 `{type: python, module: "my.module"}`；模块须暴露 `create_provider()` 方法 |
+| `task_tool` | `true` | 设为 `false` 可禁用内置 `create_task` 工具 |
 
 ### 运行
 

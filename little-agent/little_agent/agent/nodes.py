@@ -81,19 +81,22 @@ class ToolCallNode(Node):
     """Tool call node."""
 
     kind: ClassVar[str] = "tool_call"
+    output_text: str = ""
     calls: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, JSONValue]:
         base = Node.to_dict(self)
+        base["output_text"] = self.output_text
         base["calls"] = self.calls  # type: ignore[assignment]
         return base
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
+        output_text = str(data.get("output_text") or "")
         calls = data.get("calls", {})
         if not isinstance(calls, dict):
             raise ValueError("ToolCallNode 'calls' must be a dict")
-        return cls(id=data["id"], prev=prev, calls=calls)
+        return cls(id=data["id"], prev=prev, output_text=output_text, calls=calls)
 
 
 @dataclass(slots=True)

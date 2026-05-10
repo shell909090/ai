@@ -57,6 +57,7 @@ class ToolInvoker:
         node = ToolCallNode(
             id=str(uuid.uuid4()),
             prev=self._session.tail,
+            output_text=result.output_text or "",
             calls={
                 tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
                 for tc in result.tool_calls

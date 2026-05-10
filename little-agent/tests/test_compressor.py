@@ -375,41 +375,35 @@ def test_apply_w_limit_zero_means_no_limit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. keep_turns < 3 is forced to 3 with a warning
+# 12. keep_turns < 1 is forced to 1 with a warning
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_keep_turns_below_3_forced_to_3() -> None:
-    """keep_turns=1 emits a warning and behaves like keep_turns=3."""
+async def test_keep_turns_below_1_forced_to_1() -> None:
+    """keep_turns=0 emits a warning and behaves like keep_turns=1."""
     backend = MockBackend(
-        [BackendTurnResult(output_text="sum1", tool_calls=[], finish_reason="completed")]
+        [
+            BackendTurnResult(output_text="sum1", tool_calls=[], finish_reason="completed"),
+            BackendTurnResult(output_text="sum2", tool_calls=[], finish_reason="completed"),
+        ]
     )
 
     with patch.object(logging.getLogger("little_agent.agent.compressor"), "warning") as mock_warn:
-        compressor = LLMCompressor(backend, keep_turns=1)
+        compressor = LLMCompressor(backend, keep_turns=0)
         mock_warn.assert_called_once()
-        assert "keep_turns" in mock_warn.call_args[0][0] or "1" in str(mock_warn.call_args)
+        assert "keep_turns" in mock_warn.call_args[0][0] or "0" in str(mock_warn.call_args)
 
-    # 4 turns with effective keep_turns=3: exactly 1 turn compressed, 3 kept
+    # 3 turns with effective keep_turns=1: 2 turns compressed, 1 kept
     tail: Node | None = None
-    for i in range(4):
+    for i in range(3):
         tail = _make_turn(f"t{i}", tail)
     assert tail is not None
 
     result = await compressor.compress(tail)
     assert result is not None
-
     chain = _chain_to_list(result)
-
-    # Find the preserved zone after the last SummaryNode
-    last_summary_pos = -1
-    for idx, n in enumerate(chain):
-        if isinstance(n, SummaryNode):
-            last_summary_pos = idx
-
-    preserved = chain[last_summary_pos + 1 :]
-    assert _count_turns(preserved) == 3
+    assert _count_turns(chain) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -485,3 +479,60 @@ def test_nodes_to_text_includes_tool_nodes() -> None:
     assert "run tool" in text
     assert "echo" in text
     assert "completed" in text
+
+
+# ---------------------------------------------------------------------------
+# 15. _nodes_to_text includes ToolCallNode.output_text
+# ---------------------------------------------------------------------------
+
+
+def test_nodes_to_text_includes_tool_call_output_text() -> None:
+    """_nodes_to_text prepends 'Assistant: <output_text>' before tool-call line when non-empty."""
+    nodes_with_text: list[Node] = [
+        UserPromptNode(id="1", prev=None, prompt="run tool"),
+        ToolCallNode(
+            id="2",
+            prev=None,
+            output_text="I will use bash",
+            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        ),
+    ]
+    text = _nodes_to_text(nodes_with_text)
+    lines = text.splitlines()
+    # There should be a line starting with "Assistant: I will use bash"
+    assert any(line.startswith("Assistant: I will use bash") for line in lines), (
+        f"Expected 'Assistant: I will use bash' line, got: {lines}"
+    )
+    # There should also be a tool-call line
+    assert any("[Tool calls:" in line for line in lines), (
+        f"Expected '[Tool calls:' line, got: {lines}"
+    )
+    # The assistant line must appear before the tool-call line
+    assistant_idx = next(
+        i for i, line in enumerate(lines) if line.startswith("Assistant: I will use bash")
+    )
+    tool_idx = next(i for i, line in enumerate(lines) if "[Tool calls:" in line)
+    assert assistant_idx < tool_idx
+
+
+def test_nodes_to_text_tool_call_no_output_text() -> None:
+    """_nodes_to_text omits 'Assistant:' line when output_text is empty."""
+    nodes_no_text: list[Node] = [
+        UserPromptNode(id="1", prev=None, prompt="run tool"),
+        ToolCallNode(
+            id="2",
+            prev=None,
+            output_text="",
+            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        ),
+    ]
+    text = _nodes_to_text(nodes_no_text)
+    lines = text.splitlines()
+    # No assistant line (the User prompt line starts with "User:", not "Assistant:")
+    assert not any(line.startswith("Assistant:") for line in lines), (
+        f"Expected no 'Assistant:' line when output_text is empty, got: {lines}"
+    )
+    # The tool-call line must still be present
+    assert any("[Tool calls:" in line for line in lines), (
+        f"Expected '[Tool calls:' line, got: {lines}"
+    )

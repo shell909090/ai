@@ -95,16 +95,21 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
         ]
 
     if isinstance(n, ToolCallNode):
-        tool_use_blocks: list[dict[str, Any]] = [
-            {
-                "type": "tool_use",
-                "id": call_id,
-                "name": call_data["tool_name"],
-                "input": call_data["arguments"],
-            }
-            for call_id, call_data in n.calls.items()
-        ]
-        return [{"role": "assistant", "content": tool_use_blocks}]
+        content_blocks: list[dict[str, Any]] = []
+        if n.output_text:
+            content_blocks.append({"type": "text", "text": n.output_text})
+        content_blocks.extend(
+            [
+                {
+                    "type": "tool_use",
+                    "id": call_id,
+                    "name": call_data["tool_name"],
+                    "input": call_data["arguments"],
+                }
+                for call_id, call_data in n.calls.items()
+            ]
+        )
+        return [{"role": "assistant", "content": content_blocks}]
 
     if isinstance(n, ToolResultNode):
         tool_result_blocks: list[dict[str, Any]] = [

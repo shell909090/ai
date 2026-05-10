@@ -25,7 +25,7 @@ class AgentCore(Agent):
         compressor: Compressor | None = None,
         permissions: PermissionChecker | None = None,
         memory: Any = None,
-        compress_ratio: float = 0.5,
+        compress_ratio: float = 0.75,
         context_window: int = 128000,
     ) -> None:
         self.client = client

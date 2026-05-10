@@ -75,6 +75,7 @@ class AssistantResponseNode(Node):
 @dataclass(slots=True)
 class ToolCallNode(Node):
     kind: ClassVar[str] = "tool_call"
+    output_text: str                    # 模型在发起 tool call 前输出的文字（reasoning/说明），可为空
     calls: dict[str, dict[str, Any]]   # call_id -> {tool_name, arguments}
 
 
@@ -124,6 +125,8 @@ class SummaryNode(Node):
 ### 2.3 Tool Call 与 Tool Result 节点约束
 
 一次模型返回的一组并行 tool calls 落为一个 `ToolCallNode`，其后紧接一个 `ToolResultNode` 承载这组调用的结果。
+
+`ToolCallNode.output_text`：模型在本次 tool call 之前输出的文字（reasoning、说明等），可为空字符串。此字段必须保留在节点链中——它记录了模型为何调用该工具，是历史还原和压缩摘要的重要上下文。
 
 `ToolCallNode.calls` 结构：
 
@@ -177,6 +180,7 @@ class SummaryNode(Node):
       - 若 backend 抛 context-overflow 错误：进入 §2.6.4 in-turn retry 路径。
    2. `result.finish_reason == "completed"`：追加 `AssistantResponseNode`（冻结），跳出主循环，返回 `("end_turn", output_text)`。
    3. `finish_reason == "tool_call"`：
+      - 若 `result.output_text` 非空，将其存入 `ToolCallNode.output_text`（模型发起 tool call 前的 reasoning/说明，需保留在链中供压缩和历史还原使用）。
       - 追加 `ToolCallNode`（冻结），通过 `Client.update(session, tool_call)` 通知 frontend。
       - 追加 `ToolResultNode`（可变）。
       - 调用前检查每个 tool name 是否在本轮允许列表内；不在列表的 call 直接记录失败（`status="failed"`，`content="Tool not in allowed list"`），不实际调用。
@@ -232,13 +236,13 @@ compress 任务运行期间复用 session 的活跃 turn 标记（与正常 turn
 
 判据（满足任一条件即调度）：
 
-1. **token 阈值（首选）**：本 turn 最后一次 backend 调用的 `usage.input_tokens + usage.output_tokens` 与该 backend 的 `context_window` 相比，比值大于 `R`。`R` 由 agent 配置项 `R` 调整，默认 `0.5`，取值范围 (0, 1]。
+1. **token 阈值（首选）**：本 turn 最后一次 backend 调用的 `usage.input_tokens + usage.output_tokens` 与该 backend 的 `context_window` 相比，比值大于 `R`。`R` 由 agent 配置项 `R` 调整，默认 `0.75`，取值范围 (0, 1]。
 2. **字符兜底**：本 turn 没有有效 usage 数据（usage 为 None 或字段为 0），从 tail 往前累加每个节点序列化后的字符数，除以 4 得到 token 估算值，同样比较 `R` 阈值。
 3. **context-overflow 兜底**：见 §2.6.4 in-turn retry 路径，turn 内同步触发。
 
 #### 2.6.3 算法
 
-保留窗口：最近 `K` 个 turn 不参与压缩。`K` 由 compressor 配置项 `keep_turns` 调整，默认 `5`，下限 `3`（配置低于 3 时报警并强制使用 3）。
+保留窗口：最近 `K` 个 turn 不参与压缩。`K` 由 compressor 配置项 `keep_turns` 调整，默认 `3`，下限 `1`（配置低于 1 时报警并强制使用 1）。
 
 turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之前的所有节点（含 ToolCallNode / ToolResultNode / AssistantResponseNode）属于同一个 turn。
 
@@ -250,7 +254,7 @@ turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之
 4. **压缩**：每个被压 turn 一次 LLM 调用，压成一条 `SummaryNode`，保留关键事实、决策和上下文（"相对详细"，非极致压缩）。多个被压 turn 通过 `asyncio.gather` 并发发起调用，实际并发由 backend 层的 `max_concurrency` 限制；按时序串接结果。任一并发请求失败按 §2.6.4 处理（all-or-nothing：丢弃整批，旧链保留）。
 5. **新链拼装**：上界之前的旧 SummaryNode + 本次新产出的 SummaryNode + 保留区。
 
-历史上限 `W = compressed_window * context_window`（tokens）。`compressed_window` 是 compressor 配置项，单位为比例（取值范围 (0, 1)），默认 `0.2`；`context_window` 取自 primary backend 配置。
+历史上限 `W = compressed_window * context_window`（tokens）。`compressed_window` 是 compressor 配置项，单位为比例（取值范围 (0, 1)），默认 `0.15`；`context_window` 取自 primary backend 配置。
 
 历史上限处理：
 
@@ -797,11 +801,12 @@ class Backend(Protocol):
 | `api_key` | string | — | 与 `api_key_env` 二选一 |
 | `api_key_env` | string | — | 环境变量名，与 `api_key` 二选一 |
 | `system` | string | `null` | System prompt，不属于对话历史 |
-| `context_window` | int | 128000 | 同时作为 `max_tokens` 上限（Anthropic 必填） |
+| `context_window` | int | 128000 | 整个请求（历史 + 输出）的 token 上限，用于压缩触发判断 |
+| `max_tokens` | int | 8192 | 单次响应的最大输出 token 数（Anthropic 必填，与 `context_window` 是不同维度的限制） |
 | `max_concurrency` | int | 1 | 并发控制，同 §5.3 |
 | `base_url` | string | `null` | 可选，自定义 API 地址 |
 
-`max_tokens` 直接使用 `context_window` 值，无需单独配置。
+`context_window` 控制请求总长度（用于压缩触发），`max_tokens` 控制单次输出上限，两者独立配置。默认 `max_tokens=8192` 足够大多数响应，同时避免极端情况下模型输出过长导致高延迟和费用。
 
 #### 5.4.2 节点链 → Anthropic 消息转换
 
@@ -931,7 +936,7 @@ agent:
   R: 0.5                                 # post-turn 触发阈值，取值范围 (0, 1]，默认 0.5
 
 compressor:
-  keep_turns: 5                          # 不参与压缩的最近 turn 数，下限 3，默认 5
+  keep_turns: 3                          # 不参与压缩的最近 turn 数，下限 1，默认 3
   compressed_window: 0.2                 # 压缩历史上限比例，W = compressed_window * primary.context_window，默认 0.2
 
 tools:

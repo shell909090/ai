@@ -392,6 +392,50 @@ class TestChainToMessages:
         assert block["name"] == "bash"
         assert block["input"] == {"cmd": "ls"}
 
+    def test_tool_call_node_with_output_text(self) -> None:
+        """ToolCallNode with output_text produces text block before tool_use block."""
+        mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
+        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n2 = ToolCallNode(
+            id="2",
+            prev=n1,
+            output_text="I will use bash",
+            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        )
+        session = _make_session_with_tail(n2)
+        msgs, _ = mod._chain_to_messages(session)
+        assert len(msgs) == 2
+        assistant_msg = msgs[1]
+        assert assistant_msg["role"] == "assistant"
+        content = assistant_msg["content"]
+        assert isinstance(content, list)
+        # First block must be the text block for output_text
+        assert content[0]["type"] == "text"
+        assert content[0]["text"] == "I will use bash"
+        # Second block must be the tool_use block
+        assert content[1]["type"] == "tool_use"
+        assert content[1]["id"] == "c1"
+        assert content[1]["name"] == "bash"
+
+    def test_tool_call_node_empty_output_text(self) -> None:
+        """ToolCallNode with empty output_text produces only tool_use block."""
+        mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
+        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n2 = ToolCallNode(
+            id="2",
+            prev=n1,
+            output_text="",
+            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        )
+        session = _make_session_with_tail(n2)
+        msgs, _ = mod._chain_to_messages(session)
+        assert len(msgs) == 2
+        content = msgs[1]["content"]
+        assert isinstance(content, list)
+        # Only one block: the tool_use block, no text block
+        assert len(content) == 1
+        assert content[0]["type"] == "tool_use"
+
     def test_tool_result_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="go")
