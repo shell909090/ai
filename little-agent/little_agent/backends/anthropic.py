@@ -20,7 +20,7 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _StreamingBackend
+from ._base import _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _format_tool_result,
     _log_streaming_request,
@@ -152,65 +152,53 @@ def _extract_usage(usage_obj: Any) -> dict[str, int]:
     return usage
 
 
-def _handle_stream_event(
-    event: Any,
-    text_chunks: list[str],
-    thinking_chunks: list[str],
-    tool_blocks_acc: dict[int, dict[str, Any]],
-) -> None:
-    """Update accumulators from a single stream event (no yields)."""
-    event_type = event.type
-    if event_type == "content_block_start":
-        block = event.content_block
-        idx: int = event.index
-        if block.type == "tool_use":
-            tool_blocks_acc[idx] = {"id": block.id, "name": block.name, "input_json": ""}
-    elif event_type == "content_block_delta":
-        delta = event.delta
-        idx = event.index
-        delta_type = delta.type
-        if delta_type == "text_delta":
-            text_chunks.append(delta.text)
-        elif delta_type == "thinking_delta":
-            thinking_chunks.append(delta.thinking)
-        elif delta_type == "input_json_delta" and idx in tool_blocks_acc:
-            tool_blocks_acc[idx]["input_json"] += delta.partial_json
+def _merge_usage(acc: _StreamAccumulator, usage_obj: Any) -> None:
+    """Merge usage data from a stream event into the accumulator."""
+    if acc.usage is None:
+        acc.usage = {}
+    acc.usage.update(_extract_usage(usage_obj))
 
 
-def _make_stream_update(event: Any) -> SessionUpdate | None:
-    """Return a SessionUpdate to yield for chunk events, or None."""
-    if event.type != "content_block_delta":
-        return None
+def _handle_content_delta(event: Any, acc: _StreamAccumulator) -> SessionUpdate | None:
+    """Dispatch a content_block_delta event; update acc and optionally yield update."""
     delta = event.delta
-    if delta.type == "text_delta":
-        return SessionUpdate(type="agent_message_chunk", data={"text": delta.text})
-    if delta.type == "thinking_delta":
-        return SessionUpdate(type="thinking_chunk", data={"text": delta.thinking})
+    match delta.type:
+        case "text_delta":
+            acc.text.append(delta.text)
+            return SessionUpdate(type="agent_message_chunk", data={"text": delta.text})
+        case "thinking_delta":
+            acc.thinking.append(delta.thinking)
+            return SessionUpdate(type="thinking_chunk", data={"text": delta.thinking})
+        case "input_json_delta":
+            if event.index in acc.tool_blocks:
+                acc.tool_blocks[event.index]["input_json"] += delta.partial_json
     return None
 
 
-def _update_metadata(
-    event: Any,
-    finish_reason_raw: str,
-    usage: dict[str, int] | None,
-) -> tuple[str, dict[str, int] | None]:
-    """Return updated (finish_reason_raw, usage) from a metadata event."""
-    event_type = event.type
-    if event_type == "message_delta":
-        delta = event.delta
-        if hasattr(delta, "stop_reason") and delta.stop_reason:
-            finish_reason_raw = delta.stop_reason
-        if hasattr(event, "usage") and event.usage:
-            if usage is None:
-                usage = {}
-            usage.update(_extract_usage(event.usage))
-    elif event_type == "message_start":
-        msg = event.message
-        if hasattr(msg, "usage") and msg.usage:
-            if usage is None:
-                usage = {}
-            usage.update(_extract_usage(msg.usage))
-    return finish_reason_raw, usage
+def _process_event(event: Any, acc: _StreamAccumulator) -> SessionUpdate | None:
+    """Update ``acc`` from one stream event; return SessionUpdate to yield, or None."""
+    match event.type:
+        case "content_block_start":
+            block = event.content_block
+            if block.type == "tool_use":
+                acc.tool_blocks[event.index] = {
+                    "id": block.id,
+                    "name": block.name,
+                    "input_json": "",
+                }
+        case "content_block_delta":
+            return _handle_content_delta(event, acc)
+        case "message_start":
+            msg = event.message
+            if hasattr(msg, "usage") and msg.usage:
+                _merge_usage(acc, msg.usage)
+        case "message_delta":
+            delta = event.delta
+            if hasattr(delta, "stop_reason") and delta.stop_reason:
+                acc.finish_reason_raw = delta.stop_reason
+            if hasattr(event, "usage") and event.usage:
+                _merge_usage(acc, event.usage)
+    return None
 
 
 class AnthropicBackend(_StreamingBackend):
@@ -284,22 +272,10 @@ class AnthropicBackend(_StreamingBackend):
 
             start_time = time.perf_counter()
 
-            text_chunks: list[str] = []
-            thinking_chunks: list[str] = []
-            # Accumulate tool input JSON per content block index
-            tool_blocks_acc: dict[int, dict[str, Any]] = {}
-            usage: dict[str, int] | None = None
-            finish_reason_raw = "end_turn"
+            acc = _StreamAccumulator(finish_reason_raw="end_turn")
 
             async for event in self._generate_stream_inner(messages, tools, system_injected):
-                _handle_stream_event(
-                    event,
-                    text_chunks,
-                    thinking_chunks,
-                    tool_blocks_acc,
-                )
-                finish_reason_raw, usage = _update_metadata(event, finish_reason_raw, usage)
-                update = _make_stream_update(event)
+                update = _process_event(event, acc)
                 if update is not None:
                     yield update
 
@@ -307,8 +283,8 @@ class AnthropicBackend(_StreamingBackend):
 
             # Build tool calls from accumulated data
             tool_calls: list[BackendToolCall] = []
-            for idx in sorted(tool_blocks_acc.keys()):
-                tb = tool_blocks_acc[idx]
+            for idx in sorted(acc.tool_blocks.keys()):
+                tb = acc.tool_blocks[idx]
                 raw_input = tb["input_json"]
                 tc_error: str | None = None
                 if raw_input:
@@ -330,17 +306,17 @@ class AnthropicBackend(_StreamingBackend):
                 )
 
             finish_reason: Literal["completed", "tool_call"] = (
-                "tool_call" if finish_reason_raw == "tool_use" else "completed"
+                "tool_call" if acc.finish_reason_raw == "tool_use" else "completed"
             )
 
             _log_streaming_response(
-                logger, "Anthropic", self._model, finish_reason_raw, usage, elapsed
+                logger, "Anthropic", self._model, acc.finish_reason_raw, acc.usage, elapsed
             )
 
             yield BackendTurnResult(
-                output_text="".join(text_chunks),
+                output_text=acc.output_text(),
                 tool_calls=tool_calls,
                 finish_reason=finish_reason,
-                usage=usage,
-                thinking_text="".join(thinking_chunks) or None,
+                usage=acc.usage,
+                thinking_text=acc.thinking_text(),
             )

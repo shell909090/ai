@@ -20,7 +20,7 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _StreamingBackend
+from ._base import _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _format_tool_result,
     _log_streaming_request,
@@ -110,18 +110,18 @@ def _chain_to_messages(session: "SessionCore" | Node) -> list[dict[str, Any]]:
     return messages
 
 
-def _accumulate_tool_call_delta(tool_calls_acc: dict[int, dict[str, str]], tc_delta: Any) -> None:
+def _accumulate_tool_call_delta(tool_blocks: dict[int, dict[str, Any]], tc_delta: Any) -> None:
     """Merge one streaming tool-call delta into the running accumulator."""
     idx = tc_delta.index
-    if idx not in tool_calls_acc:
-        tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+    if idx not in tool_blocks:
+        tool_blocks[idx] = {"id": "", "name": "", "arguments": ""}
     if tc_delta.id:
-        tool_calls_acc[idx]["id"] += tc_delta.id
+        tool_blocks[idx]["id"] += tc_delta.id
     if tc_delta.function:
         if tc_delta.function.name:
-            tool_calls_acc[idx]["name"] += tc_delta.function.name
+            tool_blocks[idx]["name"] += tc_delta.function.name
         if tc_delta.function.arguments:
-            tool_calls_acc[idx]["arguments"] += tc_delta.function.arguments
+            tool_blocks[idx]["arguments"] += tc_delta.function.arguments
 
 
 _OPEN_TAG = "<think>"
@@ -176,16 +176,12 @@ class ThinkTagParser:
         return updates
 
 
-def _process_delta(
-    delta: Any,
-    thinking_chunks: list[str],
-    tool_calls_acc: dict[int, dict[str, str]],
-) -> tuple[str | None, list[SessionUpdate]]:
+def _process_delta(delta: Any, acc: _StreamAccumulator) -> tuple[str | None, list[SessionUpdate]]:
     """Collect raw content and SessionUpdate events from one streaming delta.
 
-    Returns (raw_content, updates) where raw_content is the delta.content string
-    (if any) to be fed through ThinkTagParser by the caller, and updates contains
-    any thinking/tool events ready to emit directly.
+    Returns (raw_content, updates): ``raw_content`` is fed through
+    ThinkTagParser by the caller; ``updates`` are reasoning / tool events
+    ready to yield directly.
     """
     raw_content: str | None = None
     updates: list[SessionUpdate] = []
@@ -193,25 +189,21 @@ def _process_delta(
         raw_content = delta.content
     reasoning = getattr(delta, "reasoning_content", None)
     if reasoning:
-        thinking_chunks.append(reasoning)
+        acc.thinking.append(reasoning)
         updates.append(SessionUpdate(type="thinking_chunk", data={"text": reasoning}))
     if delta.tool_calls:
         for tc_delta in delta.tool_calls:
-            _accumulate_tool_call_delta(tool_calls_acc, tc_delta)
+            _accumulate_tool_call_delta(acc.tool_blocks, tc_delta)
     return raw_content, updates
 
 
-def _drain_parser(
-    updates: list[SessionUpdate],
-    text_chunks: list[str],
-    thinking_chunks: list[str],
-) -> list[SessionUpdate]:
+def _drain_parser(updates: list[SessionUpdate], acc: _StreamAccumulator) -> list[SessionUpdate]:
     """Route parser output into accumulators; return same updates for yielding."""
     for u in updates:
         if u.type == "agent_message_chunk":
-            text_chunks.append(u.data["text"])  # type: ignore[arg-type]
+            acc.text.append(u.data["text"])  # type: ignore[arg-type]
         else:
-            thinking_chunks.append(u.data["text"])  # type: ignore[arg-type]
+            acc.thinking.append(u.data["text"])  # type: ignore[arg-type]
     return updates
 
 
@@ -228,10 +220,10 @@ def _extract_chunk_usage(usage_obj: Any) -> dict[str, int]:
     return usage
 
 
-def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[BackendToolCall]:
+def _build_tool_calls(tool_blocks: dict[int, dict[str, Any]]) -> list[BackendToolCall]:
     """Build BackendToolCall list from accumulated streaming deltas."""
     result = []
-    for tc_data in (tool_calls_acc[i] for i in sorted(tool_calls_acc.keys())):
+    for tc_data in (tool_blocks[i] for i in sorted(tool_blocks.keys())):
         raw_args = tc_data["arguments"]
         error: str | None = None
         if raw_args:
@@ -325,11 +317,7 @@ class OpenAIBackend(_StreamingBackend):
             start_time = time.perf_counter()
             stream = await self._open_stream(messages, tools)
 
-            text_chunks: list[str] = []
-            thinking_chunks: list[str] = []
-            tool_calls_acc: dict[int, dict[str, str]] = {}
-            usage: dict[str, int] | None = None
-            finish_reason_raw = "stop"
+            acc = _StreamAccumulator(finish_reason_raw="stop")
             parser = ThinkTagParser()
 
             async for chunk in stream:
@@ -337,36 +325,32 @@ class OpenAIBackend(_StreamingBackend):
                     delta = chunk.choices[0].delta
                     fr = chunk.choices[0].finish_reason
                     if fr is not None:
-                        finish_reason_raw = fr
-                    raw_content, direct_updates = _process_delta(
-                        delta, thinking_chunks, tool_calls_acc
-                    )
+                        acc.finish_reason_raw = fr
+                    raw_content, direct_updates = _process_delta(delta, acc)
                     for update in direct_updates:
                         yield update
                     if raw_content:
-                        for update in _drain_parser(
-                            parser.feed(raw_content), text_chunks, thinking_chunks
-                        ):
+                        for update in _drain_parser(parser.feed(raw_content), acc):
                             yield update
                 if chunk.usage:
-                    usage = _extract_chunk_usage(chunk.usage)
+                    acc.usage = _extract_chunk_usage(chunk.usage)
 
-            for update in _drain_parser(parser.flush(), text_chunks, thinking_chunks):
+            for update in _drain_parser(parser.flush(), acc):
                 yield update
 
             elapsed = time.perf_counter() - start_time
             finish_reason: Literal["completed", "tool_call"] = (
-                "tool_call" if finish_reason_raw == "tool_calls" else "completed"
+                "tool_call" if acc.finish_reason_raw == "tool_calls" else "completed"
             )
 
             _log_streaming_response(
-                logger, "OpenAI", self._model, finish_reason_raw, usage, elapsed
+                logger, "OpenAI", self._model, acc.finish_reason_raw, acc.usage, elapsed
             )
 
             yield BackendTurnResult(
-                output_text="".join(text_chunks),
-                tool_calls=_build_tool_calls(tool_calls_acc),
+                output_text=acc.output_text(),
+                tool_calls=_build_tool_calls(acc.tool_blocks),
                 finish_reason=finish_reason,
-                usage=usage,
-                thinking_text="".join(thinking_chunks) or None,
+                usage=acc.usage,
+                thinking_text=acc.thinking_text(),
             )
