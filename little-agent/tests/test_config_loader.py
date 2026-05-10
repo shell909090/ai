@@ -2,82 +2,54 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from little_agent.main import load_providers_from_config
-from little_agent.tools.protocol import ToolProvider
+from little_agent.tools.bash import BashToolProvider
 
 
-class FakeProvider(ToolProvider):
-    """Fake provider for testing."""
-
-    def __iter__(self):  # type: ignore[override]
-        """Yield no tools."""
-        return iter([])
-
-
-def test_empty_config_returns_empty() -> None:
-    """Test empty config returns empty provider list."""
+def test_empty_config_always_includes_bash() -> None:
+    """Empty providers config still loads BashToolProvider."""
     result = load_providers_from_config({})
-    assert result == []
+    assert any(isinstance(p, BashToolProvider) for p in result)
 
 
-def test_python_provider_loaded() -> None:
-    """Test python provider loaded successfully."""
-    fake = FakeProvider()
-    mock_module = MagicMock()
-    mock_module.create_provider.return_value = fake
+def test_extra_provider_loaded() -> None:
+    """A class path in providers list is imported and instantiated."""
+    fake_instance = MagicMock()
+    fake_cls = MagicMock(return_value=fake_instance)
+    fake_mod = MagicMock()
+    fake_mod.FakeProvider = fake_cls
 
-    config = {"tools": {"providers": [{"type": "python", "module": "fake_module"}]}}
+    config = {"tools": {"providers": ["mypackage.mymod.FakeProvider"]}}
 
-    with patch("importlib.import_module", return_value=mock_module):
+    with patch("importlib.import_module", return_value=fake_mod) as mock_import:
         result = load_providers_from_config(config)
-        assert len(result) == 1
-        assert result[0] is fake
+
+    mock_import.assert_any_call("mypackage.mymod")
+    fake_cls.assert_called_once_with()
+    assert fake_instance in result
 
 
-def test_python_provider_missing_module_skipped() -> None:
-    """Test python provider missing module is skipped."""
-    config = {"tools": {"providers": [{"type": "python"}]}}
-
+def test_duplicate_provider_loaded_once() -> None:
+    """Duplicate class paths result in a single instance."""
+    config = {
+        "tools": {
+            "providers": [
+                "little_agent.tools.bash.BashToolProvider",
+                "little_agent.tools.bash.BashToolProvider",
+            ]
+        }
+    }
     result = load_providers_from_config(config)
-    assert result == []
+    bash_providers = [p for p in result if isinstance(p, BashToolProvider)]
+    assert len(bash_providers) == 1
 
 
-def test_python_provider_no_create_provider_skipped() -> None:
-    """Test python provider without create_provider is skipped."""
-    mock_module = MagicMock()
-    del mock_module.create_provider
-
-    config = {"tools": {"providers": [{"type": "python", "module": "fake_module"}]}}
-
-    with patch("importlib.import_module", return_value=mock_module):
-        result = load_providers_from_config(config)
-        assert result == []
-
-
-def test_python_provider_not_toolprovider_skipped() -> None:
-    """Test python provider returning non-ToolProvider is skipped."""
-    mock_module = MagicMock()
-    mock_module.create_provider.return_value = "not_a_provider"
-
-    config = {"tools": {"providers": [{"type": "python", "module": "fake_module"}]}}
-
-    with patch("importlib.import_module", return_value=mock_module):
-        result = load_providers_from_config(config)
-        assert result == []
-
-
-def test_python_provider_import_error_skipped() -> None:
-    """Test python provider import failure is skipped."""
-    config = {"tools": {"providers": [{"type": "python", "module": "bad_module"}]}}
-
-    with patch("importlib.import_module", side_effect=ImportError("No module")):
-        result = load_providers_from_config(config)
-        assert result == []
-
-
-def test_unknown_provider_type_skipped() -> None:
-    """Test unknown provider type is skipped with warning."""
-    config = {"tools": {"providers": [{"type": "unknown"}]}}
-
+def test_bad_class_path_skipped(caplog: pytest.LogCaptureFixture) -> None:
+    """An invalid class path logs an error and is skipped."""
+    config = {"tools": {"providers": ["no_such_module.NoSuchClass"]}}
     result = load_providers_from_config(config)
-    assert result == []
+    bash_providers = [p for p in result if isinstance(p, BashToolProvider)]
+    assert len(bash_providers) == 1
+    assert any("no_such_module.NoSuchClass" in r.message for r in caplog.records)

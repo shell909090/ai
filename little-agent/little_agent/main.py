@@ -22,9 +22,7 @@ from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.cli import CliClient
 from little_agent.frontends.web import WebClient
-from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
-from little_agent.tools.protocol import ToolProvider
 from little_agent.tools.task import TaskToolProvider
 
 logger = logging.getLogger(__name__)
@@ -71,30 +69,19 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def load_providers_from_config(config: dict[str, Any]) -> list[Any]:
-    """Load tool providers from configuration."""
-    providers: list[Any] = []
+    """Load tool providers from configuration, always including bash."""
     tools_config = config.get("tools", {})
-    provider_configs = tools_config.get("providers", [])
+    class_paths: set[str] = set(tools_config.get("providers", []))
+    class_paths.add("little_agent.tools.bash.BashToolProvider")
 
-    for provider_config in provider_configs:
-        provider_type = provider_config.get("type")
-        if provider_type == "python":
-            module_name = provider_config.get("module")
-            if not module_name:
-                logger.warning("Python provider missing 'module', skipping")
-                continue
-            try:
-                module = importlib.import_module(module_name)
-                provider = module.create_provider()
-                if not isinstance(provider, ToolProvider) or isinstance(provider, (str, bytes)):
-                    logger.warning("Provider from %s is not a ToolProvider, skipping", module_name)
-                    continue
-                providers.append(provider)
-            except Exception:
-                logger.exception("Failed to load python module provider: %s", module_name)
-        else:
-            logger.warning("Unknown provider type: %s", provider_type)
-
+    providers: list[Any] = []
+    for class_path in class_paths:
+        try:
+            module_path, cls_name = class_path.rsplit(".", 1)
+            mod = importlib.import_module(module_path)
+            providers.append(getattr(mod, cls_name)())
+        except Exception:
+            logger.exception("Failed to load provider: %s", class_path)
     return providers
 
 
@@ -154,9 +141,7 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
 def _load_tools(config: dict[str, Any]) -> ToolManager:
     """Load and register tool providers from config."""
     tools = ToolManager()
-    providers = load_providers_from_config(config)
-    providers.append(BashToolProvider())
-    for provider in providers:
+    for provider in load_providers_from_config(config):
         try:
             tools.register(provider)
         except (TypeError, ValueError) as e:
