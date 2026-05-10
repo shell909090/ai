@@ -48,7 +48,7 @@ class SessionCore(Session):
         self._cancel_requested: bool = False
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
         self._turn_allowed_tools: list[str] | None = None
-        self._compress_task: asyncio.Task[None] | None = None
+        self.compress_task: asyncio.Task[None] | None = None
 
     def get_turn_tool_map(self) -> ToolMap:
         """Return tool map for current turn."""
@@ -89,10 +89,10 @@ class SessionCore(Session):
                     if not future.done():
                         future.set_exception(exc)
                 # Post-turn compress was scheduled; it will restart the queue when done.
-                if self._compress_task is not None:
+                if self.compress_task is not None:
                     return
         finally:
-            if self._compress_task is None:
+            if self.compress_task is None:
                 self._active_turn = False
 
     async def _run_turn(
@@ -196,7 +196,7 @@ class SessionCore(Session):
                 compress_ratio,
             )
             return
-        self._compress_task = asyncio.create_task(self._run_post_turn_compress())
+        self.compress_task = asyncio.create_task(self._run_post_turn_compress())
 
     async def _run_post_turn_compress(self) -> None:
         """Background task: compress history then resume the pending queue."""
@@ -207,7 +207,7 @@ class SessionCore(Session):
         except Exception:
             logger.exception("Post-turn compress failed")
         finally:
-            self._compress_task = None
+            self.compress_task = None
             self._active_turn = False
             if not self._pending_queue.empty():
                 self._active_turn = True
@@ -292,8 +292,8 @@ class SessionCore(Session):
         if not self._active_turn:
             return
         self._cancel_requested = True
-        if self._compress_task is not None:
-            self._compress_task.cancel()
+        if self.compress_task is not None:
+            self.compress_task.cancel()
 
     async def fork(self) -> Session:
         """Fork into a new session sharing the frozen history."""

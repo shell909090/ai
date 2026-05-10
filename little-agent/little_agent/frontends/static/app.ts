@@ -119,6 +119,7 @@ let sessionId: string | null = null;
 let isProcessing: boolean = false;
 let autoScroll: boolean = true;
 let sessionList: SessionInfo[] = [];
+let autoResumeOnNextList: boolean = false;
 
 // Track live tool-call bubbles by call_id so tool_call_update can recolor them.
 const toolCallElements: Map<string, HTMLDivElement> = new Map();
@@ -257,6 +258,7 @@ function connect(): void {
         statusEl.textContent = "Connected";
         messageInput.disabled = false;
         sendBtn.disabled = false;
+        autoResumeOnNextList = true;
         sendMessage({ type: "session/list" });
     };
 
@@ -482,6 +484,10 @@ function renderHistory(nodes: SessionHistoryNode[]): void {
 function handleMessage(msg: ServerMessage): void {
     switch (msg.type) {
         case "session/new_response":
+            chatContainer.innerHTML = "";
+            toolCallElements.clear();
+            historyPending = false;
+            pendingUpdates = [];
             setActiveSession(msg.session_id);
             sendMessage({ type: "session/list" });
             break;
@@ -490,10 +496,13 @@ function handleMessage(msg: ServerMessage): void {
                 (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
             );
             renderSessionList(sorted);
-            if (sorted.length > 0) {
-                resumeSession(sorted[0].id);
-            } else {
-                createSession();
+            if (autoResumeOnNextList) {
+                autoResumeOnNextList = false;
+                if (sorted.length > 0) {
+                    resumeSession(sorted[0].id);
+                } else {
+                    createSession();
+                }
             }
             break;
         }
@@ -619,16 +628,29 @@ function appendOrUpdateMessage(type: string, text: string, label?: string): void
     div.className = `message ${type}`;
     div.dataset.type = type;
     div.dataset.streaming = "true";
-    if (label) {
-        const labelEl: HTMLDivElement = document.createElement("div");
-        labelEl.className = "label";
-        labelEl.textContent = label;
-        div.appendChild(labelEl);
+    if (type === "thinking") {
+        const details: HTMLDetailsElement = document.createElement("details");
+        const summary: HTMLElement = document.createElement("summary");
+        summary.className = "thinking-summary";
+        summary.textContent = label ?? "Thinking";
+        details.appendChild(summary);
+        const contentEl: HTMLDivElement = document.createElement("div");
+        contentEl.className = "content";
+        contentEl.textContent = text;
+        details.appendChild(contentEl);
+        div.appendChild(details);
+    } else {
+        if (label) {
+            const labelEl: HTMLDivElement = document.createElement("div");
+            labelEl.className = "label";
+            labelEl.textContent = label;
+            div.appendChild(labelEl);
+        }
+        const contentEl: HTMLDivElement = document.createElement("div");
+        contentEl.className = "content";
+        contentEl.textContent = text;
+        div.appendChild(contentEl);
     }
-    const contentEl: HTMLDivElement = document.createElement("div");
-    contentEl.className = "content";
-    contentEl.textContent = text;
-    div.appendChild(contentEl);
     chatContainer.appendChild(div);
     scrollIfAutoScroll();
 }
@@ -639,16 +661,29 @@ function appendMessage(type: string, text: string, label?: string): void {
     div.className = `message ${type}`;
     div.dataset.type = type;
     div.dataset.streaming = "false";
-    if (label) {
-        const labelEl: HTMLDivElement = document.createElement("div");
-        labelEl.className = "label";
-        labelEl.textContent = label;
-        div.appendChild(labelEl);
+    if (type === "thinking") {
+        const details: HTMLDetailsElement = document.createElement("details");
+        const summary: HTMLElement = document.createElement("summary");
+        summary.className = "thinking-summary";
+        summary.textContent = label ?? "Thinking";
+        details.appendChild(summary);
+        const contentEl: HTMLDivElement = document.createElement("div");
+        contentEl.className = "content";
+        contentEl.textContent = text;
+        details.appendChild(contentEl);
+        div.appendChild(details);
+    } else {
+        if (label) {
+            const labelEl: HTMLDivElement = document.createElement("div");
+            labelEl.className = "label";
+            labelEl.textContent = label;
+            div.appendChild(labelEl);
+        }
+        const contentEl: HTMLDivElement = document.createElement("div");
+        contentEl.className = "content";
+        contentEl.textContent = text;
+        div.appendChild(contentEl);
     }
-    const contentEl: HTMLDivElement = document.createElement("div");
-    contentEl.className = "content";
-    contentEl.textContent = text;
-    div.appendChild(contentEl);
     chatContainer.appendChild(div);
     scrollIfAutoScroll();
 }

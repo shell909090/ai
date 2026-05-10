@@ -292,7 +292,7 @@ class SessionLogger(Protocol):
 ```yaml
 loggers:
   - type: file
-    filename: "session_{session_id}.jsonl"   # 支持 {session_id}；固定字符串则共享文件
+    filename: "{session_id}_session.jsonl"   # 支持 {session_id}；固定字符串则共享文件
 ```
 
 实现要点：
@@ -546,7 +546,7 @@ stdin 架构：`_stdin_reader` 后台 task 通过 `asyncio.to_thread(input)` 阻
 1. 持有 server-wide session 注册表 `_sessions: dict[str, Session]`。
 2. 订阅模型路由：`_active: dict[ws, session_id | None]`，`update()` 只发给 `_active[ws] == session.id` 的连接。
 3. 每轮 prompt 后 `session.save()` 落盘到 `{sessions_dir}/{session_id}.json`。
-4. 启动时自动向 `agent.loggers` append 一个 FileLogger（路径 `{sessions_dir}/session_{session_id}.jsonl`）；用户配置的 logger 不被覆盖。
+4. 启动时自动向 `agent.loggers` append 一个 FileLogger（路径 `{sessions_dir}/{session_id}_session.jsonl`）；用户配置的 logger 不被覆盖。
 5. session_id 必须为 UUID v4 格式；非法即拒绝（防路径遍历）。
 6. WebSocket Origin 校验：仅允许 null 或同源。
 
@@ -718,7 +718,7 @@ frontend:
 
 loggers:                                 # optional；web 自动追加一个 FileLogger
   - type: file
-    filename: "~/.local/state/little_agent/sessions/session_{session_id}.jsonl"
+    filename: "~/.local/state/little_agent/sessions/{session_id}_session.jsonl"
 
 memory:                                  # optional
   type: file

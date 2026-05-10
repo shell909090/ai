@@ -177,7 +177,7 @@ class WebClient(Client):
         """Read first user_prompt record from JSONL and return its prompt (max 50 chars)."""
         if self._sessions_dir is None:
             return ""
-        path = self._sessions_dir / f"session_{session_id}.jsonl"
+        path = self._sessions_dir / f"{session_id}_session.jsonl"
         if not path.exists():
             return ""
         try:
@@ -254,7 +254,7 @@ class WebClient(Client):
         """Read JSONL history for session_id, stripping the session_id key."""
         if self._sessions_dir is None:
             return []
-        path = self._sessions_dir / f"session_{session_id}.jsonl"
+        path = self._sessions_dir / f"{session_id}_session.jsonl"
         if not path.exists():
             return []
         return await asyncio.to_thread(self._sync_read_history, path)
@@ -284,7 +284,7 @@ class WebClient(Client):
         if self._sessions_dir is None:
             return
         json_path = self._sessions_dir / f"{session_id}.json"
-        jsonl_path = self._sessions_dir / f"session_{session_id}.jsonl"
+        jsonl_path = self._sessions_dir / f"{session_id}_session.jsonl"
         await asyncio.to_thread(self._sync_delete_files, json_path, jsonl_path)
 
     def _sync_delete_files(self, *paths: Path) -> None:
@@ -396,12 +396,25 @@ class WebClient(Client):
             return {"error": "prompt must be a string"}
         stop_reason, text = await sess.prompt(prompt)
         await self._auto_save(sess)
+        # If a post-turn compress is running, schedule a second save after it completes
+        # so the persisted JSON reflects the compressed chain rather than N+1 turns.
+        compress_task = getattr(sess, "compress_task", None)
+        if compress_task is not None:
+            asyncio.create_task(self._save_after_compress(sess, compress_task))
         return {
             "type": "session/prompt_response",
             "session_id": session_id,
             "stop_reason": stop_reason,
             "text": text,
         }
+
+    async def _save_after_compress(self, session: Any, task: "asyncio.Task[Any]") -> None:
+        """Wait for a compress task then re-save the session."""
+        try:
+            await task
+        except Exception:
+            pass
+        await self._auto_save(session)
 
     async def _do_session_cancel(self, msg: dict[str, Any]) -> dict[str, Any]:
         """Cancel an active turn."""
@@ -471,7 +484,7 @@ class WebClient(Client):
         if self._sessions_dir is not None:
             from little_agent.agent.logger import FileLogger
 
-            template = str(self._sessions_dir / "session_{session_id}.jsonl")
+            template = str(self._sessions_dir / "{session_id}_session.jsonl")
             if not any(getattr(lg, "_template", None) == template for lg in agent.loggers):
                 agent.loggers.append(FileLogger(template))
             self._sessions_dir.mkdir(parents=True, exist_ok=True)

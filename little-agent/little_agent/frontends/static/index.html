@@ -157,6 +157,26 @@
         .message details {
             margin-top: 0.25rem;
         }
+        .message.thinking details summary.thinking-summary {
+            cursor: pointer;
+            user-select: none;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.7;
+            list-style: none;
+            padding: 0;
+        }
+        .message.thinking details summary.thinking-summary::before {
+            content: "▶ ";
+            font-size: 0.65rem;
+        }
+        .message.thinking details[open] summary.thinking-summary::before {
+            content: "▼ ";
+        }
+        .message.thinking .content {
+            margin-top: 0.35rem;
+        }
         .message details summary.tool-call-summary {
             cursor: pointer;
             user-select: none;

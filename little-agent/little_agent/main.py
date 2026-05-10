@@ -257,7 +257,7 @@ def _load_loggers(config: dict[str, Any]) -> list[Any]:
         if not isinstance(cfg, dict):
             continue
         if cfg.get("type") == "file":
-            filename = str(cfg.get("filename", "session_{session_id}.jsonl"))
+            filename = str(cfg.get("filename", "{session_id}_session.jsonl"))
             result.append(FileLogger(filename))
         else:
             logger.warning("Unknown logger type: %s", cfg.get("type"))
