@@ -29,7 +29,6 @@ class WebClient(Client):
     def __init__(self) -> None:
         self._websockets: set[web.WebSocketResponse] = set()
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
-        self._sessions: dict[str, Session] = {}
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Broadcast update to all connected WebSocket clients."""
@@ -115,6 +114,8 @@ class WebClient(Client):
         self.add_websocket(ws)
         logger.info("WebSocket connected")
 
+        sessions: dict[str, Session] = {}
+
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -135,7 +136,7 @@ class WebClient(Client):
 
                     # Handle other client messages via agent
                     agent = request.app[AGENT_KEY]
-                    response = await self._handle_client_message(agent, data)
+                    response = await self._handle_client_message(agent, data, sessions)
                     await ws.send_json(response)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
@@ -145,7 +146,9 @@ class WebClient(Client):
 
         return ws
 
-    async def _handle_client_message(self, agent: Agent, msg: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_client_message(
+        self, agent: Agent, msg: dict[str, Any], sessions: dict[str, Session]
+    ) -> dict[str, Any]:
         """Dispatch client messages to the agent."""
         msg_type = msg.get("type", "")
         try:
@@ -154,14 +157,14 @@ class WebClient(Client):
                     cwd = msg.get("cwd")
                     session = await agent.new(cwd=cwd)
                     session_id: str = getattr(session, "id", "")
-                    self._sessions[session_id] = session
+                    sessions[session_id] = session
                     return {
                         "type": "session/new_response",
                         "session_id": session_id,
                     }
                 case "session/prompt":
                     session_id = msg.get("session_id", "")
-                    sess = self._sessions.get(session_id)
+                    sess = sessions.get(session_id)
                     if sess is None:
                         return {"error": f"Unknown session: {session_id}"}
                     prompt = msg.get("prompt", "")
@@ -176,7 +179,7 @@ class WebClient(Client):
                     }
                 case "session/cancel":
                     session_id = msg.get("session_id", "")
-                    sess = self._sessions.get(session_id)
+                    sess = sessions.get(session_id)
                     if sess is None:
                         return {"error": f"Unknown session: {session_id}"}
                     await sess.cancel()
@@ -187,7 +190,7 @@ class WebClient(Client):
             logger.exception("Error handling client message")
             return {"error": str(exc)}
 
-    async def run(self, agent: Agent) -> None:
+    async def run(self, agent: Agent, host: str = "127.0.0.1", port: int = 8080) -> None:
         """Run the web server."""
         app = web.Application()
         app[AGENT_KEY] = agent
@@ -201,9 +204,9 @@ class WebClient(Client):
 
         runner = web.AppRunner(app)
         await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", 8080)
+        site = web.TCPSite(runner, host, port)
         await site.start()
-        logger.info("Web server started on http://0.0.0.0:8080")
+        logger.info("Web server started on http://%s:%d", host, port)
 
         # Keep running until cancelled
         try:

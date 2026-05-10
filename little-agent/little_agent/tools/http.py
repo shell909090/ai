@@ -58,9 +58,7 @@ class HttpToolProvider:
                     data=body,
                     timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as resp:
-                    resp_headers: dict[str, JSONValue] = {
-                        k: v for k, v in resp.headers.items()
-                    }
+                    resp_headers: dict[str, JSONValue] = {k: v for k, v in resp.headers.items()}
                     resp_body = await resp.text(errors="replace")
                     return {
                         "status": resp.status,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -31,6 +31,12 @@ _SLASH_COMMANDS = [
 ]
 
 _ChunkType = Literal["thinking", "agent"]
+
+
+def _resolve_future(fut: asyncio.Future[str | None], text: str | None) -> None:
+    """Set future result if not already done; used as call_soon_threadsafe callback."""
+    if not fut.done():
+        fut.set_result(text)
 
 
 def _remove_last_history() -> None:
@@ -142,13 +148,35 @@ class CliClient(Client):
 
     async def _stdin_reader(self) -> None:
         """Background task reading stdin lines into _stdin_queue; None signals EOF."""
+        loop = asyncio.get_running_loop()
         try:
             while True:
-                line = await asyncio.to_thread(sys.stdin.readline)
-                if not line:
+                fut: asyncio.Future[str | None] = loop.create_future()
+
+                def _read(f: asyncio.Future[str | None] = fut) -> None:
+                    try:
+                        text: str | None = input()
+                    except (EOFError, KeyboardInterrupt):
+                        text = None
+                    try:
+                        loop.call_soon_threadsafe(_resolve_future, f, text)
+                    except RuntimeError:
+                        pass  # event loop already closed
+
+                # daemon=True: process can exit cleanly without waiting for this thread.
+                # asyncio.to_thread uses the default ThreadPoolExecutor, which
+                # asyncio.run() waits for via shutdown_default_executor() — that blocks
+                # on Ctrl+C because the stdin thread never returns.
+                threading.Thread(target=_read, daemon=True).start()
+                result = await fut
+
+                if result is None:
                     await self._stdin_queue.put(None)
                     break
-                await self._stdin_queue.put(line.rstrip("\n"))
+                await self._stdin_queue.put(result)
+                # Yield before starting the next thread so pending cancellation
+                # is injected here rather than after a new thread launches.
+                await asyncio.sleep(0)
         except asyncio.CancelledError:
             pass
 
@@ -187,17 +215,18 @@ class CliClient(Client):
             logger.exception("Error saving session")
             print(f"[Error] {e}")
 
-    async def _do_load(self, agent: Agent, session: Session, path: Path) -> Session:
-        """Load session from file."""
+    async def _do_load(self, agent: Agent, session: Session, path: Path) -> tuple[Session, bool]:
+        """Load session from file. Returns (session, success)."""
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
-            session = await agent.load(data)
+            new_session = await agent.load(data)
             print(f"Session loaded from {path}")
+            return new_session, True
         except Exception as e:
             logger.exception("Error loading session")
             print(f"[Error] {e}")
-        return session
+            return session, False
 
     async def _handle_command(
         self, agent: Agent, session: Session, stripped: str
@@ -222,20 +251,26 @@ class CliClient(Client):
                 await self._do_save(session, Path(path_str))
                 return session, True
             case ["/load", path_str]:
-                session = await self._do_load(agent, session, Path(path_str))
+                session, ok = await self._do_load(agent, session, Path(path_str))
+                if not ok:
+                    print("[Load failed] Session unchanged.")
                 return session, True
             case ["/list-tools"]:
-                tools = agent.tools.desc_tool()
-                if tools:
-                    print("Available tools:")
-                    for name, tooldef in tools.items():
-                        print(f"  {name}: {tooldef.desc}")
-                else:
-                    print("No tools registered.")
+                self._print_tools(agent)
                 return session, True
             case _:
                 print(f"Unknown command: {stripped}")
                 return session, True
+
+    def _print_tools(self, agent: Agent) -> None:
+        """Print all registered tools."""
+        tools = agent.tools.desc_tool()
+        if tools:
+            print("Available tools:")
+            for name, tooldef in tools.items():
+                print(f"  {name}: {tooldef.desc}")
+        else:
+            print("No tools registered.")
 
     async def _wait_for_permission(self, prompt_task: asyncio.Task[tuple[str, str]]) -> None:
         """Wait until _permission_done is set or prompt_task finishes."""

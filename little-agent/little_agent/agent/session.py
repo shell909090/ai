@@ -66,6 +66,9 @@ class SessionCore(Session):
         except asyncio.QueueFull as err:
             raise SessionBusyError("Session pending queue is full") from err
 
+        # Safety: no await between this check and the assignment below.
+        # asyncio cooperative scheduling ensures this read-modify is atomic.
+        # Do NOT add any await between these two lines.
         if not self._active_turn:
             self._active_turn = True
             asyncio.create_task(self._consume_queue())
@@ -125,12 +128,14 @@ class SessionCore(Session):
                     self.tail.freeze()
                     return ("cancelled", partial_output)
 
-                result, _overflow_retried = await self._backend_result_with_retry(_overflow_retried)
+                result, did_stream, _overflow_retried = await self._backend_result_with_retry(
+                    _overflow_retried
+                )
                 last_result = result
 
                 match result.finish_reason:
                     case "completed":
-                        return await self._handle_completed(result)
+                        return await self._handle_completed(result, did_stream)
                     case "tool_call":
                         partial_output = await self._handle_tool_call(result, partial_output)
                     case "cancelled":
@@ -200,10 +205,14 @@ class SessionCore(Session):
 
     async def _backend_result_with_retry(
         self, overflow_retried: bool
-    ) -> tuple[BackendTurnResult, bool]:
-        """Generate backend result; compress and retry once on ContextOverflowError."""
+    ) -> tuple[BackendTurnResult, bool, bool]:
+        """Generate backend result; compress and retry once on ContextOverflowError.
+
+        Returns (result, did_stream, overflow_retried).
+        """
         try:
-            return await self._generate_backend_result(), overflow_retried
+            result, did_stream = await self._generate_backend_result()
+            return result, did_stream, overflow_retried
         except ContextOverflowError:
             if overflow_retried or self.agent.compressor is None:
                 raise
@@ -211,23 +220,35 @@ class SessionCore(Session):
             new_tail = await self.agent.compressor.compress(self.tail)
             if new_tail is not None:
                 self.tail = new_tail
-            return await self._generate_backend_result(), True
+            result, did_stream = await self._generate_backend_result()
+            return result, did_stream, True
 
-    async def _generate_backend_result(self) -> BackendTurnResult:
-        """Generate a single backend turn result."""
+    async def _generate_backend_result(self) -> tuple[BackendTurnResult, bool]:
+        """Generate a single backend turn result.
+
+        Returns (result, did_stream) where did_stream is True when at least one
+        ``agent_message_chunk`` SessionUpdate was forwarded to the client.
+        """
         result: BackendTurnResult | None = None
+        did_stream: bool = False
         async for item in self.agent.backend.generate(self):
             if isinstance(item, BackendTurnResult):
                 result = item
             else:
+                if item.type == "agent_message_chunk":
+                    did_stream = True
                 await self.agent.client.update(self, item)
 
         if result is None:
             raise RuntimeError("Backend returned no result")
-        return result
+        return result, did_stream
 
-    async def _handle_completed(self, result: BackendTurnResult) -> PromptReturn:
-        """Handle a completed turn result."""
+    async def _handle_completed(self, result: BackendTurnResult, did_stream: bool) -> PromptReturn:
+        """Handle a completed turn result.
+
+        Only sends a full-text ``agent_message_chunk`` when *did_stream* is False,
+        i.e. the backend did not already forward incremental chunks to the client.
+        """
         assistant_node = AssistantResponseNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
@@ -235,16 +256,14 @@ class SessionCore(Session):
         )
         self._append_node(assistant_node)
         assistant_node.freeze()
-        # Only send full-text chunk if backend did not stream chunks.
-        # Streaming backends already yield agent_message_chunk per token.
-        # For mock backends that don't stream, still send the complete text.
-        await self.agent.client.update(
-            self,
-            SessionUpdate(
-                type="agent_message_chunk",
-                data={"text": result.output_text},
-            ),
-        )
+        if not did_stream:
+            await self.agent.client.update(
+                self,
+                SessionUpdate(
+                    type="agent_message_chunk",
+                    data={"text": result.output_text},
+                ),
+            )
         return ("end_turn", result.output_text)
 
     async def _update_memory(self) -> None:

@@ -514,7 +514,8 @@ async def test_do_load(
     path = tmp_path / "session.json"
     path.write_text(json.dumps({"id": "loaded", "cwd": "/tmp", "chain": []}))
     with patch("builtins.print"):
-        sess = await client._do_load(agent, session, path)
+        sess, ok = await client._do_load(agent, session, path)
+    assert ok
     assert sess.id == "sess-loaded"
 
 
@@ -525,6 +526,58 @@ async def test_do_save_error(client: CliClient, session: _MockSession) -> None:
         await client._do_save(session, Path("/nonexistent/dir/session.json"))
     calls = [c[0][0] for c in mock_print.call_args_list]
     assert any("[Error]" in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# T70: _do_load failure leaves session unchanged and prints the right message
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_do_load_failure_returns_original_session(
+    client: CliClient, agent: _MockAgent, session: _MockSession
+) -> None:
+    """_do_load with a nonexistent file returns original session unchanged."""
+    original_session = session
+    with patch("builtins.print") as mock_print:
+        returned_session, ok = await client._do_load(
+            agent, original_session, Path("/nonexistent/no_such_file.json")
+        )
+
+    assert ok is False
+    assert returned_session is original_session, "Session must remain unchanged on load failure"
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert any("[Error]" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_handle_command_load_failure_prints_session_unchanged(
+    client: CliClient, agent: _MockAgent, session: _MockSession
+) -> None:
+    """_handle_command /load failure prints '[Load failed] Session unchanged.'."""
+    with patch("builtins.print") as mock_print:
+        returned_session, cont = await client._handle_command(
+            agent, session, "/load /nonexistent/no_such_file.json"
+        )
+
+    assert cont is True
+    assert returned_session is session, "Session must remain unchanged on load failure"
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Load failed] Session unchanged." in calls
+
+
+@pytest.mark.asyncio
+async def test_run_load_failure_keeps_original_session(
+    client: CliClient, agent: _MockAgent, tmp_path: Path
+) -> None:
+    """run() /load of a nonexistent file leaves session unchanged and prints message."""
+    client._stdin_queue.put_nowait("/load /nonexistent/no_such_file.json")
+    client._stdin_queue.put_nowait("/quit")
+    with patch.object(client, "_stdin_reader", new=AsyncMock(return_value=None)):
+        with patch("builtins.print") as mock_print:
+            await client.run(agent)
+    calls = [c[0][0] for c in mock_print.call_args_list]
+    assert "[Load failed] Session unchanged." in calls
 
 
 # --- _do_prompt tests ---

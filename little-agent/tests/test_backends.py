@@ -1,6 +1,9 @@
 """Tests for backend request conversion."""
 
+from __future__ import annotations
+
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -20,6 +23,7 @@ from little_agent.agent.nodes import (
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.openai import (
     OpenAIBackend,
+    _build_tool_calls,
     _chain_to_messages,
     _format_tool_result,
     _tool_map_to_openai_functions,
@@ -553,9 +557,48 @@ async def test_openai_backend_non_overflow_bad_request_reraises() -> None:
     agent = AgentCore(client=client, backend=backend, tools=tools)
     session = await agent.new()
 
-    with pytest.raises(openai.BadRequestError):
+    from little_agent.backends.exceptions import BackendError
+
+    with pytest.raises(BackendError):
         async for _ in backend.generate(session):  # type: ignore[arg-type]
             pass
+
+
+# ---------------------------------------------------------------------------
+# T69: _build_tool_calls handles malformed JSON arguments gracefully
+# ---------------------------------------------------------------------------
+
+
+def test_build_tool_calls_bad_json_returns_empty_arguments(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_build_tool_calls with invalid JSON arguments returns {} and emits a warning."""
+    acc: dict[int, dict[str, str]] = {
+        0: {"id": "call_abc", "name": "echo", "arguments": "{bad json"},
+    }
+    with caplog.at_level(logging.WARNING, logger="little_agent.backends.openai"):
+        result = _build_tool_calls(acc)
+
+    assert len(result) == 1
+    tc = result[0]
+    assert tc.call_id == "call_abc"
+    assert tc.tool_name == "echo"
+    assert tc.arguments == {}
+
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("parse" in msg.lower() or "Failed" in msg for msg in warning_messages), (
+        f"Expected a warning about JSON parsing failure, got: {warning_messages}"
+    )
+
+
+def test_build_tool_calls_valid_json_unaffected() -> None:
+    """_build_tool_calls with valid JSON arguments parses correctly."""
+    acc: dict[int, dict[str, str]] = {
+        0: {"id": "call_xyz", "name": "add", "arguments": '{"a": 1, "b": 2}'},
+    }
+    result = _build_tool_calls(acc)
+    assert len(result) == 1
+    assert result[0].arguments == {"a": 1, "b": 2}
 
 
 @pytest.mark.asyncio

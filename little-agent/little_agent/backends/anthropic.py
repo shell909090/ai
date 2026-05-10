@@ -21,7 +21,12 @@ from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
 from ._utils import _log_streaming_request, _log_streaming_response
-from .exceptions import BackendTimeoutError, ContextOverflowError
+from .exceptions import (
+    BackendError,
+    BackendRateLimitError,
+    BackendTimeoutError,
+    ContextOverflowError,
+)
 from .protocol import BackendToolCall, BackendTurnResult
 
 if TYPE_CHECKING:
@@ -227,6 +232,7 @@ class AnthropicBackend:
         max_concurrency: int = 1,
         context_window: int = 128000,
         system: str | None = None,
+        max_tokens: int = 8192,
     ) -> None:
         import anthropic
 
@@ -239,22 +245,23 @@ class AnthropicBackend:
         self._sem = asyncio.Semaphore(max_concurrency)
         self.context_window = context_window
         self._system = system
+        self._max_tokens = max_tokens
 
     def generate(self, session: "SessionCore") -> AsyncIterator[SessionUpdate | BackendTurnResult]:
         """Return async iterator streaming Anthropic response."""
         return self._generate_stream(session)
 
-    async def _open_stream(
+    async def _generate_stream_inner(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
-    ) -> Any:
-        """Open a streaming request to Anthropic with timeout."""
+    ) -> AsyncGenerator[Any, None]:
+        """Inner generator that wraps the Anthropic stream with timeout and exception handling."""
         import anthropic
 
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "max_tokens": self.context_window,
+            "max_tokens": self._max_tokens,
             "messages": messages,
         }
         if tools:
@@ -263,16 +270,20 @@ class AnthropicBackend:
             kwargs["system"] = self._system
 
         try:
-            return await asyncio.wait_for(
-                self._client.messages.stream(**kwargs).__aenter__(),
-                timeout=self._timeout,
-            )
+            async with asyncio.timeout(self._timeout):
+                async with self._client.messages.stream(**kwargs) as stream:
+                    async for event in stream:
+                        yield event
         except TimeoutError as e:
             raise BackendTimeoutError(f"Backend API call timed out after {self._timeout}s") from e
         except anthropic.BadRequestError as e:
             if _is_context_overflow(e):
                 raise ContextOverflowError(str(e)) from e
-            raise
+            raise BackendError(str(e)) from e
+        except anthropic.RateLimitError as e:
+            raise BackendRateLimitError(str(e)) from e
+        except anthropic.APIError as e:
+            raise BackendError(str(e)) from e
 
     async def _generate_stream(
         self, session: "SessionCore"
@@ -286,7 +297,6 @@ class AnthropicBackend:
             _log_streaming_request(logger, "Anthropic", self._model, messages, tools)
 
             start_time = time.perf_counter()
-            stream = await self._open_stream(messages, tools)
 
             text_chunks: list[str] = []
             thinking_chunks: list[str] = []
@@ -295,21 +305,17 @@ class AnthropicBackend:
             usage: dict[str, int] | None = None
             finish_reason_raw = "end_turn"
 
-            try:
-                async for event in stream.event_stream:
-                    _handle_stream_event(
-                        event,
-                        text_chunks,
-                        thinking_chunks,
-                        tool_blocks_acc,
-                    )
-                    finish_reason_raw, usage = _update_metadata(event, finish_reason_raw, usage)
-                    update = _make_stream_update(event)
-                    if update is not None:
-                        yield update
-
-            finally:
-                await stream.__aexit__(None, None, None)
+            async for event in self._generate_stream_inner(messages, tools):
+                _handle_stream_event(
+                    event,
+                    text_chunks,
+                    thinking_chunks,
+                    tool_blocks_acc,
+                )
+                finish_reason_raw, usage = _update_metadata(event, finish_reason_raw, usage)
+                update = _make_stream_update(event)
+                if update is not None:
+                    yield update
 
             elapsed = time.perf_counter() - start_time
 

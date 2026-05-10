@@ -75,12 +75,40 @@ class ToolInvoker:
         self._session._append_node(node)
         return node
 
+    async def _run_tool_gather(
+        self,
+        allowed_calls: list[BackendToolCall],
+        tool_result_node: ToolResultNode,
+    ) -> tuple[list[BackendToolCall], list[JSONValue | BaseException]]:
+        """Execute tools via gather, or skip all if already cancelled."""
+        from little_agent.agent.context import current_session
+
+        if self._session._cancel_requested:
+            for tc in allowed_calls:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "cancelled",
+                    "content": "Cancelled before execution",
+                }
+            return [], []
+
+        token = current_session.set(self._session)
+        try:
+
+            async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
+                return await self._session.agent.tools[name](args)
+
+            tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
+            results: list[JSONValue | BaseException] = await asyncio.gather(
+                *tasks, return_exceptions=True
+            )
+            return allowed_calls, results
+        finally:
+            current_session.reset(token)
+
     async def _invoke_tools(
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
         """Invoke tools concurrently and populate tool_result_node."""
-        from little_agent.agent.context import current_session
-
         allowed_names = (
             set(self._session._turn_allowed_tools)
             if self._session._turn_allowed_tools is not None
@@ -106,16 +134,7 @@ class ToolInvoker:
                     "content": "Permission denied",
                 }
 
-        token = current_session.set(self._session)
-        try:
-
-            async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
-                return await self._session.agent.tools[name](args)
-
-            tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
-            tool_results = await asyncio.gather(*tasks, return_exceptions=True)
-        finally:
-            current_session.reset(token)
+        allowed_calls, tool_results = await self._run_tool_gather(allowed_calls, tool_result_node)
 
         for tc, res in zip(allowed_calls, tool_results, strict=True):
             if self._session._cancel_requested:

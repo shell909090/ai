@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import signal
 from collections.abc import Iterator
@@ -10,6 +11,22 @@ from collections.abc import Iterator
 from little_agent.types import JSONValue
 
 from .protocol import AsyncToolFn, ToolArgDef, ToolDef
+
+logger = logging.getLogger(__name__)
+
+_DANGEROUS_ENV_VARS = frozenset(
+    {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "LD_DEBUG",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "PATH",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+    }
+)
 
 
 class BashToolProvider:
@@ -44,7 +61,13 @@ class BashToolProvider:
         env_val = args.get("env")
         env: dict[str, str] | None = None
         if isinstance(env_val, dict):
-            env = {**os.environ, **{str(k): str(v) for k, v in env_val.items()}}
+            env = {**os.environ}
+            for k, v in env_val.items():
+                key = str(k)
+                if key in _DANGEROUS_ENV_VARS:
+                    logger.warning("Blocked dangerous env var override: %r", key)
+                else:
+                    env[key] = str(v)
 
         stdin_val = args.get("stdin")
         stdin_bytes: bytes | None = (

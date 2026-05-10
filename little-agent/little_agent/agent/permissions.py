@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 from typing import TYPE_CHECKING
 
 from little_agent.types import JSONValue
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
     from little_agent.agent.protocol import Session
 
 from little_agent.agent.protocol import PermissionChecker
+
+logger = logging.getLogger(__name__)
 
 
 class YesManChecker:
@@ -69,4 +72,6 @@ def build_permission_chain(
             blacklist = [str(p) for p in blacklist_raw] if isinstance(blacklist_raw, list) else []
             whitelist = [str(p) for p in whitelist_raw] if isinstance(whitelist_raw, list) else []
             checker = BlackWhiteListChecker(blacklist=blacklist, whitelist=whitelist, next=checker)
+        else:
+            logger.warning("Unknown permission checker type %r; skipping.", checker_type)
     return checker

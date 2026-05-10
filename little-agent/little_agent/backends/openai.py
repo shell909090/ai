@@ -21,7 +21,12 @@ from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
 from ._utils import _log_streaming_request, _log_streaming_response
-from .exceptions import BackendTimeoutError, ContextOverflowError
+from .exceptions import (
+    BackendError,
+    BackendRateLimitError,
+    BackendTimeoutError,
+    ContextOverflowError,
+)
 from .protocol import BackendToolCall, BackendTurnResult
 
 if TYPE_CHECKING:
@@ -245,14 +250,25 @@ def _extract_chunk_usage(usage_obj: Any) -> dict[str, int]:
 
 def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[BackendToolCall]:
     """Build BackendToolCall list from accumulated streaming deltas."""
-    return [
-        BackendToolCall(
-            call_id=tc_data["id"],
-            tool_name=tc_data["name"],
-            arguments=json.loads(tc_data["arguments"]) if tc_data["arguments"] else {},
+    result = []
+    for tc_data in (tool_calls_acc[i] for i in sorted(tool_calls_acc.keys())):
+        raw_args = tc_data["arguments"]
+        if raw_args:
+            try:
+                arguments = json.loads(raw_args)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse tool call arguments: %r", raw_args)
+                arguments = {}
+        else:
+            arguments = {}
+        result.append(
+            BackendToolCall(
+                call_id=tc_data["id"],
+                tool_name=tc_data["name"],
+                arguments=arguments,
+            )
         )
-        for tc_data in (tool_calls_acc[i] for i in sorted(tool_calls_acc.keys()))
-    ]
+    return result
 
 
 _CONTEXT_OVERFLOW_SUBSTRINGS = (
@@ -321,7 +337,11 @@ class OpenAIBackend:
         except openai.BadRequestError as e:
             if _is_context_overflow(e):
                 raise ContextOverflowError(str(e)) from e
-            raise
+            raise BackendError(str(e)) from e
+        except openai.RateLimitError as e:
+            raise BackendRateLimitError(str(e)) from e
+        except openai.APIError as e:
+            raise BackendError(str(e)) from e
 
     async def _generate_stream(
         self, session: SessionCore

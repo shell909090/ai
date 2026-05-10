@@ -8,6 +8,7 @@ let isProcessing = false;
 const chatContainer = document.getElementById('chat-container');
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
+const cancelBtn = document.getElementById('cancelButton');
 const statusEl = document.getElementById('status');
 const sessionInfo = document.getElementById('session-info');
 const permissionModal = document.getElementById('permission-modal');
@@ -47,6 +48,10 @@ function connect() {
 
     ws.onerror = () => {
         statusEl.textContent = 'Connection error';
+        isProcessing = false;
+        sendBtn.disabled = false;
+        messageInput.disabled = false;
+        cancelBtn.style.display = 'none';
     };
 }
 
@@ -135,7 +140,10 @@ function appendOrUpdateMessage(type, text, label) {
         if (contentEl) {
             contentEl.textContent += text;
         }
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+        const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
+        if (isNearBottom) {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
         return;
     }
     const div = document.createElement('div');
@@ -153,7 +161,10 @@ function appendOrUpdateMessage(type, text, label) {
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    const isNearBottom2 = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
+    if (isNearBottom2) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
 }
 
 /**
@@ -174,12 +185,16 @@ function appendMessage(type, text) {
     contentEl.textContent = text;
     div.appendChild(contentEl);
     chatContainer.appendChild(div);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight <= 50;
+    if (isNearBottom) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
 }
 
 function updateInputState() {
     messageInput.disabled = isProcessing;
     sendBtn.disabled = isProcessing;
+    cancelBtn.style.display = isProcessing ? 'inline-block' : 'none';
     if (isProcessing) {
         statusEl.textContent = 'Processing...';
     } else {
@@ -206,6 +221,11 @@ function sendPrompt() {
 sendBtn.addEventListener('click', sendPrompt);
 messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendPrompt();
+});
+cancelBtn.addEventListener('click', () => {
+    if (sessionId) {
+        sendMessage({ type: 'session/cancel', session_id: sessionId });
+    }
 });
 
 /**

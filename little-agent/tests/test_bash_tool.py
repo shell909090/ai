@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from little_agent.tools.bash import BashToolProvider
@@ -129,3 +131,43 @@ def test_bash_tool_lists_new_params() -> None:
     assert arg_map["cwd"] is False
     assert arg_map["env"] is False
     assert arg_map["stdin"] is False
+
+
+# ---------------------------------------------------------------------------
+# T77: dangerous env vars are filtered and a warning is emitted
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bash_env_dangerous_vars_filtered(caplog: pytest.LogCaptureFixture) -> None:
+    """Dangerous env vars (e.g. LD_PRELOAD) are stripped; safe vars pass through.
+
+    The bash tool must:
+    - NOT set LD_PRELOAD in the subprocess environment.
+    - DO set MY_VAR in the subprocess environment.
+    - Emit at least one logger.warning mentioning the blocked key.
+    """
+    mgr = _make_manager()
+    with caplog.at_level(logging.WARNING, logger="little_agent.tools.bash"):
+        result = await mgr["bash"](
+            {
+                "command": "echo LD=${LD_PRELOAD:-ABSENT}; echo MY=${MY_VAR:-ABSENT}",
+                "env": {"LD_PRELOAD": "/evil.so", "MY_VAR": "ok"},
+            }
+        )
+
+    assert isinstance(result, dict)
+    stdout = result.get("stdout", "")
+
+    # LD_PRELOAD must not reach the subprocess.
+    assert "LD=ABSENT" in stdout, f"LD_PRELOAD must be blocked; subprocess stdout: {stdout!r}"
+
+    # MY_VAR must reach the subprocess.
+    assert "MY=ok" in stdout, f"MY_VAR must be forwarded to subprocess; stdout: {stdout!r}"
+
+    # A warning must have been emitted about the blocked var.
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records, "Expected a warning for blocked dangerous env var"
+    assert any("LD_PRELOAD" in r.message for r in warning_records), (
+        f"Warning should mention 'LD_PRELOAD'; got: {[r.message for r in warning_records]}"
+    )

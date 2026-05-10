@@ -98,6 +98,75 @@ async def test_permission_denied_fails() -> None:
     assert "Permission denied" in str(update.data.get("content", ""))
 
 
+# ---------------------------------------------------------------------------
+# T76: _cancel_requested=True before gather → tools marked cancelled, not called
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_gather_marks_tools_cancelled_and_skips_execution() -> None:
+    """When cancel requested before gather, tools are not executed and marked cancelled."""
+    call_log: list[str] = []
+
+    client = MockClient()
+    backend = MockBackend(script=_make_script_with_tool("echo", {"text": "hello"}))
+
+    # Custom tool that records calls so we can assert it wasn't invoked.
+    from little_agent.tools.protocol import ToolArgDef, ToolDef
+
+    class _RecordingToolProvider:
+        def __iter__(self):  # type: ignore[override]
+            async def _echo(args: dict[str, JSONValue]) -> JSONValue:
+                call_log.append("echo_called")
+                return args.get("text", "")
+
+            yield (
+                "echo",
+                ToolDef(
+                    desc="Echo",
+                    args=[ToolArgDef(name="text", type="string", desc="text", required=True)],
+                ),
+                _echo,
+            )
+
+    agent = MockAgent(
+        backend=backend,
+        tools=_RecordingToolProvider(),
+        client=client,
+        permissions=YesManChecker(),
+    )
+    session = await agent.new()
+
+    # Directly manipulate _cancel_requested after the session is created
+    # but before the tool is invoked. We do this by intercepting _run_tool_gather.
+    from little_agent.agent.tool_invoker import ToolInvoker
+
+    original_gather = ToolInvoker._run_tool_gather
+
+    async def _cancel_then_gather(self, allowed_calls, tool_result_node):  # type: ignore[override]
+        # Set cancel flag immediately before delegating so that the guard fires.
+        self._session._cancel_requested = True
+        return await original_gather(self, allowed_calls, tool_result_node)
+
+    ToolInvoker._run_tool_gather = _cancel_then_gather  # type: ignore[method-assign]
+    try:
+        await session.prompt("hello")
+    finally:
+        ToolInvoker._run_tool_gather = original_gather  # type: ignore[method-assign]
+
+    # The actual tool function must not have been called.
+    assert "echo_called" not in call_log, (
+        "Tool function must not be called when _cancel_requested is True before gather"
+    )
+
+    # The tool result must carry 'cancelled' status.
+    tool_updates = [
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "t1"
+    ]
+    assert tool_updates, "Expected a tool_call_update for 't1'"
+    assert tool_updates[0].data["status"] == "cancelled"
+
+
 @pytest.mark.asyncio
 async def test_no_allowed_names_grants_by_default() -> None:
     """When allowed_names is None and YesManChecker is used, tool runs successfully."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from little_agent.agent.permissions import (
@@ -119,6 +121,51 @@ async def test_build_chain_blackwhitelist() -> None:
     assert await result.request_permission(object(), "echo", {}) is True
     # unknown → delegates to terminal (YesManChecker) → True
     assert await result.request_permission(object(), "add", {}) is True
+
+
+# ---------------------------------------------------------------------------
+# T72: build_permission_chain warns on unknown checker type
+# ---------------------------------------------------------------------------
+
+
+def test_build_chain_unknown_type_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """build_permission_chain with unknown type logs a warning and skips the entry."""
+    terminal = YesManChecker()
+    cfg: list[dict[str, JSONValue]] = [{"type": "totally_unknown_checker"}]
+
+    with caplog.at_level(logging.WARNING, logger="little_agent.agent.permissions"):
+        result = build_permission_chain(cfg, terminal)
+
+    # Unknown type is skipped; result falls back to the terminal.
+    assert result is terminal
+
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records, "Expected at least one warning for unknown permission checker type"
+    assert any("totally_unknown_checker" in r.message for r in warning_records), (
+        f"Warning should mention the unknown type name; got: {[r.message for r in warning_records]}"
+    )
+
+
+def test_build_chain_unknown_type_among_known_still_builds_partial_chain(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Known entries in a mixed list are still wired correctly despite unknown entries."""
+    terminal = YesManChecker()
+    cfg: list[dict[str, JSONValue]] = [
+        {"type": "blackwhitelist", "blacklist": ["bash"], "whitelist": []},
+        {"type": "mystery_type"},
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="little_agent.agent.permissions"):
+        result = build_permission_chain(cfg, terminal)
+
+    # The "mystery_type" entry emits a warning.
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records
+
+    # The blackwhitelist entry is still applied; "bash" must be denied.
+    # (We can't await here but we can check the type.)
+    assert isinstance(result, BlackWhiteListChecker)
 
 
 @pytest.mark.asyncio

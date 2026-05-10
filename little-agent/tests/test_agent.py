@@ -1,7 +1,9 @@
 """Tests for agent core and session."""
 
+from __future__ import annotations
+
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 import pytest
 
@@ -844,6 +846,57 @@ async def test_in_turn_overflow_second_raises() -> None:
     session = await agent.new()
     with pytest.raises(ContextOverflowError):
         await session.prompt("hi")
+
+
+# ---------------------------------------------------------------------------
+# T74: streaming backend does not re-send chunks via _handle_completed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streaming_backend_no_duplicate_agent_message_chunk() -> None:
+    """_handle_completed must NOT emit agent_message_chunk when backend already streamed.
+
+    When the backend yields agent_message_chunk updates during generate(),
+    `did_stream` is True and `_handle_completed` must skip the final
+    full-text re-emit. The client must receive each chunk exactly once.
+    """
+    client = MockClient()
+    tools = MockToolProvider()
+
+    # Build a backend that streams chunks followed by a BackendTurnResult.
+    class _StreamingBackend:
+        async def generate(
+            self, session: object
+        ) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
+            yield SessionUpdate(type="agent_message_chunk", data={"text": "Hello "})  # type: ignore[misc]
+            yield SessionUpdate(type="agent_message_chunk", data={"text": "world"})  # type: ignore[misc]
+            yield BackendTurnResult(  # type: ignore[misc]
+                output_text="Hello world",
+                tool_calls=[],
+                finish_reason="completed",
+            )
+
+    agent = AgentCore(client=client, backend=_StreamingBackend(), tools=tools)  # type: ignore[arg-type]
+    session = await agent.new()
+    reason, text = await session.prompt("hi")
+
+    assert reason == "end_turn"
+    assert text == "Hello world"
+
+    # Collect all agent_message_chunk updates.
+    chunk_updates = [u for u in client.updates if u.type == "agent_message_chunk"]
+
+    # Exactly two streaming chunks — the full-text re-emit must NOT be present.
+    chunk_texts = [u.data.get("text") for u in chunk_updates]
+    assert "Hello world" not in chunk_texts or chunk_texts.count("Hello world") == 0, (
+        f"Full text re-emit must be suppressed when streaming; got: {chunk_texts}"
+    )
+    # The two streamed chunks must be present.
+    full_text = "".join(str(t) for t in chunk_texts)
+    assert full_text == "Hello world", (
+        f"Concatenated streamed chunks must equal the full text; got: {chunk_texts!r}"
+    )
 
 
 @pytest.mark.asyncio

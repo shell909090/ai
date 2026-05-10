@@ -25,7 +25,7 @@ from little_agent.agent.nodes import (
     UserPromptNode,
 )
 from little_agent.agent.session import SessionCore
-from little_agent.backends.exceptions import ContextOverflowError
+from little_agent.backends.exceptions import BackendError, ContextOverflowError
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolArgDef, ToolDef
@@ -98,10 +98,13 @@ class _FakeEventStream:
 
 
 class _FakeStream:
-    """Fake opened stream with .event_stream and async __aexit__."""
+    """Fake opened stream supporting async-for iteration directly."""
 
     def __init__(self, events: list[Any]) -> None:
-        self.event_stream = _FakeEventStream(events)
+        self._iter = _FakeEventStream(events)
+
+    def __aiter__(self) -> "_FakeEventStream":
+        return self._iter
 
     async def __aexit__(self, *args: Any) -> None:
         pass
@@ -211,6 +214,14 @@ class _FakeBadRequestError(Exception):
         self.message = message
 
 
+class _FakeRateLimitError(Exception):
+    """Stand-in for anthropic.RateLimitError."""
+
+
+class _FakeAPIError(Exception):
+    """Stand-in for anthropic.APIError."""
+
+
 # ---------------------------------------------------------------------------
 # Backend factory helpers
 # ---------------------------------------------------------------------------
@@ -227,6 +238,8 @@ def _make_backend(
     mock_anthropic = MagicMock()
     mock_anthropic.AsyncAnthropic = MagicMock(return_value=mock_api_client)
     mock_anthropic.BadRequestError = _FakeBadRequestError
+    mock_anthropic.RateLimitError = _FakeRateLimitError
+    mock_anthropic.APIError = _FakeAPIError
 
     kwargs: dict[str, Any] = {
         "model": "claude-3-5-sonnet-latest",
@@ -585,7 +598,9 @@ async def test_anthropic_backend_max_tokens_equals_context_window() -> None:
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         await _collect(backend.generate(session))
 
-    assert captured.get("max_tokens") == 32000
+    # max_tokens must NOT equal context_window (P1-5 fix); default is 8192
+    assert captured.get("max_tokens") == 8192
+    assert captured.get("max_tokens") != captured.get("context_window", 128000)
 
 
 @pytest.mark.asyncio
@@ -673,12 +688,14 @@ async def test_anthropic_backend_non_overflow_bad_request_reraises() -> None:
 
     mock_anthropic = MagicMock()
     mock_anthropic.BadRequestError = _FakeBadRequestError
+    mock_anthropic.RateLimitError = _FakeRateLimitError
+    mock_anthropic.APIError = _FakeAPIError
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         tools = ToolManager()
         client_mock = MockClient()
         agent = AgentCore(client=client_mock, backend=backend, tools=tools)
         session = await agent.new()
 
-        with pytest.raises(_FakeBadRequestError):
+        with pytest.raises(BackendError):
             async for _ in backend.generate(session):
                 pass

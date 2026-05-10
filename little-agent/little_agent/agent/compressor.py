@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -201,10 +202,14 @@ class LLMCompressor:
         # Step 8: apply W-limit
         discarded, new_chain = _apply_w_limit(new_chain, self._compressed_window_tokens)
 
-        # Step 9: relink prev pointers
+        # Step 9: relink prev pointers, copying shared nodes to avoid mutating
+        # another session's chain (preserve_zone nodes may be shared via fork).
         prev_node: Node | None = None
+        relinked: list[Node] = []
         for n in new_chain:
-            n.prev = prev_node
+            if n.prev != prev_node:
+                n = dataclasses.replace(n, prev=prev_node)
+            relinked.append(n)
             prev_node = n
         new_tail = prev_node
 

@@ -74,6 +74,11 @@ def _collect_done_tasks(
             result: JSONValue = task.result()
         except Exception as e:
             result = {"status": "failed", "output": str(e)}
+        except BaseException as e:
+            result = {"status": "failed", "output": f"cancelled: {e}"}
+            if not spec.result_future.done():
+                spec.result_future.set_result(result)
+            raise
         status = result.get("status") if isinstance(result, dict) else "unknown"
         logger.info("Task %s finished (status=%s)", _spec_label(spec), status)
         if spec.task_id is not None:
@@ -122,7 +127,7 @@ class TaskToolProvider:
         from little_agent.agent.session import SessionCore as SessionCoreImpl
 
         node = session.tail
-        while node is not None and hasattr(node, "frozen"):
+        while node is not None and getattr(node, "frozen", False):
             node = node.prev
         fork_tail = node if node is not None else None
 
@@ -180,7 +185,7 @@ class TaskToolProvider:
                 done, _ = await asyncio.wait(running.keys(), return_when=asyncio.FIRST_COMPLETED)
                 _collect_done_tasks(done, running, completed)
 
-        except Exception as e:
+        except BaseException as e:
             for spec in [*unstarted, *running.values()]:
                 if not spec.result_future.done():
                     spec.result_future.set_result(
@@ -225,3 +230,7 @@ class TaskToolProvider:
             return {"status": "timeout", "output": f"Sub-task timed out after {TASK_TIMEOUT}s"}
         except Exception as e:
             return {"status": "failed", "output": str(e)}
+        except BaseException as e:
+            if not spec.result_future.done():
+                spec.result_future.set_result({"status": "failed", "output": f"cancelled: {e}"})
+            raise

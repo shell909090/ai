@@ -106,6 +106,18 @@
         }
         #send-btn:hover { opacity: 0.9; }
         #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #cancelButton {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #533483;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: none;
+        }
+        #cancelButton:hover { opacity: 0.9; }
         #status {
             padding: 0.5rem 1.5rem;
             font-size: 0.8rem;
@@ -158,6 +170,7 @@
     <div id="input-area">
         <input type="text" id="message-input" placeholder="Type a message..." disabled>
         <button id="send-btn" disabled>Send</button>
+        <button id="cancelButton">Cancel</button>
     </div>
     <div id="permission-modal">
         <div class="modal-content">

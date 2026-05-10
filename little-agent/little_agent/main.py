@@ -129,6 +129,7 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
 
     if backend_type == "anthropic":
         system: str | None = cfg.get("system") or None
+        max_tokens = int(cfg.get("max_tokens", 8192))
         return AnthropicBackend(
             model=str(model),
             api_key=api_key,
@@ -137,6 +138,7 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
             max_concurrency=max_concurrency,
             context_window=context_window,
             system=system,
+            max_tokens=max_tokens,
         )
 
     return OpenAIBackend(
@@ -280,7 +282,19 @@ def main() -> None:
 
     tools.register(TaskToolProvider(agent))
 
-    asyncio.run(client.run(agent))
+    if frontend_type == "web":
+        from little_agent.frontends.web import WebClient as _WebClient
+
+        cfg = config.get("frontend", {})
+        if isinstance(client, _WebClient):
+            host = cfg.get("host", "127.0.0.1") if isinstance(cfg, dict) else "127.0.0.1"
+            port_raw = cfg.get("port", 8080) if isinstance(cfg, dict) else 8080
+            port = int(port_raw) if isinstance(port_raw, (int, float)) else 8080
+            asyncio.run(client.run(agent, host=str(host), port=port))
+        else:
+            asyncio.run(client.run(agent))
+    else:
+        asyncio.run(client.run(agent))
 
 
 if __name__ == "__main__":

@@ -225,3 +225,87 @@ async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
     sub = await provider._fork_for_inheritance(session)
 
     assert sub.tail is None
+
+
+# ---------------------------------------------------------------------------
+# T66: _fork_for_inheritance stops at frozen=False AssistantResponseNode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_stops_at_frozen_false(simple_agent: AgentCore) -> None:
+    """_fork_for_inheritance stops traversal at the first frozen=False node.
+
+    The loop walks backwards while frozen is True; a frozen=False node causes
+    the loop to stop immediately, and the fork-tail is set to that very node
+    (not to its predecessor).
+    """
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+
+    # Chain: tail(frozen=True) -> middle(frozen=False) -> head(frozen=True)
+    # Walk from tail: frozen=True → continue; middle: frozen=False → stop.
+    # Expected fork-tail == middle (the node where traversal stopped).
+    head = AssistantResponseNode(id="head", prev=None, text="head", frozen=True)
+    middle = AssistantResponseNode(id="middle", prev=head, text="middle", frozen=False)
+    tail = AssistantResponseNode(id="tail", prev=middle, text="tail", frozen=True)
+    session.tail = tail
+
+    sub = await provider._fork_for_inheritance(session)
+
+    # The walker stops at 'middle' (frozen=False) so fork-tail must be 'middle'.
+    assert sub.tail is middle
+
+
+# ---------------------------------------------------------------------------
+# T68: CancelledError does not escape _run_scheduler; result_future is set
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scheduler_cancelled_sets_result_future(simple_agent: AgentCore) -> None:
+    """When the scheduler task is cancelled, pending result_futures are still resolved.
+
+    The `_run_scheduler` BaseException handler must set all unresolved futures
+    before re-raising, so callers of `create_task` / `result_future` never hang.
+    """
+    provider = TaskToolProvider(simple_agent)
+
+    # Capture the future before the scheduler consumes it.
+    captured_future: asyncio.Future[object] | None = None
+
+    async def _patched_execute(spec: object) -> None:  # type: ignore[override]
+        # Simulate a long-running sub-task so the scheduler can be cancelled.
+        await asyncio.sleep(10)
+
+    provider._execute = _patched_execute  # type: ignore[method-assign]
+
+    # Inject a task spec directly so we can grab its future.
+    from little_agent.tools.task import _TaskSpec
+
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[object] = loop.create_future()
+    spec = _TaskSpec(task_id=None, depends=[], kwargs={"prompt": "hi"}, result_future=future)
+    provider._pending.append(spec)
+    captured_future = future
+
+    # Start the scheduler manually.
+    scheduler_task = asyncio.create_task(provider._run_scheduler())
+
+    # Give the scheduler a tick to start executing the sub-task.
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    # Cancel the scheduler task.
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
+
+    # The future must be resolved (not pending) so awaiting it doesn't hang.
+    assert captured_future is not None
+    assert captured_future.done(), "result_future must be resolved after scheduler cancellation"
+    result = captured_future.result()
+    assert isinstance(result, dict)
+    assert result.get("status") in ("failed", "cancelled")
