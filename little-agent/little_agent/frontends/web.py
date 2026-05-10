@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 AGENT_KEY: web.AppKey[Agent] = web.AppKey("agent")
 CLIENT_KEY: web.AppKey[WebClient] = web.AppKey("client")
+
+_UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+
+
+def _is_valid_session_id(session_id: str) -> bool:
+    """Return True only for canonical UUID v4 strings."""
+    return bool(_UUID4_RE.match(session_id))
 
 
 class WebClient(Client):
@@ -263,6 +271,11 @@ class WebClient(Client):
 
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle a WebSocket connection."""
+        origin = request.headers.get("Origin")
+        if origin is not None and origin != "null":
+            expected = f"{request.url.scheme}://{request.url.authority}"
+            if origin != expected:
+                raise web.HTTPForbidden(reason="Cross-origin WebSocket not allowed")
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self.add_websocket(ws)
@@ -333,8 +346,7 @@ class WebClient(Client):
         self, agent: Agent, ws: web.WebSocketResponse, msg: dict[str, Any]
     ) -> dict[str, Any]:
         """Create session and subscribe ws."""
-        cwd = msg.get("cwd")
-        session = await agent.new(cwd=cwd)
+        session = await agent.new(cwd=None)
         session_id: str = session.id
         self._sessions[session_id] = session
         self._active[ws] = session_id
@@ -344,9 +356,11 @@ class WebClient(Client):
     async def _do_session_prompt(self, msg: dict[str, Any]) -> dict[str, Any]:
         """Run one prompt turn and auto-save."""
         session_id: str = msg.get("session_id", "")
+        if not _is_valid_session_id(session_id):
+            return {"error": "Invalid session"}
         sess = self._sessions.get(session_id)
         if sess is None:
-            return {"error": f"Unknown session: {session_id}"}
+            return {"error": "Unknown session"}
         prompt = msg.get("prompt", "")
         if not isinstance(prompt, str):
             return {"error": "prompt must be a string"}
@@ -362,9 +376,11 @@ class WebClient(Client):
     async def _do_session_cancel(self, msg: dict[str, Any]) -> dict[str, Any]:
         """Cancel an active turn."""
         session_id: str = msg.get("session_id", "")
+        if not _is_valid_session_id(session_id):
+            return {"error": "Invalid session"}
         sess = self._sessions.get(session_id)
         if sess is None:
-            return {"error": f"Unknown session: {session_id}"}
+            return {"error": "Unknown session"}
         await sess.cancel()
         return {"type": "session/cancel_response", "ok": True}
 
@@ -378,9 +394,12 @@ class WebClient(Client):
     ) -> None:
         """Load session and push history directly to ws; returns None."""
         session_id: str = msg.get("session_id", "")
+        if not _is_valid_session_id(session_id):
+            await ws.send_json({"error": "Invalid session"})
+            return None
         sess = await self._resume_session(agent, session_id)
         if sess is None:
-            await ws.send_json({"error": f"Session not found: {session_id}"})
+            await ws.send_json({"error": "Session not found"})
             return None
         self._sessions[session_id] = sess
         self._active[ws] = session_id
@@ -394,9 +413,11 @@ class WebClient(Client):
     ) -> dict[str, Any]:
         """Fork session and subscribe ws to the new session."""
         session_id: str = msg.get("session_id", "")
+        if not _is_valid_session_id(session_id):
+            return {"error": "Invalid session"}
         sess = self._sessions.get(session_id)
         if sess is None:
-            return {"error": f"Unknown session: {session_id}"}
+            return {"error": "Unknown session"}
         new_sess = await sess.fork()
         new_id: str = new_sess.id
         self._sessions[new_id] = new_sess
@@ -407,6 +428,8 @@ class WebClient(Client):
     async def _do_session_delete(self, msg: dict[str, Any]) -> dict[str, Any]:
         """Delete session and unsubscribe all watchers."""
         session_id: str = msg.get("session_id", "")
+        if not _is_valid_session_id(session_id):
+            return {"error": "Invalid session"}
         await self._delete_session(session_id)
         for conn_ws in list(self._active):
             if self._active[conn_ws] == session_id:

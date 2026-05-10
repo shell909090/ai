@@ -425,3 +425,70 @@ async def test_session_resume_unknown(web_client_fixture) -> None:
         assert "error" in response, (
             f"Expected error response for unknown session_id; got: {response}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Security tests: input validation, output sanitisation, origin enforcement
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invalid_session_id_rejected(web_client_fixture) -> None:
+    """Non-UUID session_id values are rejected without file I/O."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        for bad_id in ["../../etc/passwd", "", "not-a-uuid", "' OR 1=1--"]:
+            await ws.send_json({"type": "session/prompt", "session_id": bad_id, "prompt": "hi"})
+            resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+            assert "error" in resp, f"Expected error for session_id={bad_id!r}, got {resp}"
+            # Only check non-empty inputs are not echoed back (empty string is a trivial substring)
+            if bad_id:
+                assert bad_id not in resp.get("error", ""), (
+                    f"Error response must not echo the input, got {resp['error']!r}"
+                )
+
+
+@pytest.mark.asyncio
+async def test_error_response_does_not_echo_session_id(web_client_fixture) -> None:
+    """Error responses for unknown sessions use generic text, not the input string."""
+    test_client, web_client, agent = web_client_fixture
+    import uuid
+
+    unknown_id = str(uuid.uuid4())
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/prompt", "session_id": unknown_id, "prompt": "hi"})
+        resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        assert "error" in resp
+        assert unknown_id not in resp["error"], (
+            f"Error response must not echo session_id, got: {resp['error']!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_cwd_from_client_is_ignored(web_client_fixture) -> None:
+    """Client-supplied cwd in session/new is ignored; session.cwd should be None."""
+    test_client, web_client, agent = web_client_fixture
+
+    async with test_client.ws_connect("/ws") as ws:
+        await ws.send_json({"type": "session/new", "cwd": "/etc"})
+        resp = await asyncio.wait_for(ws.receive_json(), timeout=2.0)
+        assert resp.get("type") == "session/new_response"
+        session_id = resp["session_id"]
+        sess = web_client._sessions[session_id]
+        assert getattr(sess, "cwd", None) is None, (
+            f"Expected cwd=None, got {getattr(sess, 'cwd', 'MISSING')!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_cross_origin_websocket_rejected(web_client_fixture) -> None:
+    """WebSocket connection from a cross-origin browser is rejected with 403."""
+    test_client, web_client, agent = web_client_fixture
+
+    resp = await test_client.get(
+        "/ws",
+        headers={"Origin": "https://evil.example.com"},
+    )
+    assert resp.status == 403
