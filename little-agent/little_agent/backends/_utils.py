@@ -13,13 +13,19 @@ def _log_streaming_request(
     messages: list[Any],
     tools: list[Any] | None,
 ) -> None:
-    """Log a streaming request at DEBUG level."""
+    """Log a streaming request at DEBUG level (metadata only, no content)."""
+    roles = [m.get("role", "?") if isinstance(m, dict) else "?" for m in messages]
+    tool_names = [
+        (t.get("function", {}).get("name") or t.get("name", "?")) if isinstance(t, dict) else "?"
+        for t in (tools or [])
+    ]
     logger.debug(
-        "%s streaming request: model=%s messages=%s tools=%s",
+        "%s streaming request: model=%s messages=%d roles=%s tools=%s",
         name,
         model,
-        messages,
-        tools,
+        len(messages),
+        roles,
+        tool_names,
     )
 
 

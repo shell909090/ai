@@ -118,6 +118,12 @@ class ToolInvoker:
 
         allowed_calls: list[BackendToolCall] = []
         for tc in result.tool_calls:
+            if tc.error is not None:
+                tool_result_node.results[tc.call_id] = {
+                    "status": "failed",
+                    "content": tc.error,
+                }
+                continue
             if allowed_names is not None and tc.tool_name not in allowed_names:
                 tool_result_node.results[tc.call_id] = {
                     "status": "failed",

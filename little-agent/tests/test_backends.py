@@ -570,14 +570,14 @@ async def test_openai_backend_non_overflow_bad_request_reraises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_build_tool_calls_bad_json_returns_empty_arguments(
+def test_build_tool_calls_bad_json_sets_error_field(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """_build_tool_calls with invalid JSON arguments returns {} and emits a warning."""
+    """_build_tool_calls with invalid JSON arguments sets error field and logs at ERROR level."""
     acc: dict[int, dict[str, str]] = {
         0: {"id": "call_abc", "name": "echo", "arguments": "{bad json"},
     }
-    with caplog.at_level(logging.WARNING, logger="little_agent.backends.openai"):
+    with caplog.at_level(logging.ERROR, logger="little_agent.backends.openai"):
         result = _build_tool_calls(acc)
 
     assert len(result) == 1
@@ -585,10 +585,11 @@ def test_build_tool_calls_bad_json_returns_empty_arguments(
     assert tc.call_id == "call_abc"
     assert tc.tool_name == "echo"
     assert tc.arguments == {}
+    assert tc.error is not None, "Expected error field to be set on parse failure"
 
-    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("parse" in msg.lower() or "Failed" in msg for msg in warning_messages), (
-        f"Expected a warning about JSON parsing failure, got: {warning_messages}"
+    error_messages = [r.message for r in caplog.records if r.levelno == logging.ERROR]
+    assert any("parse" in msg.lower() or "Failed" in msg for msg in error_messages), (
+        f"Expected an error log about JSON parsing failure, got: {error_messages}"
     )
 
 

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TASK_TIMEOUT = 300.0
+_MAX_PENDING = 100
 
 
 @dataclass
@@ -153,6 +154,9 @@ class TaskToolProvider:
             if isinstance(depends_raw, list)
             else []
         )
+
+        if len(self._pending) >= _MAX_PENDING:
+            raise RuntimeError(f"TaskToolProvider pending queue is full (limit={_MAX_PENDING})")
 
         spec = _TaskSpec(
             task_id=task_id,

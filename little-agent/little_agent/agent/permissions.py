@@ -75,5 +75,5 @@ def build_permission_chain(
                 blacklist=blacklist, whitelist=whitelist, next_checker=checker
             )
         else:
-            logger.warning("Unknown permission checker type %r; skipping.", checker_type)
+            raise ValueError(f"Unknown permission checker type: {checker_type!r}")
     return checker

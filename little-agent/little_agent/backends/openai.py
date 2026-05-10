@@ -259,12 +259,14 @@ def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[Backend
     result = []
     for tc_data in (tool_calls_acc[i] for i in sorted(tool_calls_acc.keys())):
         raw_args = tc_data["arguments"]
+        error: str | None = None
         if raw_args:
             try:
                 arguments = json.loads(raw_args)
             except json.JSONDecodeError:
-                logger.warning("Failed to parse tool call arguments: %r", raw_args)
+                logger.error("Failed to parse tool call arguments: %r", raw_args)
                 arguments = {}
+                error = f"Invalid JSON arguments: {raw_args!r}"
         else:
             arguments = {}
         result.append(
@@ -272,6 +274,7 @@ def _build_tool_calls(tool_calls_acc: dict[int, dict[str, str]]) -> list[Backend
                 call_id=tc_data["id"],
                 tool_name=tc_data["name"],
                 arguments=arguments,
+                error=error,
             )
         )
     return result

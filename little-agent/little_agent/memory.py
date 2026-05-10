@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -103,6 +104,7 @@ class FileMemory:
         self._backend = backend
         self._path = Path(path)
         self._facts: list[str] = []
+        self._lock = asyncio.Lock()
         self._load_facts()
 
     def _load_facts(self) -> None:
@@ -138,6 +140,10 @@ class FileMemory:
 
     async def remember(self, session: "SessionCore") -> None:
         """Extract key facts from session and append to memory."""
+        async with self._lock:
+            await self._remember_locked(session)
+
+    async def _remember_locked(self, session: "SessionCore") -> None:
         history = _nodes_to_text(session.tail)
         if not history.strip():
             return
@@ -205,9 +211,10 @@ class FileMemory:
 
     async def recall(self) -> str:
         """Return current memory summary as system prompt text."""
-        if not self._facts:
-            return ""
-        lines = ["Important facts from previous conversations:"]
-        for fact in self._facts:
-            lines.append(f"- {fact}")
-        return "\n".join(lines)
+        async with self._lock:
+            if not self._facts:
+                return ""
+            lines = ["Important facts from previous conversations:"]
+            for fact in self._facts:
+                lines.append(f"- {fact}")
+            return "\n".join(lines)

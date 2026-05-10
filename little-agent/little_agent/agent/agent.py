@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from little_agent.types import JSONValue
 
+from .nodes import _NODE_REGISTRY
 from .protocol import Agent, Compressor, PermissionChecker, Session
 from .session import SessionCore
 
@@ -14,6 +15,21 @@ if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
     from little_agent.frontends.protocol import Client
     from little_agent.tools.protocol import ToolRegistry
+
+
+def _validate_chain(chain: list[Any]) -> None:
+    """Pre-validate all chain items before rebuilding; raises ValueError on the first bad node."""
+    for i, item in enumerate(chain):
+        if not isinstance(item, dict):
+            raise ValueError(f"Chain item {i} must be a dict, got {type(item).__name__}")
+        kind = item.get("kind")
+        node_id = item.get("id")
+        if not isinstance(kind, str):
+            raise ValueError(f"Chain item {i} missing 'kind' string field")
+        if not isinstance(node_id, str):
+            raise ValueError(f"Chain item {i} missing 'id' string field")
+        if kind not in _NODE_REGISTRY:
+            raise ValueError(f"Chain item {i} has unknown kind: {kind!r}")
 
 
 class AgentCore(Agent):
@@ -66,5 +82,6 @@ class AgentCore(Agent):
         )
         chain = data.get("chain", [])
         if isinstance(chain, list):
+            _validate_chain(chain)
             session._rebuild_tail(chain)
         return session

@@ -214,6 +214,17 @@ def _load_permissions(config: dict[str, Any], client: PermissionChecker) -> Perm
     return client
 
 
+def _validate_memory_path(mem_path: str) -> None:
+    """Reject paths that escape CWD or home directory to prevent path traversal."""
+    p = Path(mem_path)
+    if p.is_absolute():
+        home = Path.home()
+        if not p.resolve().is_relative_to(home):
+            raise ValueError(f"Memory path '{mem_path}' must be within the user's home directory")
+    elif ".." in p.parts:
+        raise ValueError(f"Memory path '{mem_path}' must not contain '..' components")
+
+
 def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str, Any]) -> Any:
     """Load memory system from config if present."""
     memory_cfg = config.get("memory")
@@ -223,6 +234,7 @@ def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str
         mem_type = memory_cfg.get("type", "file")
         if mem_type == "file":
             mem_path = memory_cfg.get("path", "memory.jsonl")
+            _validate_memory_path(str(mem_path))
             mem_backend_name = memory_cfg.get("backend", "primary")
             mem_backend_cfg = backends_config.get(mem_backend_name)
             if isinstance(mem_backend_cfg, dict):
@@ -307,9 +319,7 @@ def main() -> None:
     )
 
     tools_cfg = config.get("tools", {})
-    if isinstance(tools_cfg, dict) and tools_cfg.get("task_tool", True):
-        tools.register(TaskToolProvider(agent))
-    elif not isinstance(tools_cfg, dict):
+    if not isinstance(tools_cfg, dict) or tools_cfg.get("task_tool", True):
         tools.register(TaskToolProvider(agent))
 
     if frontend_type == "web":

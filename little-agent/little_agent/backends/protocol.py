@@ -19,6 +19,7 @@ class BackendToolCall:
     call_id: str
     tool_name: str
     arguments: dict[str, Any]
+    error: str | None = None
 
 
 @dataclass

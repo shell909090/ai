@@ -352,15 +352,22 @@ class AnthropicBackend:
             for idx in sorted(tool_blocks_acc.keys()):
                 tb = tool_blocks_acc[idx]
                 raw_input = tb["input_json"]
-                try:
-                    arguments: dict[str, Any] = json.loads(raw_input) if raw_input else {}
-                except json.JSONDecodeError:
+                tc_error: str | None = None
+                if raw_input:
+                    try:
+                        arguments: dict[str, Any] = json.loads(raw_input)
+                    except json.JSONDecodeError:
+                        logger.error("Failed to parse tool call arguments: %r", raw_input)
+                        arguments = {}
+                        tc_error = f"Invalid JSON arguments: {raw_input!r}"
+                else:
                     arguments = {}
                 tool_calls.append(
                     BackendToolCall(
                         call_id=tb["id"],
                         tool_name=tb["name"],
                         arguments=arguments,
+                        error=tc_error,
                     )
                 )
 

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ AGENT_KEY: web.AppKey[Agent] = web.AppKey("agent")
 CLIENT_KEY: web.AppKey[WebClient] = web.AppKey("client")
 
 _UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_MAX_SESSIONS = 100
 
 
 def _is_valid_session_id(session_id: str) -> bool:
@@ -38,9 +40,28 @@ class WebClient(Client):
     def __init__(self, sessions_dir: Path | None = None) -> None:
         self._websockets: set[web.WebSocketResponse] = set()
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
-        self._sessions: dict[str, Session] = {}
+        self._sessions: OrderedDict[str, Session] = OrderedDict()
         self._active: dict[web.WebSocketResponse, str | None] = {}
+        self._ws_locks: dict[web.WebSocketResponse, asyncio.Lock] = {}
         self._sessions_dir: Path | None = sessions_dir  # None disables persistence
+
+    def _register_session(self, session_id: str, session: Session) -> None:
+        """Insert or refresh a session in the LRU dict, evicting oldest when over limit."""
+        if session_id in self._sessions:
+            self._sessions.move_to_end(session_id)
+            self._sessions[session_id] = session
+        else:
+            if len(self._sessions) >= _MAX_SESSIONS:
+                evicted_id, _ = self._sessions.popitem(last=False)
+                logger.info("Evicted LRU session %s (limit=%d)", evicted_id, _MAX_SESSIONS)
+            self._sessions[session_id] = session
+
+    def _get_session(self, session_id: str) -> Session | None:
+        """Return session and mark as recently used."""
+        sess = self._sessions.get(session_id)
+        if sess is not None:
+            self._sessions.move_to_end(session_id)
+        return sess
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Send update to WebSocket clients subscribed to this session."""
@@ -107,21 +128,29 @@ class WebClient(Client):
         for ws, active_id in list(self._active.items()):
             if active_id != session_id:
                 continue
+            lock = self._ws_locks.get(ws)
+            if lock is None:
+                dead.add(ws)
+                continue
             try:
-                await ws.send_str(data)
+                async with lock:
+                    await ws.send_str(data)
             except Exception:
                 dead.add(ws)
         for ws in dead:
             self._active.pop(ws, None)
             self._websockets.discard(ws)
+            self._ws_locks.pop(ws, None)
 
     def add_websocket(self, ws: web.WebSocketResponse) -> None:
         """Register a new WebSocket connection."""
         self._websockets.add(ws)
+        self._ws_locks[ws] = asyncio.Lock()
 
     def remove_websocket(self, ws: web.WebSocketResponse) -> None:
         """Unregister a WebSocket connection."""
         self._websockets.discard(ws)
+        self._ws_locks.pop(ws, None)
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -175,7 +204,7 @@ class WebClient(Client):
             result = await asyncio.to_thread(self._sync_scan_sessions_dir)
         else:
             result = {}
-        for sid in self._sessions:
+        for sid in list(self._sessions):
             if sid not in result:
                 result[sid] = {
                     "id": sid,
@@ -205,8 +234,9 @@ class WebClient(Client):
 
     async def _resume_session(self, agent: Agent, session_id: str) -> Session | None:
         """Return session from memory or load from disk JSON. None if not found."""
-        if session_id in self._sessions:
-            return self._sessions[session_id]
+        cached = self._get_session(session_id)
+        if cached is not None:
+            return cached
         if self._sessions_dir is None:
             return None
         path = self._sessions_dir / f"{session_id}.json"
@@ -250,7 +280,7 @@ class WebClient(Client):
 
     async def _delete_session(self, session_id: str) -> None:
         """Remove session from memory and delete both disk files."""
-        self._sessions.pop(session_id, None)
+        self._sessions.pop(session_id, None)  # OrderedDict supports pop
         if self._sessions_dir is None:
             return
         json_path = self._sessions_dir / f"{session_id}.json"
@@ -348,7 +378,7 @@ class WebClient(Client):
         """Create session and subscribe ws."""
         session = await agent.new(cwd=None)
         session_id: str = session.id
-        self._sessions[session_id] = session
+        self._register_session(session_id, session)
         self._active[ws] = session_id
         await self._auto_save(session)
         return {"type": "session/new_response", "session_id": session_id}
@@ -358,7 +388,7 @@ class WebClient(Client):
         session_id: str = msg.get("session_id", "")
         if not _is_valid_session_id(session_id):
             return {"error": "Invalid session"}
-        sess = self._sessions.get(session_id)
+        sess = self._get_session(session_id)
         if sess is None:
             return {"error": "Unknown session"}
         prompt = msg.get("prompt", "")
@@ -378,7 +408,7 @@ class WebClient(Client):
         session_id: str = msg.get("session_id", "")
         if not _is_valid_session_id(session_id):
             return {"error": "Invalid session"}
-        sess = self._sessions.get(session_id)
+        sess = self._get_session(session_id)
         if sess is None:
             return {"error": "Unknown session"}
         await sess.cancel()
@@ -401,7 +431,7 @@ class WebClient(Client):
         if sess is None:
             await ws.send_json({"error": "Session not found"})
             return None
-        self._sessions[session_id] = sess
+        self._register_session(session_id, sess)
         self._active[ws] = session_id
         history = await self._read_history(session_id)
         await ws.send_json({"type": "session/resume_response", "session_id": session_id})
@@ -415,12 +445,12 @@ class WebClient(Client):
         session_id: str = msg.get("session_id", "")
         if not _is_valid_session_id(session_id):
             return {"error": "Invalid session"}
-        sess = self._sessions.get(session_id)
+        sess = self._get_session(session_id)
         if sess is None:
             return {"error": "Unknown session"}
         new_sess = await sess.fork()
         new_id: str = new_sess.id
-        self._sessions[new_id] = new_sess
+        self._register_session(new_id, new_sess)
         self._active[ws] = new_id
         await self._auto_save(new_sess)
         return {"type": "session/fork_response", "session_id": new_id}
