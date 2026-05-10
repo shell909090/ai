@@ -393,17 +393,32 @@ class ToolRegistry(Protocol):
 - 返回：`{"status": int, "headers": {str: str}, "body": str}`；网络错误返回 `status: -1`
 - 实现：`aiohttp.ClientSession`；body UTF-8 解码 errors=replace。
 
-#### write_file
-
-- desc: `Write content to a file, creating parent directories as needed`
-- 参数：`path`(string, req)、`content`(string, req)、`encoding`(string, default utf-8)
-- 自动创建父目录，覆盖写入；失败返回错误字符串。
-
 #### edit_file
 
-- desc: `Replace an exact string in a file`
-- 参数：`path`(string, req)、`old_str`(string, req)、`new_str`(string, req)、`encoding`(string, default utf-8)
-- 只替换首次出现；`old_str` 不存在时返回错误，不修改文件。
+`Create, overwrite, or partially edit a file`
+
+参数：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `path` | string | — | 必填，文件路径 |
+| `new_str` | string | — | 必填，写入/插入/替换的内容；空字符串 = 删除 |
+| `old_str` | string | null | 字符串定位；与 `pos` 互斥 |
+| `pos` | integer | null | 字符位置（0-indexed），`-1` = 文件尾；与 `old_str` 互斥 |
+| `len` | integer | 0 | 与 `pos` 配合的替换字符数；`0` = 纯插入 |
+| `create` | boolean | false | 文件不存在时是否自动创建（含父目录） |
+| `encoding` | string | utf-8 | 文件编码 |
+
+操作模式（三选一）：
+
+- 均不提供 `old_str` / `pos`：全量覆写。
+- `old_str`：替换首次出现；不存在则返回错误且不修改文件。
+- `pos`：`(0, 0)` 头部插入；`(-1, 0)` 尾部追加；`(N, M)` 区间替换。
+
+错误处理：
+
+- `old_str` 与 `pos` 同时提供 → raise `ValueError`。
+- 文件不存在且 `create=false` → 返回错误字符串。
 
 ## 4. ACP 协议与 Frontend
 
