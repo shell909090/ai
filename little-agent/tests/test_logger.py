@@ -222,3 +222,69 @@ async def test_concurrent_log_same_file(tmp_path: Path) -> None:
         assert "id" in rec
         assert "kind" in rec
         assert "created_at" in rec
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_log_shared_file_no_duplicates(tmp_path: Path) -> None:
+    """Concurrent first log() on a shared file must not produce duplicate records."""
+    log_file = tmp_path / "shared.jsonl"
+    existing = [
+        {
+            "session_id": "s1",
+            "id": "s1-old",
+            "kind": "user_prompt",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "prompt": "old1",
+        },
+        {
+            "session_id": "s2",
+            "id": "s2-old",
+            "kind": "user_prompt",
+            "created_at": "2024-01-01T00:00:01+00:00",
+            "prompt": "old2",
+        },
+    ]
+    log_file.write_text("\n".join(json.dumps(r) for r in existing) + "\n", encoding="utf-8")
+
+    file_logger = FileLogger(str(log_file))  # fixed path: rebuilt synchronously at init
+
+    old1 = _make_user_node(node_id="s1-old", prompt="old1")
+    new1 = _make_user_node(node_id="s1-new", prompt="new1")
+    old1.prev = None
+    new1.prev = old1
+    sess1 = _MockSession("s1")
+    sess1.tail = new1
+
+    old2 = _make_user_node(node_id="s2-old", prompt="old2")
+    new2 = _make_user_node(node_id="s2-new", prompt="new2")
+    old2.prev = None
+    new2.prev = old2
+    sess2 = _MockSession("s2")
+    sess2.tail = new2
+
+    await asyncio.gather(file_logger.log(sess1), file_logger.log(sess2))
+
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4, f"Expected 4 lines, got {len(lines)}: {lines}"
+
+    ids = [json.loads(line)["id"] for line in lines]
+    assert len(ids) == len(set(ids)), f"Duplicate records found: {ids}"
+    assert "s1-new" in ids
+    assert "s2-new" in ids
+    assert ids.count("s1-old") == 1
+    assert ids.count("s2-old") == 1
+
+
+@pytest.mark.asyncio
+async def test_locks_dict_capped_at_max(tmp_path: Path) -> None:
+    """_locks dict must not grow beyond _MAX_LOCKS entries."""
+    from little_agent.agent.logger import _MAX_LOCKS
+
+    template = str(tmp_path / "session_{session_id}.jsonl")
+    file_logger = FileLogger(template)
+
+    for i in range(_MAX_LOCKS + 10):
+        fake_path = tmp_path / f"session_fake-{i:04d}.jsonl"
+        file_logger._get_lock(fake_path)
+
+    assert len(file_logger._locks) <= _MAX_LOCKS
