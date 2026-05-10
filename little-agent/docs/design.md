@@ -195,9 +195,11 @@ class SummaryNode(Node):
    - 若正在并发执行 tools：`asyncio.gather` 解除 wait，已完成的结果正常写入，未完成的 call 在 `ToolResultNode.results` 中标记 `cancelled`，节点立刻冻结；后到的结果因节点已冻结而被丢弃。
    - 最后冻结任何未封口节点，返回 `("cancelled", partial_output)`。
 6. 真正失败（backend 异常、链条不一致等）直接抛异常，不返回 `failed`。
-7. 无论成功、取消还是异常，finally 阶段先按 §2.6.2 判据评估是否触发 post-turn 自动压缩：
-   - 触发：保持活跃 turn 标记不释放，异步调度 compress 任务（`asyncio.create_task`），由该任务在结束时释放标记；pending 队列在 compress 结束后才唤醒。
-   - 未触发：立即清理活跃 turn 标记；pending 队列非空时唤醒下一个排队协程。
+7. 无论成功、取消还是异常，finally 阶段：
+   1. 若 agent 已注入 `logger`，调用 `logger.log(session)`（详见 §2.9）。
+   2. 按 §2.6.2 判据评估是否触发 post-turn 自动压缩：
+      - 触发：保持活跃 turn 标记不释放，异步调度 compress 任务（`asyncio.create_task`），由该任务在结束时释放标记；pending 队列在 compress 结束后才唤醒。
+      - 未触发：立即清理活跃 turn 标记；pending 队列非空时唤醒下一个排队协程。
 8. `Session.cancel()` 只影响当前活跃 turn（含 post-turn compress 任务），不清空 pending 队列。
 
 `Session.cancel()` 规则：
@@ -358,6 +360,39 @@ class Memory:
 2. 注入时每轮 `_run_turn` 开始前调用 `recall()`：返回的文本作为 `SummaryNode` 注入到 session tail。
 3. 每轮 `_run_turn` 结束后（无论成功、取消、异常）调用 `remember(session)` 更新记忆。
 4. 未注入：跳过 recall 与 remember。
+
+### 2.9 SessionLogger
+
+会话日志系统，记录"发生的事实"——原始对话链中的节点，供事后回放、调试、审计。与 `session.save()` 的区别：save 是内存状态的镜像（历史可能经过压缩或被丢弃），logger 是完整的只写历史流。
+
+```python
+class SessionLogger(Protocol):
+    async def log(self, session: "Session") -> None: ...
+```
+
+规则：
+
+1. `AgentCore` 持有 `loggers: list[SessionLogger]`（复数）；空列表时跳过。启动脚本从 `loggers` 配置段构造；web frontend 在启动时额外追加一个 FileLogger（见 §4.7）。
+2. 调用时机：每轮 `_run_turn()` 结束后（无论 end_turn、cancelled、异常），在 compress 判据评估之前（§2.5 步骤 7.1）；对 `loggers` 中每个 logger 依次调用。
+3. `SummaryNode` 不参与记录——SummaryNode 是对事实的摘要，是适应 context window 的妥协，不是事实本身。Logger 只持久化 `UserPromptNode`、`ToolCallNode`、`ToolResultNode`、`AssistantResponseNode`。
+4. 内部状态 `last_tail_ids: dict[str, str]`：key 为 `session_id`，value 为上次成功 `log()` 时的 `session.tail.id`。
+5. 遍历算法：从 `session.tail` 向前回溯；遇到 `id == last_tail_ids[session_id]` 的节点停止（首次调用该 session 时无 stop point，遍历整条链）；跳过 `SummaryNode`；将收集到的节点按正序（从旧到新）持久化；完成后更新 `last_tail_ids[session_id] = session.tail.id`。
+6. Stop point 可达性保证：logger 在 compress 前调用；compress 至少保留 `keep_turns ≥ 1` 轮；因此上次 log 时的 tail（即上轮 turn 的最末节点）始终在 preserve zone 内，不会被压缩掉。
+
+#### FileLogger
+
+```yaml
+loggers:                                   # 列表；可配置多个 logger
+  - type: file
+    filename: "session_{session_id}.jsonl" # 支持 {session_id} 占位符；固定字符串则所有 session 共享同一文件
+```
+
+实现要点：
+
+1. `filename.format(session_id=session.id)` 得到实际路径；多 session 可映射到同一文件或不同文件。
+2. 文件存在时启动重建：逐行解析 JSON，按 `session_id` 分组，取每组最后一条记录的 `id` 字段，写入 `last_tail_ids`。
+3. 每个节点以一行 JSON 追加写入：`{"session_id": session.id, **node.to_dict()}`，复用现有节点序列化接口。
+4. 每个实际文件路径对应一把 `asyncio.Lock`，保证多 session 并发写入同一文件时的安全性。
 
 ## 3. MCP 协议与 Tools
 
@@ -734,6 +769,79 @@ run() 主循环     _watch_cancel_loop
 | `/load <path>` | 从文件加载 session |
 | `/list-tools` | 列出当前已注册的所有 tool 名称与描述 |
 
+### 4.7 WebClient
+
+#### 职责
+
+1. 持有全局 session 注册表（server-wide）。
+2. 按"订阅"模型路由更新：`update()` 只发给当前正在查看该 session 的连接；两个浏览器主动选择同一 session 时自然进入协作视图。
+3. 每轮 prompt 结束后自动将 session 状态持久化到磁盘（JSON），供断线重联恢复 LLM 上下文。
+4. 断线重联后，从 FileLogger 的 JSONL 文件读取完整交互历史发给前端（历史不受压缩影响）。
+5. 启动时自动向 `agent.loggers` 追加一个 FileLogger（路径派生自 `sessions_dir`），无论用户是否在配置文件中声明 `loggers`。用户自行配置的 loggers 仍保留，web 的 FileLogger 是额外追加，不覆盖。
+
+#### 数据结构
+
+```python
+_sessions:    dict[str, Session]                  # server-wide session 注册表
+_active:      dict[WebSocketResponse, str | None] # 每个连接当前订阅的 session_id
+_sessions_dir: Path | None                        # 持久化目录，None 时不落盘
+```
+
+`update(session, update)` 只发给满足 `_active[ws] == session.id` 的连接。  
+执行 `session/new`、`session/resume`、`session/fork` 后自动更新 `_active[ws] = new_session_id`。
+
+#### 协议消息（客户端 → 服务端）
+
+| type | 参数 | 说明 |
+|------|------|------|
+| `session/list` | — | 列出所有 session（内存 + 磁盘），返回元数据列表 |
+| `session/new` | `cwd?` | 创建新 session，自动订阅 |
+| `session/resume` | `session_id` | 加载 session（内存优先，否则从磁盘），自动订阅，返回完整历史 |
+| `session/fork` | `session_id` | fork 指定 session，自动订阅新 session |
+| `session/delete` | `session_id` | 删除 session（内存 + 磁盘 `.json` + `.jsonl`） |
+| `session/prompt` | `session_id, prompt` | 发起对话（已有） |
+| `session/cancel` | `session_id` | 取消当前 turn（已有） |
+
+#### 服务端响应
+
+`session/list_response`：
+```json
+{
+  "type": "session/list_response",
+  "sessions": [
+    {"id": "...", "updated_at": "ISO8601", "preview": "首条用户消息前50字"}
+  ]
+}
+```
+
+`session/resume_response`：服务端先返回 resume 确认，随即发送一条 `session/history` 消息：
+```json
+{
+  "type": "session/history",
+  "session_id": "...",
+  "nodes": [
+    {"kind": "user_prompt",        "id": "...", "created_at": "...", "prompt": "..."},
+    {"kind": "assistant_response", "id": "...", "created_at": "...", "text": "..."},
+    {"kind": "tool_call",          "id": "...", "created_at": "...", "output_text": "...", "calls": {...}},
+    {"kind": "tool_result",        "id": "...", "created_at": "...", "results": {...}}
+  ]
+}
+```
+节点数据来自 FileLogger 写入的 JSONL 文件（完整历史，不受压缩影响）。若 JSONL 文件不存在（session 刚创建尚未有 turn），返回空 `nodes` 列表。
+
+#### 持久化
+
+- 目录：由 `frontend.sessions_dir` 指定，默认 `~/.local/state/little_agent/sessions/`。
+- 每次 `session/prompt` 返回后，调用 `session.save()` 序列化为 `{sessions_dir}/{session_id}.json`。
+- `session/list` 时扫描目录，读 `.json` 文件的 `id` 字段与 mtime；从对应 `.jsonl` 文件读取首条 `user_prompt` 节点作为 preview。
+- `session/resume` 时：若 session 不在内存，从 `.json` 文件调用 `agent.load()` 恢复。
+
+#### 配置
+
+见 §6.2。关键字段：`frontend.sessions_dir`（默认 `~/.local/state/little_agent/sessions/`）。
+
+---
+
 ## 5. Backend
 
 backend 负责将 session 节点链转换为各自 API 所需的消息格式，并将 API 响应映射回 `BackendTurnResult`。所有 backend 都是远程调用，不要求支持底层请求级 cancel。
@@ -899,10 +1007,11 @@ little-agent = "little_agent.main:main"
 4. 初始化 `ToolManager`：构造实例；加载配置中的 providers，将 `BashToolProvider` append 到末尾，统一注册。
 5. 初始化各 `Backend`（按配置中 `backends` 多个名称分别构造）。
 6. 初始化 `Compressor`（可选）、`Memory`（可选）。
-7. 初始化具体 `Client` 实现。
-8. 从配置 `permissions` list 与 `client` 构建 permission chain（`PermissionChecker`）；list 为空则直接用 `client`。
-9. 用上述依赖构造 `Agent`。
-9. 调用 client 的 `run(agent)` 启动交互。
+7. 初始化 `SessionLogger` 列表（可选）：遍历 `loggers` 配置列表，按每项的 `type` 字段分发构造对应实现（当前支持 `file`）；若省略则为空列表。
+8. 初始化具体 `Client` 实现。
+9. 从配置 `permissions` list 与 `client` 构建 permission chain（`PermissionChecker`）；list 为空则直接用 `client`。
+10. 用上述依赖构造 `Agent`（含 `loggers` 参数）。
+11. 调用 client 的 `run(agent)` 启动交互。
 
 ### 6.2 配置文件 schema
 
@@ -958,7 +1067,17 @@ permissions:
   - type: yesman          # 放行所有未被上面拦截的请求
 
 frontend:
-  type: cli
+  type: cli                                # cli | web | acp
+  # web 专有字段（type: web 时生效）：
+  # host: 127.0.0.1
+  # port: 8080
+  # sessions_dir: ~/.local/state/little_agent/sessions   # 默认值如此；可覆盖
+
+loggers:                                   # optional；未配置时为空列表（web frontend 会自动追加一个）
+  - type: file
+    filename: "~/.local/state/little_agent/sessions/session_{session_id}.jsonl"
+                                           # 支持 {session_id} 占位符；固定字符串则所有 session 共享一个文件
+                                           # ~ 自动展开；路径直接写全
 
 logging:
   version: 1
