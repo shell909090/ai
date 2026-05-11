@@ -53,7 +53,7 @@ class Agent(Protocol):
     """Agent protocol."""
 
     tools: ToolRegistry
-    loggers: list[object]
+    hooks: list[object]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
 

@@ -84,7 +84,10 @@ def build_app(client: WebClient, agent: Agent) -> web.Application:
 
     app.on_response_prepare.append(_add_csp_header)
 
-    static_dir = Path(__file__).parent.parent / "static"
+    # Prefer package-data dir (_static/); fall back to old path for compatibility.
+    static_dir = Path(__file__).parent.parent / "_static"
+    if not static_dir.exists():
+        static_dir = Path(__file__).parent.parent / "static"
     if static_dir.exists():
         index = static_dir / "index.html"
 
@@ -94,7 +97,7 @@ def build_app(client: WebClient, agent: Agent) -> web.Application:
         app.router.add_get("/", _serve_index)
         app.router.add_static("/", static_dir, name="static")
     else:
-        logger.warning("Static directory not found: %s", static_dir)
+        logger.warning("Static directory not found at %s; web UI not served", static_dir)
 
     app.router.add_get("/ws", handle_websocket)
     return app
@@ -106,15 +109,9 @@ async def run(
     host: str = "127.0.0.1",
     port: int = 8080,
 ) -> None:
-    """Build the app, setup FileLogger if needed, and serve until cancelled."""
+    """Start the aiohttp web server."""
     if client.store.sessions_dir is not None:
-        from little_agent.agent.logger import FileLogger
-
-        sessions_dir = client.store.sessions_dir
-        template = str(sessions_dir / "{session_id}_session.jsonl")
-        if not any(getattr(lg, "_template", None) == template for lg in agent.loggers):
-            agent.loggers.append(FileLogger(template))
-        sessions_dir.mkdir(parents=True, exist_ok=True)
+        client.store.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     app = build_app(client, agent)
     runner = web.AppRunner(app)

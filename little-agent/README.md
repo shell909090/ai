@@ -12,7 +12,7 @@ little-agent features:
 - **Protocol-based design** — backends, frontends, and tools are all swappable
 - **Multiple LLM backends** — OpenAI-compatible APIs and Anthropic Claude
 - **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)
-- **MCP tool support (planned)** — currently tools are loaded as Python modules via the `tools.providers` config
+- **MCP tool support (stdio)** — connect any MCP-compatible tool server via stdio transport (`tools.mcp` config)
 - **Permission system** — Chain of Responsibility: per-tool allow/deny rules with user prompt fallback
 - **Auto-compression** — automatically summarize history when context window fills up
 
@@ -223,11 +223,13 @@ override it.
 ```bash
 make fmt          # format with ruff
 make lint         # ruff check + mypy --strict
-make build        # compile-check all .py files
+make build        # build frontend + package into _static/ + py_compile check
 make unittest     # run tests
 make test         # tests + coverage report
 
 make fmt lint build test   # run everything
+
+# Frontend build is included in `make build` (npm ci + esbuild → _static/)
 ```
 
 ## Architecture

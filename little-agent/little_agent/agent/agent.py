@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from little_agent.types import JSONValue
 
+from .hooks import Hook
 from .nodes import validate_node_dict
 from .protocol import Agent, Compressor, PermissionChecker, Session
 from .session import SessionCore
@@ -41,7 +42,7 @@ class AgentCore(Agent):
         tools: ToolRegistry,
         compressor: Compressor | None = None,
         permissions: PermissionChecker | None = None,
-        loggers: list[Any] | None = None,
+        hooks: list[Hook] | None = None,
         compress_ratio: float = 0.75,
         context_window: int = 128000,
     ) -> None:
@@ -52,7 +53,7 @@ class AgentCore(Agent):
         self.permissions: PermissionChecker = (
             permissions if permissions is not None else cast(PermissionChecker, client)
         )
-        self.loggers: list[Any] = loggers or []
+        self.hooks: list[Hook] = hooks or []  # type: ignore[assignment]
         self.compress_ratio = compress_ratio
         self.context_window = context_window
 

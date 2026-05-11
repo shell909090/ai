@@ -12,7 +12,7 @@ little-agent 的主要特性：
 - **基于协议的设计** — 后端、前端、工具均可独立替换
 - **多 LLM 后端** — 支持 OpenAI 兼容 API 和 Anthropic Claude
 - **多前端** — 交互式 CLI、WebSocket（ACP）、HTTP/WebSocket（Web）
-- **MCP 工具支持（计划中）** — 当前工具通过 `tools.providers` 配置以 Python 模块方式加载
+- **MCP 工具支持（stdio）— 通过 stdio 传输接入任何 MCP 兼容工具服务器（`tools.mcp` 配置）
 - **权限系统** — 责任链模式：对每个工具配置 allow/deny 策略，无匹配时自动询问用户
 - **自动压缩** — 上下文窗口接近上限时自动总结历史
 

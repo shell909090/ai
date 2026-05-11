@@ -51,6 +51,19 @@ class SessionCore(Session):
         # Holds strong references to background tasks to prevent GC under Python 3.11+.
         self._bg_tasks: set[asyncio.Task[object]] = set()
 
+    async def _call_hooks(self, method_name: str, *args: Any) -> None:
+        """Call hook method on all hooks; catch and log exceptions, never propagate."""
+        for hook in self.agent.hooks:
+            try:
+                await getattr(hook, method_name)(*args)
+            except Exception:
+                logger.exception(
+                    "Hook %s.%s failed [session=%s]",
+                    type(hook).__name__,
+                    method_name,
+                    self.id,
+                )
+
     def get_turn_tool_map(self) -> ToolMap:
         """Return tool map for current turn."""
         if self._turn_allowed_tools is None:
@@ -119,6 +132,8 @@ class SessionCore(Session):
         """Inner turn execution after context vars are set."""
         self._turn_allowed_tools = allowed_tools
 
+        await self._call_hooks("on_turn_start", self)
+
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
@@ -134,6 +149,7 @@ class SessionCore(Session):
                 if self._cancel_requested:
                     assert self.tail is not None
                     self.tail.freeze()
+                    await self._call_hooks("on_cancel", self)
                     return ("cancelled", partial_output)
 
                 result, did_stream, _overflow_retried = await self._backend_result_with_retry(
@@ -153,11 +169,7 @@ class SessionCore(Session):
 
             raise RuntimeError("Max turn iterations exceeded")
         finally:
-            for _logger in self.agent.loggers:
-                try:
-                    await _logger.log(self)
-                except Exception:
-                    logger.exception("Logger %s failed", _logger)
+            await self._call_hooks("on_turn_end", self)
             self._schedule_compress_if_needed(last_result)
 
     def _iter_nodes(self) -> Iterator["Node"]:
@@ -211,6 +223,7 @@ class SessionCore(Session):
             new_tail = await self.agent.compressor.compress(self.tail)  # type: ignore[union-attr]
             if new_tail is not None:
                 self.tail = new_tail
+                await self._call_hooks("on_compress", self)
         except Exception:
             logger.exception("Post-turn compress failed")
         finally:
@@ -239,6 +252,7 @@ class SessionCore(Session):
             new_tail = await self.agent.compressor.compress(self.tail)
             if new_tail is not None:
                 self.tail = new_tail
+                await self._call_hooks("on_compress", self)
             result, did_stream = await self._generate_backend_result()
             return result, did_stream, True
 
@@ -311,6 +325,7 @@ class SessionCore(Session):
             agent=self.agent,
         )
         new_session.tail = self.tail
+        await self._call_hooks("on_fork", self, new_session)
         return new_session
 
     async def compress(self) -> None:
@@ -320,7 +335,9 @@ class SessionCore(Session):
         if self.agent.compressor is None:
             raise RuntimeError("No compressor configured")
         new_head = await self.agent.compressor.compress(self.tail)
-        self.tail = new_head
+        if new_head is not None:
+            self.tail = new_head
+            await self._call_hooks("on_compress", self)
 
     def save(self) -> JSONValue:
         """Serialize session state to a JSON-compatible dict."""

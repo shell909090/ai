@@ -48,9 +48,11 @@ class ToolInvoker:
         )
 
         tool_result_node = self._create_tool_result_node()
+        await self._session._call_hooks("on_tool_call", self._session, tool_call_node)
         await self._invoke_tools(result, tool_result_node)
         if self._session.tail is not None:
             self._session.tail.freeze()
+        await self._session._call_hooks("on_tool_result", self._session, tool_result_node)
 
         return partial_output
 

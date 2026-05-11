@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "esbuild src/app.ts --bundle --format=iife --outfile=app.js --target=es2020",
+    "build": "mkdir -p dist && esbuild src/app.ts --bundle --format=iife --outfile=dist/app.js --target=es2020 && cp index.html dist/",
     "lint": "eslint 'src/**/*.ts' && tsc --noEmit",
     "fmt": "prettier --write 'src/**/*.ts'",
     "test": "vitest run"

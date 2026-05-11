@@ -284,26 +284,100 @@ def _load_permissions(config: dict[str, Any], client: PermissionChecker) -> Perm
     return client
 
 
-def _load_loggers(config: dict[str, Any]) -> list[Any]:
-    """Load session loggers from config list."""
-    loggers_cfg = config.get("loggers", [])
-    if not isinstance(loggers_cfg, list):
-        return []
-    from little_agent.agent.logger import FileLogger
+def _load_session_store(
+    config: dict[str, Any],
+    frontend_type: str,
+    frontend_cfg: dict[str, Any],
+) -> Any:
+    """Load SessionJSONLStore from session_store: config, or auto-inject for web frontend."""
+    from little_agent.agent.session_store import SessionJSONLStore
 
-    result: list[Any] = []
-    for cfg in loggers_cfg:
+    session_store_cfg = config.get("session_store")
+    if isinstance(session_store_cfg, dict):
+        sessions_dir = str(
+            session_store_cfg.get("sessions_dir", "~/.local/state/little_agent/sessions/")
+        )
+        filename_template = str(
+            session_store_cfg.get("filename_template", "{session_id}_session.jsonl")
+        )
+        return SessionJSONLStore(sessions_dir=sessions_dir, filename_template=filename_template)
+    elif session_store_cfg is None and frontend_type == "web":
+        # Auto-inject for web frontend using the same sessions_dir as the web client.
+        sessions_dir_raw = frontend_cfg.get(
+            "sessions_dir", "~/.local/state/little_agent/sessions/"
+        )
+        store = SessionJSONLStore(sessions_dir=str(sessions_dir_raw))
+        logger.info("session_store auto-enabled for web frontend")
+        return store
+    return None
+
+
+def _load_hooks(config: dict[str, Any]) -> list[Any]:
+    """Load hooks from config. Raises if loggers: key found (deprecated)."""
+    if "loggers" in config:
+        raise ValueError(
+            "Rename `loggers:` to `hooks:` or migrate to `session_store:`"
+        )
+    hooks_cfg = config.get("hooks")
+    if hooks_cfg is None:
+        return []
+    if not isinstance(hooks_cfg, list):
+        logger.warning("hooks config is not a list; ignored")
+        return []
+    for item in hooks_cfg:
+        if isinstance(item, dict):
+            hook_type = item.get("type")
+            raise ValueError(
+                f"Unknown hook type: {hook_type!r}. "
+                "No built-in hook types are registered via hooks:. "
+                "Use session_store: for SessionJSONLStore."
+            )
+    return []
+
+
+def _parse_mcp_provider_configs(config: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Parse tools.mcp config into (name, cfg) pairs for async start."""
+    tools_config = config.get("tools") or {}
+    mcp_config = tools_config.get("mcp")
+    if mcp_config is None:
+        return []
+    if not isinstance(mcp_config, dict):
+        raise ValueError("'tools.mcp' must be a dict mapping server names to configs")
+    result = []
+    for name, cfg in mcp_config.items():
         if not isinstance(cfg, dict):
-            continue
-        if cfg.get("type") == "file":
-            filename = str(cfg.get("filename", "{session_id}_session.jsonl"))
-            result.append(FileLogger(filename))
-        else:
-            logger.warning("Unknown logger type: %s", cfg.get("type"))
+            raise ValueError(f"MCP server '{name}': config must be a dict")
+        command = cfg.get("command")
+        if not isinstance(command, list):
+            raise ValueError(
+                f"MCP server '{name}': 'command' is required and must be a list of strings"
+            )
+        if not all(isinstance(c, str) for c in command):
+            raise ValueError(f"MCP server '{name}': 'command' must be a list of strings")
+        result.append((name, cfg))
     return result
 
 
-def _run_frontend(
+async def _start_mcp_providers(
+    mcp_cfgs: list[tuple[str, dict[str, Any]]],
+    tools: ToolManager,
+) -> list[Any]:
+    """Instantiate and start MCP providers; register each on success."""
+    from little_agent.tools.mcp import MCPStdioProvider
+
+    providers: list[Any] = []
+    for name, cfg in mcp_cfgs:
+        provider = MCPStdioProvider(name=name, **cfg)
+        try:
+            await provider.start()
+            tools.register(provider)
+            providers.append(provider)
+        except Exception:
+            logger.exception("Failed to start MCP provider '%s'; it will not be available", name)
+    return providers
+
+
+async def _run_frontend_async(
     client: CliClient | WebClient | AcpClient,
     agent: AgentCore,
     config: dict[str, Any],
@@ -319,15 +393,36 @@ def _run_frontend(
             host = cfg.get("host", "127.0.0.1") if isinstance(cfg, dict) else "127.0.0.1"
             port_raw = cfg.get("port", 8080) if isinstance(cfg, dict) else 8080
             port = int(port_raw) if isinstance(port_raw, (int, float)) else 8080
-            asyncio.run(client.run(agent, host=str(host), port=port))
+            await client.run(agent, host=str(host), port=port)
             return
     elif frontend_type == "cli":
         from little_agent.frontends.cli import CliClient as _CliClient
 
         if isinstance(client, _CliClient):
-            asyncio.run(client.run(agent, initial_prompt=initial_prompt))
+            await client.run(agent, initial_prompt=initial_prompt)
             return
-    asyncio.run(client.run(agent))
+    await client.run(agent)
+
+
+async def _async_main(
+    client: CliClient | WebClient | AcpClient,
+    agent: AgentCore,
+    tools: ToolManager,
+    config: dict[str, Any],
+    frontend_type: str,
+    initial_prompt: str | None,
+    mcp_cfgs: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Async entry: start MCP providers, run frontend, stop providers on exit."""
+    mcp_providers = await _start_mcp_providers(mcp_cfgs, tools)
+    try:
+        await _run_frontend_async(client, agent, config, frontend_type, initial_prompt)
+    finally:
+        for provider in mcp_providers:
+            try:
+                await provider.stop()
+            except Exception:
+                logger.exception("Failed to stop MCP provider")
 
 
 def main() -> None:
@@ -356,13 +451,21 @@ def main() -> None:
     tools, task_enabled = _load_tools(config)
     backend, backends_config = _load_backend(config)
     compressor = _load_compressor(config, backend, backends_config)
-    loggers = _load_loggers(config)
 
     frontend_type = config.get("frontend", {}).get("type", "cli")
+    frontend_cfg = config.get("frontend", {})
+    if not isinstance(frontend_cfg, dict):
+        frontend_cfg = {}
+
+    session_store = _load_session_store(config, frontend_type, frontend_cfg)
+    hooks = _load_hooks(config)
+    if session_store is not None:
+        hooks.append(session_store)
 
     if frontend_type == "web":
-        cfg = config.get("frontend", {})
-        sessions_dir_raw = cfg.get("sessions_dir") if isinstance(cfg, dict) else None
+        sessions_dir_raw = (
+            frontend_cfg.get("sessions_dir") if isinstance(frontend_cfg, dict) else None
+        )
         if sessions_dir_raw:
             sessions_dir: Path | None = Path(str(sessions_dir_raw)).expanduser()
         else:
@@ -386,15 +489,22 @@ def main() -> None:
         tools=tools,
         compressor=compressor,
         permissions=permissions,
-        loggers=loggers,
+        hooks=hooks,
         compress_ratio=compress_ratio,
         context_window=backend.context_window,
     )
 
+    if session_store is not None:
+        tools.register(session_store)
+
     if task_enabled:
         tools.register(TaskToolProvider(agent))
 
-    _run_frontend(client, agent, config, frontend_type, args.prompt)
+    mcp_cfgs = _parse_mcp_provider_configs(config)
+
+    asyncio.run(
+        _async_main(client, agent, tools, config, frontend_type, args.prompt, mcp_cfgs)
+    )
 
 
 if __name__ == "__main__":

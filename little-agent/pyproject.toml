@@ -13,6 +13,7 @@ dependencies = [
     "anthropic>=0.40",
     "aiohttp>=3.9",
     "prompt_toolkit>=3.0,<4.0",
+    "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ little-agent = "little_agent.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["little_agent"]
+artifacts = ["little_agent/_static/**"]
 
 [tool.ruff]
 line-length = 100
