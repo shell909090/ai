@@ -9,6 +9,7 @@ import pytest
 
 from little_agent.agent.compressor import (
     LLMCompressor,
+    _CompressorSession,
     _apply_w_limit,
     _nodes_to_text,
     _split_into_turns,
@@ -513,6 +514,44 @@ def test_nodes_to_text_includes_tool_call_output_text() -> None:
     )
     tool_idx = next(i for i, line in enumerate(lines) if "[Tool calls:" in line)
     assert assistant_idx < tool_idx
+
+
+# ---------------------------------------------------------------------------
+# 16. _CompressorSession has id attribute (regression for AttributeError)
+# ---------------------------------------------------------------------------
+
+
+def test_compressor_session_has_id() -> None:
+    """_CompressorSession must expose an 'id' attribute required by backends."""
+    from little_agent.backends.protocol import Backend
+
+    backend = MockBackend()
+    session = _CompressorSession(backend, "test prompt")  # type: ignore[arg-type]
+    assert hasattr(session, "id")
+    assert isinstance(session.id, str)
+    assert len(session.id) > 0
+
+
+@pytest.mark.asyncio
+async def test_compressor_session_id_passed_to_backend() -> None:
+    """Backend receives a session with a valid id during summarization."""
+    backend = MockBackend(
+        [BackendTurnResult(output_text="summary", tool_calls=[], finish_reason="completed")]
+    )
+    compressor = LLMCompressor(backend, keep_turns=3)
+
+    tail: Node | None = None
+    for i in range(4):
+        tail = _make_turn(f"t{i}", tail)
+    assert tail is not None
+
+    await compressor.compress(tail)
+
+    assert len(backend.sessions) == 1
+    passed_session = backend.sessions[0]
+    assert hasattr(passed_session, "id")
+    assert isinstance(passed_session.id, str)
+    assert len(passed_session.id) > 0
 
 
 def test_nodes_to_text_tool_call_no_output_text() -> None:

@@ -102,6 +102,7 @@ class _CompressorSession:
     """Minimal session stub for issuing a single backend call."""
 
     def __init__(self, backend: Backend, prompt: str) -> None:
+        self.id: str = str(uuid.uuid4())
         self.tail: Node = UserPromptNode(id=str(uuid.uuid4()), prev=None, prompt=prompt)
         self._backend = backend
         self.agent: _CompressorAgent
