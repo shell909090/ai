@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-// Set up DOM before importing modules.
-document.body.innerHTML = `<div id="chat-container"></div>`;
-
 import {
     appendMessage,
     buildBubble,

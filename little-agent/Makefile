@@ -1,4 +1,4 @@
-.PHONY: fmt lint lint-py build frontend package-static unittest test clean ts-deps install dev run coverage-warn
+.PHONY: fmt lint lint-py build frontend package-static unittest test clean ts-deps install dev run coverage-warn ts-coverage ts-coverage-warn ci-test
 
 FRONTEND := frontend
 _STATIC := little_agent/_static
@@ -38,6 +38,22 @@ coverage-warn:
 	@uv run coverage report 2>/dev/null | awk 'NR>2 && $$NF ~ /^[0-9]+%$$/ { \
 	    pct=$$NF+0; if (pct < 50) print "WARNING: coverage below 50% in " $$1 ": " $$NF \
 	}' || true
+
+ts-coverage:
+	cd $(FRONTEND) && npx vitest run --coverage
+	@$(MAKE) ts-coverage-warn --no-print-directory || true
+
+ts-coverage-warn:
+	@node -e " \
+	  try { \
+	    var r = require('./$(FRONTEND)/coverage/coverage-summary.json'); \
+	    var p = r.total.lines.pct; \
+	    if (p < 50) process.stdout.write('WARNING: TypeScript coverage below 50%: ' + p + '%\n'); \
+	  } catch (e) {} \
+	" 2>/dev/null || true
+
+ci-test:
+	uv run pytest tests/test_ci.py -v
 
 ts-deps:
 	cd $(FRONTEND) && npm ci

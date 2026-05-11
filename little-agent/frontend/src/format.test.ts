@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatArgs, formatResult } from "./format.js";
+import { formatArgs, formatResult, formatSessionDate } from "./format.js";
 
 describe("formatArgs", () => {
     it("returns empty string for empty args", () => {
@@ -64,5 +64,21 @@ describe("formatResult", () => {
     it("formats failed status object result", () => {
         const result = formatResult({ error: "timeout", code: 408 });
         expect(result).toContain("error: timeout");
+    });
+});
+
+describe("formatSessionDate", () => {
+    it("returns time-only for today's date", () => {
+        const now = new Date();
+        const result = formatSessionDate(now.toISOString());
+        // Time format: HH:MM
+        expect(result).toMatch(/\d{1,2}:\d{2}/);
+        expect(result).not.toContain(String(now.getFullYear()));
+    });
+
+    it("returns short date for a past date", () => {
+        const past = "2023-01-15T10:00:00Z";
+        const result = formatSessionDate(past);
+        expect(result).toMatch(/Jan/i);
     });
 });
