@@ -13,15 +13,15 @@ AsyncToolFn = Callable[[dict[str, JSONValue]], Awaitable[JSONValue]]
 
 @dataclass
 class ToolArgDef:
-    name: str  # 参数名
-    type: str  # JSON Schema 类型，如 "string"、"object"、"integer"
-    desc: str  # 参数描述，传给 LLM
+    name: str  # parameter name
+    type: str  # JSON Schema type, e.g. "string", "object", "integer"
+    desc: str  # parameter description sent to the LLM
     required: bool = False
 
 
 @dataclass
 class ToolDef:
-    desc: str  # 工具描述，传给 LLM
+    desc: str  # tool description sent to the LLM
     args: list[ToolArgDef] = field(default_factory=list)
 
 

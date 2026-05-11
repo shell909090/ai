@@ -19,6 +19,7 @@ from .store import SessionStore
 
 if TYPE_CHECKING:
     from little_agent.agent.protocol import Agent, Session
+    from little_agent.agent.session_store import SessionJSONLStore
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,12 @@ def _is_valid_session_id(session_id: str) -> bool:
 class WebClient(Client):
     """Web client that pushes updates via WebSocket and handles permission requests."""
 
-    def __init__(self, sessions_dir: Path | None = None) -> None:
-        self.store = SessionStore(sessions_dir)
+    def __init__(
+        self,
+        sessions_dir: Path | None = None,
+        jsonl_store: SessionJSONLStore | None = None,
+    ) -> None:
+        self.store = SessionStore(sessions_dir, jsonl_store=jsonl_store)
         self._websockets: set[web.WebSocketResponse] = set()
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
         self._active: dict[web.WebSocketResponse, str | None] = {}

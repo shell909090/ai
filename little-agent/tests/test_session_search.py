@@ -25,7 +25,7 @@ def _store(tmp_path: Path) -> SessionJSONLStore:
 
 
 def _resolve(store: SessionJSONLStore, session_id: str) -> Path:
-    return store._resolve_path(session_id)
+    return store.resolve_path(session_id)
 
 
 # ---------------------------------------------------------------------------

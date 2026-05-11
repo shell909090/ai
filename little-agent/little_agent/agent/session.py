@@ -51,6 +51,20 @@ class SessionCore(Session):
         # Holds strong references to background tasks to prevent GC under Python 3.11+.
         self._bg_tasks: set[asyncio.Task[object]] = set()
 
+    @property
+    def is_cancel_requested(self) -> bool:
+        """Return whether cancel has been requested for the active turn."""
+        return self._cancel_requested
+
+    @property
+    def turn_allowed_tools(self) -> list[str] | None:
+        """Return the allowed-tools list for this turn, or None for all tools."""
+        return self._turn_allowed_tools
+
+    async def call_hooks(self, method_name: str, *args: Any) -> None:
+        """Call hook method on all hooks; catch and log exceptions, never propagate."""
+        await self._call_hooks(method_name, *args)
+
     async def _call_hooks(self, method_name: str, *args: Any) -> None:
         """Call hook method on all hooks; catch and log exceptions, never propagate."""
         for hook in self.agent.hooks:

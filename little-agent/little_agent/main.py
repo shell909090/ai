@@ -441,7 +441,7 @@ def main() -> None:
     if "memory" in config:
         raise ValueError(
             "'memory:' config key is no longer supported. "
-            "Use session_store: for session history search (TASK-D5)."
+            "Use session_store: for session history search."
         )
 
     tools, task_enabled = _load_tools(config)
@@ -466,7 +466,9 @@ def main() -> None:
             sessions_dir: Path | None = Path(str(sessions_dir_raw)).expanduser()
         else:
             sessions_dir = Path("~/.local/state/little_agent/sessions").expanduser()
-        client: CliClient | WebClient | AcpClient = WebClient(sessions_dir=sessions_dir)
+        client: CliClient | WebClient | AcpClient = WebClient(
+            sessions_dir=sessions_dir, jsonl_store=session_store
+        )
     elif frontend_type == "acp":
         client = AcpClient()
     else:

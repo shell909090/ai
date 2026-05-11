@@ -104,6 +104,9 @@ def _chain_to_messages(session: "SessionCore" | Node) -> list[dict[str, Any]]:
                 if not system_injected:
                     messages.insert(0, msg)
                     system_injected = True
+                else:
+                    # Subsequent SummaryNodes degrade to user messages (mirrors Anthropic §5.4).
+                    messages.append({"role": "user", "content": msg["content"]})
             else:
                 messages.append(msg)
 

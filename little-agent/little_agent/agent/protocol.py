@@ -9,6 +9,7 @@ from little_agent.types import ContentBlock, JSONValue, PromptReturn
 if TYPE_CHECKING:
     from little_agent.tools.protocol import ToolRegistry
 
+    from .hooks import Hook
     from .nodes import Node
 
 
@@ -53,7 +54,7 @@ class Agent(Protocol):
     """Agent protocol."""
 
     tools: ToolRegistry
-    hooks: list[object]
+    hooks: list[Hook]
 
     def __init__(self, *args: object, **kwargs: object) -> None: ...
 

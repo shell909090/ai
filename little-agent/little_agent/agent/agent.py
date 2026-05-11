@@ -53,7 +53,7 @@ class AgentCore(Agent):
         self.permissions: PermissionChecker = (
             permissions if permissions is not None else cast(PermissionChecker, client)
         )
-        self.hooks: list[Hook] = hooks or []  # type: ignore[assignment]
+        self.hooks: list[Hook] = hooks if hooks is not None else []
         self.compress_ratio = compress_ratio
         self.context_window = context_window
 

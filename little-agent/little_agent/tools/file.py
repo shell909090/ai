@@ -109,7 +109,12 @@ class EditFileToolProvider:
             if old_str not in content:
                 return content, "old_str not found"
             return content.replace(old_str, new_str, 1), None
-        actual_pos = len(content) if pos == -1 else int(pos)  # type: ignore[arg-type]
+        int_pos = int(pos)  # type: ignore[arg-type]
+        if int_pos < -1:
+            raise ValueError(f"pos must be >= -1, got {int_pos}")
+        actual_pos = len(content) if int_pos == -1 else int_pos
+        if actual_pos > len(content):
+            raise ValueError(f"pos {int_pos} exceeds file length {len(content)}")
         actual_len = int(len_val) if isinstance(len_val, int) else 0
         if actual_len < 0:
             raise ValueError("len must be non-negative")

@@ -14,6 +14,7 @@ from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
     from little_agent.agent.protocol import Agent, Session
+    from little_agent.agent.session_store import SessionJSONLStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,14 @@ _MAX_SESSIONS = 100
 class SessionStore:
     """LRU session registry plus disk persistence."""
 
-    def __init__(self, sessions_dir: Path | None) -> None:
+    def __init__(
+        self,
+        sessions_dir: Path | None,
+        jsonl_store: SessionJSONLStore | None = None,
+    ) -> None:
         self._sessions: OrderedDict[str, Session] = OrderedDict()
         self._sessions_dir = sessions_dir
+        self._jsonl_store = jsonl_store
 
     @property
     def sessions_dir(self) -> Path | None:
@@ -81,9 +87,9 @@ class SessionStore:
 
     def _read_preview(self, session_id: str) -> str:
         """Read first user_prompt record from JSONL and return its prompt (max 50 chars)."""
-        if self._sessions_dir is None:
+        if self._jsonl_store is None:
             return ""
-        path = self._sessions_dir / f"{session_id}_session.jsonl"
+        path = self._jsonl_store.resolve_path(session_id)
         if not path.exists():
             return ""
         try:
@@ -157,41 +163,19 @@ class SessionStore:
             return None
 
     async def read_history(self, session_id: str) -> list[dict[str, Any]]:
-        """Read JSONL history for session_id, stripping the session_id key."""
-        if self._sessions_dir is None:
+        """Read JSONL history for session_id via SessionJSONLStore."""
+        if self._jsonl_store is None:
             return []
-        path = self._sessions_dir / f"{session_id}_session.jsonl"
-        if not path.exists():
-            return []
-        return await asyncio.to_thread(self._sync_read_history, path)
-
-    def _sync_read_history(self, path: Path) -> list[dict[str, Any]]:
-        """Read and parse a JSONL history file; called via asyncio.to_thread."""
-        records: list[dict[str, Any]] = []
-        try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record: dict[str, Any] = json.loads(line)
-                        record.pop("session_id", None)
-                        records.append(record)
-                    except json.JSONDecodeError:
-                        pass
-        except OSError:
-            logger.exception("Failed to read history file %s", path)
-        return records
+        return await self._jsonl_store.load_history(session_id)
 
     async def delete_session(self, session_id: str) -> None:
         """Remove session from memory and delete both disk files."""
         self.discard_session(session_id)
-        if self._sessions_dir is None:
-            return
-        json_path = self._sessions_dir / f"{session_id}.json"
-        jsonl_path = self._sessions_dir / f"{session_id}_session.jsonl"
-        await asyncio.to_thread(self._sync_delete_files, json_path, jsonl_path)
+        if self._sessions_dir is not None:
+            json_path = self._sessions_dir / f"{session_id}.json"
+            await asyncio.to_thread(self._sync_delete_files, json_path)
+        if self._jsonl_store is not None:
+            await self._jsonl_store.delete_session(session_id)
 
     def _sync_delete_files(self, *paths: Path) -> None:
         """Unlink files, ignoring missing; called via asyncio.to_thread."""

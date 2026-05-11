@@ -11,7 +11,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from little_agent.agent.session_store import SessionJSONLStore
 from little_agent.frontends.web.store import _MAX_SESSIONS, SessionStore
+
+
+def _make_jsonl_store(tmp_path: Path) -> SessionJSONLStore:
+    return SessionJSONLStore(sessions_dir=str(tmp_path))
 
 
 def _make_session(session_id: str) -> MagicMock:
@@ -111,13 +116,14 @@ async def test_auto_save_no_sessions_dir() -> None:
 
 @pytest.mark.asyncio
 async def test_read_history_returns_records(tmp_path: Path) -> None:
-    """read_history returns parsed JSONL records without session_id key."""
-    jsonl = tmp_path / "s1_session.jsonl"
+    """read_history delegates to SessionJSONLStore and returns records without session_id."""
+    jsonl_store = _make_jsonl_store(tmp_path)
+    jsonl = jsonl_store.resolve_path("s1")
     jsonl.write_text(
         json.dumps({"session_id": "s1", "kind": "user_prompt", "id": "n1", "prompt": "hi"}) + "\n",
         encoding="utf-8",
     )
-    store = SessionStore(tmp_path)
+    store = SessionStore(tmp_path, jsonl_store=jsonl_store)
     records = await store.read_history("s1")
     assert len(records) == 1
     assert "session_id" not in records[0]
@@ -127,21 +133,31 @@ async def test_read_history_returns_records(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_read_history_missing_file(tmp_path: Path) -> None:
     """read_history returns empty list when JSONL file does not exist."""
-    store = SessionStore(tmp_path)
+    jsonl_store = _make_jsonl_store(tmp_path)
+    store = SessionStore(tmp_path, jsonl_store=jsonl_store)
     assert await store.read_history("nonexistent") == []
 
 
 @pytest.mark.asyncio
+async def test_read_history_no_jsonl_store() -> None:
+    """read_history returns empty list when no jsonl_store is configured."""
+    store = SessionStore(None)
+    assert await store.read_history("any") == []
+
+
+@pytest.mark.asyncio
 async def test_delete_session_removes_files(tmp_path: Path) -> None:
-    """delete_session removes both .json and .jsonl files and evicts from memory."""
-    store = SessionStore(tmp_path)
+    """delete_session removes .json and delegates JSONL deletion to SessionJSONLStore."""
+    jsonl_store = _make_jsonl_store(tmp_path)
+    store = SessionStore(tmp_path, jsonl_store=jsonl_store)
     sess = _make_session("s1")
     store.register_session("s1", sess)
     (tmp_path / "s1.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "s1_session.jsonl").write_text("", encoding="utf-8")
+    jsonl_path = jsonl_store.resolve_path("s1")
+    jsonl_path.write_text("", encoding="utf-8")
     await store.delete_session("s1")
     assert not (tmp_path / "s1.json").exists()
-    assert not (tmp_path / "s1_session.jsonl").exists()
+    assert not jsonl_path.exists()
     assert store.get_session("s1") is None
 
 
@@ -203,7 +219,8 @@ def test_sessions_dir_property_none() -> None:
 @pytest.mark.asyncio
 async def test_list_sessions_ordering_preview_mtime(tmp_path: Path) -> None:
     """list_sessions: 3 sessions, sorted by mtime desc, preview truncated, updated_at from mtime."""
-    store = SessionStore(tmp_path)
+    jsonl_store = _make_jsonl_store(tmp_path)
+    store = SessionStore(tmp_path, jsonl_store=jsonl_store)
     base_time = time.time() - 1000
 
     sessions_data = [
@@ -215,7 +232,7 @@ async def test_list_sessions_ordering_preview_mtime(tmp_path: Path) -> None:
         json_path = tmp_path / f"{sid}.json"
         json_path.write_text(json.dumps({"id": sid}), encoding="utf-8")
         os.utime(json_path, (mtime, mtime))
-        jsonl_path = tmp_path / f"{sid}_session.jsonl"
+        jsonl_path = jsonl_store.resolve_path(sid)
         record = {"session_id": sid, "kind": "user_prompt", "id": "n1", "prompt": prompt_text}
         jsonl_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
@@ -300,15 +317,15 @@ def test_read_preview_no_sessions_dir() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _sync_read_history: OSError, empty lines, invalid JSON
+# SessionJSONLStore._read_jsonl_lines: OSError, empty lines, invalid JSON
 # ---------------------------------------------------------------------------
 
 
-def test_sync_read_history_oserror_returns_empty(
+def test_read_jsonl_lines_oserror_returns_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """_sync_read_history returns [] when open raises OSError."""
-    store = SessionStore(tmp_path)
+    """_read_jsonl_lines returns [] when open raises OSError."""
+    store = _make_jsonl_store(tmp_path)
     path = tmp_path / "test.jsonl"
     path.write_text("content", encoding="utf-8")
 
@@ -316,18 +333,18 @@ def test_sync_read_history_oserror_returns_empty(
         raise OSError("forced")
 
     monkeypatch.setattr("builtins.open", bad_open)
-    assert store._sync_read_history(path) == []
+    assert store._read_jsonl_lines(path) == []
 
 
-def test_sync_read_history_skips_empty_and_invalid(tmp_path: Path) -> None:
-    """_sync_read_history skips empty lines and invalid JSON, returns valid records."""
-    store = SessionStore(tmp_path)
+def test_read_jsonl_lines_skips_empty_and_invalid(tmp_path: Path) -> None:
+    """_read_jsonl_lines skips empty lines and invalid JSON, returns valid records."""
+    store = _make_jsonl_store(tmp_path)
     path = tmp_path / "mixed.jsonl"
     path.write_text(
         "\n" + "not-valid-json\n" + json.dumps({"kind": "summary", "id": "n1"}) + "\n",
         encoding="utf-8",
     )
-    records = store._sync_read_history(path)
+    records = store._read_jsonl_lines(path)
     assert len(records) == 1
     assert records[0]["kind"] == "summary"
 
@@ -373,13 +390,6 @@ async def test_resume_session_load_error(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # read_history: None sessions_dir
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_read_history_no_sessions_dir() -> None:
-    """read_history returns [] when sessions_dir is None."""
-    store = SessionStore(None)
-    assert await store.read_history("any") == []
 
 
 # ---------------------------------------------------------------------------

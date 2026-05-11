@@ -9,6 +9,16 @@ from typing import Any, ClassVar
 from little_agent.types import ContentBlock, JSONValue
 
 
+def _parse_created_at(value: Any) -> datetime:
+    """Parse ISO datetime string; fall back to now(UTC) if absent or invalid."""
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    return datetime.now(UTC)
+
+
 @dataclass(slots=True)
 class Node:
     """Base chain node."""
@@ -20,7 +30,7 @@ class Node:
 
     def to_dict(self) -> dict[str, JSONValue]:
         """Serialize node to dict."""
-        return {"kind": self.kind, "id": self.id}
+        return {"kind": self.kind, "id": self.id, "created_at": self.created_at.isoformat()}
 
     def freeze(self) -> None:
         """Freeze this node (no-op for nodes without mutable state)."""
@@ -48,7 +58,12 @@ class UserPromptNode(Node):
         prompt = data.get("prompt", "")
         if not isinstance(prompt, (str, list)):
             raise ValueError("UserPromptNode 'prompt' must be a string or list")
-        return cls(id=data["id"], prev=prev, prompt=prompt)
+        return cls(
+            id=data["id"],
+            prev=prev,
+            prompt=prompt,
+            created_at=_parse_created_at(data.get("created_at")),
+        )
 
 
 @dataclass(slots=True)
@@ -77,7 +92,14 @@ class AssistantResponseNode(Node):
         if not isinstance(text, str):
             raise ValueError("AssistantResponseNode 'text' must be a string")
         thinking = str(data.get("thinking") or "")
-        return cls(id=data["id"], prev=prev, text=text, thinking=thinking, frozen=True)
+        return cls(
+            id=data["id"],
+            prev=prev,
+            text=text,
+            thinking=thinking,
+            frozen=True,
+            created_at=_parse_created_at(data.get("created_at")),
+        )
 
 
 @dataclass(slots=True)
@@ -105,7 +127,12 @@ class ToolCallNode(Node):
         if not isinstance(calls, dict):
             raise ValueError("ToolCallNode 'calls' must be a dict")
         return cls(
-            id=data["id"], prev=prev, output_text=output_text, thinking=thinking, calls=calls
+            id=data["id"],
+            prev=prev,
+            output_text=output_text,
+            thinking=thinking,
+            calls=calls,
+            created_at=_parse_created_at(data.get("created_at")),
         )
 
 
@@ -131,7 +158,13 @@ class ToolResultNode(Node):
         results = data.get("results", {})
         if not isinstance(results, dict):
             raise ValueError("ToolResultNode 'results' must be a dict")
-        return cls(id=data["id"], prev=prev, results=results, frozen=True)
+        return cls(
+            id=data["id"],
+            prev=prev,
+            results=results,
+            frozen=True,
+            created_at=_parse_created_at(data.get("created_at")),
+        )
 
 
 @dataclass(slots=True)
@@ -148,7 +181,12 @@ class SummaryNode(Node):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
-        return cls(id=data["id"], prev=prev, summary=str(data.get("summary") or ""))
+        return cls(
+            id=data["id"],
+            prev=prev,
+            summary=str(data.get("summary") or ""),
+            created_at=_parse_created_at(data.get("created_at")),
+        )
 
 
 _NODE_REGISTRY: dict[str, type[Node]] = {

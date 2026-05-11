@@ -50,7 +50,7 @@ class SessionJSONLStore(Hook):
     ) -> None:
         self._sessions_dir = Path(sessions_dir).expanduser()
         self._filename_template = filename_template
-        self._last_tail_ids: dict[str, str] = {}
+        self._last_tail_ids: dict[str, str] = {}  # evicted at _MAX_LOCKS cap
         self._locks: dict[str, asyncio.Lock] = {}
         self._init_locks: dict[str, asyncio.Lock] = {}
         self._rebuilt: set[str] = set()
@@ -58,15 +58,21 @@ class SessionJSONLStore(Hook):
         # For fixed filenames (no {session_id}), rebuild last_tail_ids at init time.
         # Called synchronously here because no event loop exists at startup.
         if "{session_id}" not in filename_template:
-            path = self._resolve_path("")
+            path = self.resolve_path("")
             if path.exists():
                 self._scan_file(path)
             self._rebuilt.add(str(path))
 
-    def _resolve_path(self, session_id: str) -> Path:
-        """Expand ~ and substitute {session_id} in the filename template."""
+    def resolve_path(self, session_id: str) -> Path:
+        """Return the JSONL file path for a session_id."""
         filename = self._filename_template.format(session_id=session_id)
         return self._sessions_dir / filename
+
+    def _set_last_tail_id(self, session_id: str, node_id: str) -> None:
+        """Record last tail id; evict oldest entry when cap is reached."""
+        if session_id not in self._last_tail_ids and len(self._last_tail_ids) >= _MAX_LOCKS:
+            self._last_tail_ids.pop(next(iter(self._last_tail_ids)))
+        self._last_tail_ids[session_id] = node_id
 
     def _get_lock(self, path: Path) -> asyncio.Lock:
         """Return (creating if needed) the per-file write lock; evict oldest if at cap."""
@@ -99,7 +105,7 @@ class SessionJSONLStore(Hook):
                         sid = record.get("session_id")
                         node_id = record.get("id")
                         if isinstance(sid, str) and isinstance(node_id, str):
-                            self._last_tail_ids[sid] = node_id
+                            self._set_last_tail_id(sid, node_id)
                     except json.JSONDecodeError:
                         pass
         except OSError:
@@ -110,11 +116,7 @@ class SessionJSONLStore(Hook):
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
             for n in nodes:
-                record: dict[str, Any] = {
-                    "session_id": session_id,
-                    "created_at": n.created_at.isoformat(),
-                    **n.to_dict(),
-                }
+                record: dict[str, Any] = {"session_id": session_id, **n.to_dict()}
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     async def on_turn_end(self, session: "Session") -> None:
@@ -122,7 +124,7 @@ class SessionJSONLStore(Hook):
         from little_agent.agent.nodes import SummaryNode
 
         session_id: str = session.id
-        path = self._resolve_path(session_id)
+        path = self.resolve_path(session_id)
         lock = self._get_lock(path)
 
         # Lazy rebuild: use per-path init lock + double-check to prevent concurrent
@@ -159,36 +161,26 @@ class SessionJSONLStore(Hook):
         assert session.tail is not None
         tail_id = getattr(session.tail, "id", None)
         if isinstance(tail_id, str):
-            self._last_tail_ids[session_id] = tail_id
+            self._set_last_tail_id(session_id, tail_id)
 
     async def load_history(self, session_id: str) -> list[dict[str, JSONValue]]:
         """Read JSONL file for session_id and return list of records without session_id key."""
-        path = self._resolve_path(session_id)
+        path = self.resolve_path(session_id)
         if not path.exists():
             return []
         return await asyncio.to_thread(self._sync_read_history, path)
 
-    def _sync_read_history(self, path: Path) -> list[dict[str, JSONValue]]:
-        """Read and parse JSONL history; called via asyncio.to_thread."""
-        records: list[dict[str, JSONValue]] = []
-        try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record: dict[str, JSONValue] = json.loads(line)
-                        record.pop("session_id", None)
-                        records.append(record)
-                    except json.JSONDecodeError:
-                        pass
-        except OSError:
-            logger.exception("Failed to load history from %s", path)
-        return records
+    async def delete_session(self, session_id: str) -> None:
+        """Delete JSONL file for session_id and clean up internal state."""
+        path = self.resolve_path(session_id)
+        self._last_tail_ids.pop(session_id, None)
+        path_key = str(path)
+        self._rebuilt.discard(path_key)
+        await asyncio.to_thread(lambda: path.unlink(missing_ok=True))
 
-    def _sync_load_jsonl(self, path: Path) -> list[dict[str, Any]]:
-        """Read JSONL file synchronously; skip malformed lines."""
+    @staticmethod
+    def _read_jsonl_lines(path: Path) -> list[dict[str, Any]]:
+        """Read JSONL file; skip empty lines and malformed records."""
         records: list[dict[str, Any]] = []
         try:
             with open(path, encoding="utf-8") as f:
@@ -205,6 +197,18 @@ class SessionJSONLStore(Hook):
         except OSError:
             logger.exception("Failed to read JSONL file %s", path)
         return records
+
+    def _sync_read_history(self, path: Path) -> list[dict[str, JSONValue]]:
+        """Read and parse JSONL history; strip session_id key from each record."""
+        records: list[dict[str, JSONValue]] = []
+        for rec in self._read_jsonl_lines(path):
+            rec.pop("session_id", None)
+            records.append(rec)
+        return records
+
+    def _sync_load_jsonl(self, path: Path) -> list[dict[str, Any]]:
+        """Read all JSONL records including session_id (needed for multi-session files)."""
+        return self._read_jsonl_lines(path)
 
     def _extract_text(self, record: dict[str, Any]) -> str:
         """Extract searchable text from a JSONL record."""
@@ -278,16 +282,15 @@ class SessionJSONLStore(Hook):
         for turn in reversed(turns):
             if len(results) >= limit or not turn:
                 break
-            if q and not any(q in self._extract_text(rec).lower() for rec in turn):
+            # Pre-compute (record, text) once per record to avoid double extraction.
+            turn_texts = [(rec, self._extract_text(rec)) for rec in turn]
+            if q and not any(q in text.lower() for _, text in turn_texts):
                 continue
             turn_id = str(turn[0].get("id", ""))
             turn_created = str(turn[0].get("created_at", ""))
             nodes_out: list[JSONValue] = [
-                {
-                    "kind": str(rec.get("kind", "")),
-                    "snippet": self._snippet(self._extract_text(rec)),
-                }
-                for rec in turn
+                {"kind": str(rec.get("kind", "")), "snippet": self._snippet(text)}
+                for rec, text in turn_texts
             ]
             results.append({"turn_id": turn_id, "created_at": turn_created, "nodes": nodes_out})
         return results
@@ -346,7 +349,7 @@ class SessionJSONLStore(Hook):
         limit: int = 5,
     ) -> JSONValue:
         """Search session history by keyword."""
-        path = self._resolve_path(session_id)
+        path = self.resolve_path(session_id)
         if not path.exists():
             return []
         all_records = await asyncio.to_thread(self._sync_load_jsonl, path)

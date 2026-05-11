@@ -48,11 +48,11 @@ class ToolInvoker:
         )
 
         tool_result_node = self._create_tool_result_node()
-        await self._session._call_hooks("on_tool_call", self._session, tool_call_node)
+        await self._session.call_hooks("on_tool_call", self._session, tool_call_node)
         await self._invoke_tools(result, tool_result_node)
         if self._session.tail is not None:
             self._session.tail.freeze()
-        await self._session._call_hooks("on_tool_result", self._session, tool_result_node)
+        await self._session.call_hooks("on_tool_result", self._session, tool_result_node)
 
         return partial_output
 
@@ -89,7 +89,7 @@ class ToolInvoker:
         """Execute tools via gather, or skip all if already cancelled."""
         from little_agent.agent.context import current_session
 
-        if self._session._cancel_requested:
+        if self._session.is_cancel_requested:
             for tc in allowed_calls:
                 tool_result_node.results[tc.call_id] = {
                     "status": "cancelled",
@@ -115,11 +115,8 @@ class ToolInvoker:
         self, result: BackendTurnResult, tool_result_node: ToolResultNode
     ) -> None:
         """Invoke tools concurrently and populate tool_result_node."""
-        allowed_names = (
-            set(self._session._turn_allowed_tools)
-            if self._session._turn_allowed_tools is not None
-            else None
-        )
+        allowed_tools = self._session.turn_allowed_tools
+        allowed_names = set(allowed_tools) if allowed_tools is not None else None
 
         allowed_calls: list[BackendToolCall] = []
         for tc in result.tool_calls:
@@ -149,7 +146,7 @@ class ToolInvoker:
         allowed_calls, tool_results = await self._run_tool_gather(allowed_calls, tool_result_node)
 
         for tc, res in zip(allowed_calls, tool_results, strict=True):
-            if self._session._cancel_requested:
+            if self._session.is_cancel_requested:
                 tool_result_node.results[tc.call_id] = {
                     "status": "cancelled",
                     "content": "",
