@@ -379,9 +379,23 @@ class ToolRegistry(Protocol):
 #### bash
 
 - desc: `Execute a shell command and return stdout/stderr`
-- 参数：`command`(string, req)、`cwd`(string)、`env`(object)、`stdin`(string)
+- 参数：`command`(string, req)、`cwd`(string)、`env`(object)、`stdin`(string)、`timeout`(integer, 覆盖默认超时秒数，受 `max_timeout` 上限保护)
 - 返回：`{"stdout": str, "stderr": str, "returncode": int}`；超时返回 `returncode: -1`、stderr 含超时信息
-- 实现：`asyncio.create_subprocess_shell` + `start_new_session=True` + `os.killpg`；默认 30s 超时；`env` 合并 `os.environ` 但拒绝 `LD_*`/`PATH`/`PYTHON*` 等危险变量。
+- 实现：`asyncio.create_subprocess_shell` + `start_new_session=True` + `os.killpg`；`env` 合并 `os.environ` 但拒绝 `LD_*`/`PATH`/`PYTHON*` 等危险变量。
+- 配置参数（在 `tools.bash` 下）：
+
+| 字段 | 默认 | 说明 |
+|------|------|------|
+| `timeout` | 30 | 默认超时秒数 |
+| `max_timeout` | 1800 | 单次调用允许的最大超时秒数；tool 参数超过此值时夹回并 WARNING |
+
+- 启动配置示例：
+  ```yaml
+  tools:
+    bash:
+      timeout: 600
+      max_timeout: 3600
+  ```
 
 #### create_task
 

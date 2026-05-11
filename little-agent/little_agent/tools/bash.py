@@ -32,18 +32,23 @@ _DANGEROUS_ENV_VARS = frozenset(
 class BashToolProvider:
     """Execute shell commands via asyncio subprocess."""
 
-    _TOOL_DEF = ToolDef(
-        desc="Execute a shell command and return stdout/stderr",
-        args=[
-            ToolArgDef("command", "string", "The shell command to execute", True),
-            ToolArgDef("cwd", "string", "Working directory for the command", False),
-            ToolArgDef(
-                "env", "object", "Additional environment variables as key-value pairs", False
-            ),
-            ToolArgDef("stdin", "string", "Standard input to pass to the command", False),
-        ],
-    )
-    _TIMEOUT = 30
+    def __init__(self, timeout: int = 30, max_timeout: int = 1800) -> None:
+        self._timeout = timeout
+        self._max_timeout = max_timeout
+        self._tool_def = ToolDef(
+            desc="Execute a shell command and return stdout/stderr",
+            args=[
+                ToolArgDef("command", "string", "The shell command to execute", True),
+                ToolArgDef("cwd", "string", "Working directory for the command", False),
+                ToolArgDef(
+                    "env", "object", "Additional environment variables as key-value pairs", False
+                ),
+                ToolArgDef("stdin", "string", "Standard input to pass to the command", False),
+                ToolArgDef(
+                    "timeout", "integer", "Override default timeout in seconds", False
+                ),
+            ],
+        )
 
     async def _handle_timeout(
         self,
@@ -51,10 +56,11 @@ class BashToolProvider:
         command: str,
         timed_out: bool,
         exc: BaseException,
+        effective_timeout: int,
     ) -> JSONValue:
         """Kill process after timeout or cancellation and return result."""
         if timed_out:
-            logger.warning("bash: command timed out after %ss: %r", self._TIMEOUT, command)
+            logger.warning("bash: command timed out after %ss: %r", effective_timeout, command)
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, OSError) as e:
@@ -67,13 +73,13 @@ class BashToolProvider:
             raise exc
         return {
             "stdout": "",
-            "stderr": f"Command timed out after {self._TIMEOUT} seconds",
+            "stderr": f"Command timed out after {effective_timeout} seconds",
             "returncode": -1,
         }
 
     def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
         """Yield the single bash tool triple."""
-        yield ("bash", self._TOOL_DEF, self._dispatch)
+        yield ("bash", self._tool_def, self._dispatch)
 
     async def _dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
         """Execute a shell command and return stdout/stderr."""
@@ -102,7 +108,23 @@ class BashToolProvider:
             stdin_val.encode("utf-8") if isinstance(stdin_val, str) else None
         )
 
-        logger.debug("bash: command=%r cwd=%r", command, cwd)
+        # Resolve per-call timeout (clamped to max_timeout).
+        timeout_val = args.get("timeout")
+        if timeout_val is not None and isinstance(timeout_val, (int, float)):
+            requested = int(timeout_val)
+            if requested > self._max_timeout:
+                logger.warning(
+                    "bash: requested timeout %ds exceeds max_timeout %ds; clamping",
+                    requested,
+                    self._max_timeout,
+                )
+                effective_timeout = self._max_timeout
+            else:
+                effective_timeout = max(1, requested)
+        else:
+            effective_timeout = self._timeout
+
+        logger.debug("bash: command=%r cwd=%r timeout=%ds", command, cwd, effective_timeout)
 
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -115,10 +137,12 @@ class BashToolProvider:
         )
         try:
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=stdin_bytes), timeout=self._TIMEOUT
+                proc.communicate(input=stdin_bytes), timeout=effective_timeout
             )
         except (TimeoutError, asyncio.CancelledError) as exc:
-            return await self._handle_timeout(proc, command, isinstance(exc, TimeoutError), exc)
+            return await self._handle_timeout(
+                proc, command, isinstance(exc, TimeoutError), exc, effective_timeout
+            )
 
         returncode = proc.returncode
         if returncode != 0:

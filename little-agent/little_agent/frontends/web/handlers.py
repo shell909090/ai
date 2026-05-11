@@ -50,6 +50,8 @@ async def do_session_prompt(
     client: WebClient, agent: Agent, ws: web.WebSocketResponse, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Run one prompt turn and auto-save."""
+    from little_agent.agent.context import current_session_id
+
     from .client import _is_valid_session_id
 
     session_id: str = msg.get("session_id", "")
@@ -61,11 +63,17 @@ async def do_session_prompt(
     prompt = msg.get("prompt", "")
     if not isinstance(prompt, str):
         return {"error": "prompt must be a string"}
-    stop_reason, text = await sess.prompt(prompt)
+    sid_token = current_session_id.set(session_id)
+    try:
+        stop_reason, text = await sess.prompt(prompt)
+    finally:
+        current_session_id.reset(sid_token)
     await client.store.auto_save(sess)
     compress_task = getattr(sess, "compress_task", None)
     if compress_task is not None:
-        asyncio.create_task(_save_after_compress(client, sess, compress_task))
+        t = asyncio.create_task(_save_after_compress(client, sess, compress_task))
+        client._bg_tasks.add(t)
+        t.add_done_callback(client._bg_tasks.discard)
     return {
         "type": "session/prompt_response",
         "session_id": session_id,

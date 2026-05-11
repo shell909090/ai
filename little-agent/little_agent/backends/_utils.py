@@ -2,11 +2,31 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from typing import Any
 
 from little_agent.tools.protocol import ToolDef
+
+_SENSITIVE_KEYS: frozenset[str] = frozenset(
+    {"authorization", "cookie", "api_key", "token", "secret"}
+)
+
+
+def _sanitize_messages(messages: Any) -> Any:
+    """Recursively redact sensitive string values in a messages structure."""
+    if isinstance(messages, list):
+        return [_sanitize_messages(item) for item in messages]
+    if isinstance(messages, dict):
+        result: dict[str, Any] = {}
+        for k, v in messages.items():
+            if isinstance(k, str) and k.lower() in _SENSITIVE_KEYS and isinstance(v, str):
+                result[k] = "***REDACTED***"
+            else:
+                result[k] = _sanitize_messages(v)
+        return result
+    return messages
 
 
 def _log_streaming_request(
@@ -31,7 +51,8 @@ def _log_streaming_request(
         tool_names,
     )
     if logger.isEnabledFor(logging.DEBUG):
-        payload: dict[str, Any] = {"model": model, "messages": messages}
+        sanitized = _sanitize_messages(copy.deepcopy(messages))
+        payload: dict[str, Any] = {"model": model, "messages": sanitized}
         if tools:
             payload["tools"] = tools
         logger.debug("%s request payload: %s", name, json.dumps(payload, ensure_ascii=False))

@@ -22,6 +22,7 @@ from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.cli import CliClient
 from little_agent.frontends.web import WebClient
+from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.task import TaskToolProvider
 
@@ -32,7 +33,8 @@ _DEFAULT_LOGGING_CONFIG: dict[str, Any] = {
     "disable_existing_loggers": False,
     "formatters": {
         "default": {
-            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "format": "%(asctime)s [%(levelname)s] %(session_id).8s %(turn_id).8s"
+            " %(name)s: %(message)s",
         },
     },
     "handlers": {
@@ -51,12 +53,25 @@ _DEFAULT_LOGGING_CONFIG: dict[str, Any] = {
 }
 
 
+class _ContextFilter(logging.Filter):
+    """Inject session_id and turn_id from ContextVars into every log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        from little_agent.agent.context import current_session_id, current_turn_id
+
+        record.session_id = current_session_id.get("-")
+        record.turn_id = current_turn_id.get("-")
+        return True
+
+
 def setup_logging(config: dict[str, Any] | None, level: str | None) -> None:
     """Configure logging from config or fallback to default config."""
     cfg = config if config is not None else _DEFAULT_LOGGING_CONFIG.copy()
     if level is not None:
         cfg.setdefault("loggers", {}).setdefault("", {})["level"] = level
     logging.config.dictConfig(cfg)
+    # Attach the context filter to the root logger so it applies to all handlers.
+    logging.getLogger().addFilter(_ContextFilter())
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -68,14 +83,31 @@ def load_config(path: Path) -> dict[str, Any]:
     return data
 
 
+_BASH_PROVIDER_PATH = "little_agent.tools.bash.BashToolProvider"
+
+
 def load_providers_from_config(config: dict[str, Any]) -> list[Any]:
     """Load tool providers from configuration, always including bash."""
-    tools_config = config.get("tools", {})
-    class_paths: set[str] = set(tools_config.get("providers", []))
-    class_paths.add("little_agent.tools.bash.BashToolProvider")
+    tools_config = config.get("tools") or {}
+    if not isinstance(tools_config, dict):
+        tools_config = {}
 
-    providers: list[Any] = []
+    # Bash provider is always included; timeout is configurable via tools.bash config.
+    bash_cfg = tools_config.get("bash") or {}
+    if not isinstance(bash_cfg, dict):
+        bash_cfg = {}
+    bash_timeout = int(bash_cfg.get("timeout", 30))
+    bash_max_timeout = int(bash_cfg.get("max_timeout", 1800))
+    providers: list[Any] = [BashToolProvider(timeout=bash_timeout, max_timeout=bash_max_timeout)]
+
+    # Additional providers from class paths; deduplicate and skip the bash provider
+    # (always instantiated above with its config).
+    seen: set[str] = {_BASH_PROVIDER_PATH}
+    class_paths: list[str] = list(tools_config.get("providers") or [])
     for class_path in class_paths:
+        if class_path in seen:
+            continue
+        seen.add(class_path)
         try:
             module_path, cls_name = class_path.rsplit(".", 1)
             mod = importlib.import_module(module_path)

@@ -49,6 +49,8 @@ class SessionCore(Session):
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
         self._turn_allowed_tools: list[str] | None = None
         self.compress_task: asyncio.Task[None] | None = None
+        # Holds strong references to background tasks to prevent GC under Python 3.11+.
+        self._bg_tasks: set[asyncio.Task[object]] = set()
 
     def get_turn_tool_map(self) -> ToolMap:
         """Return tool map for current turn."""
@@ -71,7 +73,9 @@ class SessionCore(Session):
         # Do NOT add any await between these two lines.
         if not self._active_turn:
             self._active_turn = True
-            asyncio.create_task(self._consume_queue())
+            t = asyncio.create_task(self._consume_queue())
+            self._bg_tasks.add(t)
+            t.add_done_callback(self._bg_tasks.discard)
 
         return await future
 
@@ -99,6 +103,21 @@ class SessionCore(Session):
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
     ) -> PromptReturn:
         """Execute one user turn including all backend/tool iterations."""
+        from little_agent.agent.context import current_session_id, current_turn_id
+
+        turn_id = str(uuid.uuid4())[:8]
+        sid_token = current_session_id.set(self.id)
+        tid_token = current_turn_id.set(turn_id)
+        try:
+            return await self._run_turn_inner(prompt, allowed_tools)
+        finally:
+            current_session_id.reset(sid_token)
+            current_turn_id.reset(tid_token)
+
+    async def _run_turn_inner(
+        self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
+    ) -> PromptReturn:
+        """Inner turn execution after context vars are set."""
         self._turn_allowed_tools = allowed_tools
 
         if self.agent.memory is not None:
@@ -211,7 +230,9 @@ class SessionCore(Session):
             self._active_turn = False
             if not self._pending_queue.empty():
                 self._active_turn = True
-                asyncio.create_task(self._consume_queue())
+                t = asyncio.create_task(self._consume_queue())
+                self._bg_tasks.add(t)
+                t.add_done_callback(self._bg_tasks.discard)
 
     async def _backend_result_with_retry(
         self, overflow_retried: bool

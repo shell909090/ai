@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 
 import aiohttp
@@ -9,6 +10,8 @@ import aiohttp
 from little_agent.types import JSONValue
 
 from .protocol import AsyncToolFn, ToolArgDef, ToolDef
+
+logger = logging.getLogger(__name__)
 
 
 class HttpToolProvider:
@@ -60,10 +63,20 @@ class HttpToolProvider:
                 ) as resp:
                     resp_headers: dict[str, JSONValue] = {k: v for k, v in resp.headers.items()}
                     resp_body = await resp.text(errors="replace")
+                    if resp.status >= 400:
+                        logger.info(
+                            "http: %s %s -> status=%d body_len=%d",
+                            method,
+                            url,
+                            resp.status,
+                            len(resp_body),
+                        )
+                        logger.debug("http: error response body: %s", resp_body)
                     return {
                         "status": resp.status,
                         "headers": resp_headers,
                         "body": resp_body,
                     }
         except Exception as e:
+            logger.info("http: %s %s -> network error: %s", method, url, type(e).__name__)
             return {"status": -1, "headers": {}, "body": str(e)}

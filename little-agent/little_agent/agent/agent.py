@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from little_agent.types import JSONValue
 
-from .nodes import _NODE_REGISTRY
+from .nodes import validate_node_dict
 from .protocol import Agent, Compressor, PermissionChecker, Session
 from .session import SessionCore
 
@@ -18,18 +18,21 @@ if TYPE_CHECKING:
 
 
 def _validate_chain(chain: list[Any]) -> None:
-    """Pre-validate all chain items before rebuilding; raises ValueError on the first bad node."""
+    """Pre-validate all chain items; check schema and ID uniqueness."""
+    seen_ids: set[str] = set()
     for i, item in enumerate(chain):
         if not isinstance(item, dict):
-            raise ValueError(f"Chain item {i} must be a dict, got {type(item).__name__}")
-        kind = item.get("kind")
-        node_id = item.get("id")
-        if not isinstance(kind, str):
-            raise ValueError(f"Chain item {i} missing 'kind' string field")
-        if not isinstance(node_id, str):
-            raise ValueError(f"Chain item {i} missing 'id' string field")
-        if kind not in _NODE_REGISTRY:
-            raise ValueError(f"Chain item {i} has unknown kind: {kind!r}")
+            raise ValueError(f"invalid session data: chain item {i} must be a dict")
+        try:
+            validate_node_dict(item)
+        except ValueError as exc:
+            raise ValueError(f"invalid session data: chain item {i}: {exc}") from exc
+        node_id: str = item["id"]
+        if node_id in seen_ids:
+            raise ValueError(
+                f"invalid session data: duplicate node id {node_id!r} at position {i}"
+            )
+        seen_ids.add(node_id)
 
 
 class AgentCore(Agent):

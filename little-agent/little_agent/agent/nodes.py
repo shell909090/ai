@@ -159,6 +159,37 @@ _NODE_REGISTRY: dict[str, type[Node]] = {
     SummaryNode.kind: SummaryNode,
 }
 
+_KIND_REQUIRED_FIELDS: dict[str, dict[str, type]] = {
+    "user_prompt": {"id": str, "kind": str},
+    "assistant_response": {"id": str, "kind": str, "text": str},
+    "tool_call": {"id": str, "kind": str, "calls": dict},
+    "tool_result": {"id": str, "kind": str, "results": dict},
+    "summary": {"id": str, "kind": str, "summary": str},
+}
+
+
+def validate_node_dict(d: dict[str, Any]) -> None:
+    """Validate a serialized node dict; raises ValueError on any violation."""
+    if not isinstance(d, dict):
+        raise ValueError(f"invalid session data: node must be a dict, got {type(d).__name__}")
+    node_id = d.get("id")
+    if not isinstance(node_id, str) or not node_id:
+        raise ValueError("invalid session data: node missing required 'id' string field")
+    kind = d.get("kind")
+    if not isinstance(kind, str) or not kind:
+        raise ValueError("invalid session data: node missing required 'kind' string field")
+    if kind not in _NODE_REGISTRY:
+        raise ValueError(f"invalid session data: unknown node kind {kind!r}")
+    required = _KIND_REQUIRED_FIELDS.get(kind, {})
+    for fname, expected_type in required.items():
+        val = d.get(fname)
+        # Allow optional fields that may be absent (only validate when present).
+        if val is not None and not isinstance(val, expected_type):
+            raise ValueError(
+                f"invalid session data: {kind}.{fname} must be {expected_type.__name__}, "
+                f"got {type(val).__name__}"
+            )
+
 
 def _rebuild_chain(chain: list[Any]) -> Node | None:
     """Rebuild node chain from serialized data."""

@@ -286,6 +286,16 @@ little_agent/
   main.py         # config loading and entry point
 ```
 
+## Security Notes
+
+- **DEBUG logs may contain sensitive data**: When `--loglevel DEBUG` is active, backend
+  request payloads are logged. Keys named `Authorization`, `Cookie`, `api_key`, `token`,
+  or `secret` are automatically redacted, but the full conversation content is included.
+  Use `INFO` log level in production environments.
+- **`/save` files contain full history**: Session files written by `/save <path>` or the
+  Web frontend contain the complete conversation history, including tool outputs. Treat
+  them like sensitive data and restrict file permissions accordingly.
+
 ## Author
 
 Shell Xu <shell909090@gmail.com>

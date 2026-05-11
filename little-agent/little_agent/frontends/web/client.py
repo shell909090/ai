@@ -39,6 +39,8 @@ class WebClient(Client):
         self._permission_futures: dict[str, asyncio.Future[bool]] = {}
         self._active: dict[web.WebSocketResponse, str | None] = {}
         self._ws_locks: dict[web.WebSocketResponse, asyncio.Lock] = {}
+        # Holds strong references to background tasks to prevent GC under Python 3.11+.
+        self._bg_tasks: set[asyncio.Task[object]] = set()
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Send update to WebSocket clients subscribed to this session."""

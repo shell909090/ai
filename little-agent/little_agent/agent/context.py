@@ -1,4 +1,4 @@
-"""Session context variable for tool invocation."""
+"""Session context variables for tool invocation and structured logging."""
 
 from __future__ import annotations
 
@@ -11,3 +11,9 @@ if TYPE_CHECKING:
 current_session: contextvars.ContextVar["SessionCore | None"] = contextvars.ContextVar(
     "current_session", default=None
 )
+
+# Injected into every log record via _ContextFilter when set.
+current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "session_id", default="-"
+)
+current_turn_id: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="-")

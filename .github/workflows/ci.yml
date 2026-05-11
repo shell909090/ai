@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - "little-agent/**"
+  pull_request:
+    paths:
+      - "little-agent/**"
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: little-agent
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: make dev
+
+      - name: Lint (Python only)
+        run: make lint-py
+
+      - name: Run tests with coverage
+        run: uv run pytest tests/ --cov=little_agent --cov-report=term-missing
+
+  typescript:
+    name: TypeScript tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: little-agent/little_agent/frontends/static
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: little-agent/little_agent/frontends/static/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npx eslint 'src/**/*.ts'
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npx vitest run

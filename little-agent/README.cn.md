@@ -280,6 +280,14 @@ little_agent/
   main.py         # 配置加载与入口
 ```
 
+## 安全注意
+
+- **DEBUG 日志可能包含敏感信息**：启用 `--loglevel DEBUG` 时，后端请求 payload 会被记录到日志。
+  名为 `Authorization`、`Cookie`、`api_key`、`token`、`secret` 的字段值会自动脱敏，
+  但完整的对话内容仍会出现在日志中。生产环境请使用 `INFO` 级别。
+- **`/save` 文件包含完整历史**：`/save <路径>` 或 Web 前端写入的会话文件包含完整的对话历史，
+  包括工具输出。请将其视为敏感数据并限制文件权限。
+
 ## 作者
 
 Shell Xu <shell909090@gmail.com>

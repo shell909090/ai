@@ -53,6 +53,11 @@ warn_unused_configs = true
 asyncio_mode = "auto"
 timeout = 60
 
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = false
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

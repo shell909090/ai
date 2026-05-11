@@ -1,4 +1,4 @@
-.PHONY: fmt lint build unittest test clean ts-deps install dev run
+.PHONY: fmt lint lint-py build unittest test clean ts-deps install dev run coverage-warn
 
 _STATIC := little_agent/frontends/static
 
@@ -6,10 +6,12 @@ fmt:
 	uv run ruff format little_agent tests
 	cd $(_STATIC) && npx prettier --write 'src/**/*.ts'
 
-lint:
+lint: lint-py
+	cd $(_STATIC) && npx eslint 'src/**/*.ts' && npx tsc --noEmit
+
+lint-py:
 	uv run ruff check little_agent tests
 	uv run mypy little_agent --strict
-	cd $(_STATIC) && npx eslint 'src/**/*.ts' && npx tsc --noEmit
 
 build:
 	find little_agent -name '*.py' | xargs uv run python -m py_compile
@@ -22,7 +24,13 @@ unittest:
 
 test:
 	uv run pytest tests/ --cov=little_agent --cov-report=term-missing
+	@$(MAKE) coverage-warn --no-print-directory || true
 	cd $(_STATIC) && npx vitest run
+
+coverage-warn:
+	@uv run coverage report 2>/dev/null | awk 'NR>2 && $$NF ~ /^[0-9]+%$$/ { \
+	    pct=$$NF+0; if (pct < 50) print "WARNING: coverage below 50% in " $$1 ": " $$NF \
+	}' || true
 
 ts-deps:
 	cd $(_STATIC) && npm ci
