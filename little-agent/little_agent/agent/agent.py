@@ -29,9 +29,7 @@ def _validate_chain(chain: list[Any]) -> None:
             raise ValueError(f"invalid session data: chain item {i}: {exc}") from exc
         node_id: str = item["id"]
         if node_id in seen_ids:
-            raise ValueError(
-                f"invalid session data: duplicate node id {node_id!r} at position {i}"
-            )
+            raise ValueError(f"invalid session data: duplicate node id {node_id!r} at position {i}")
         seen_ids.add(node_id)
 
 

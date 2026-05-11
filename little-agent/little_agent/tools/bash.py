@@ -44,9 +44,7 @@ class BashToolProvider:
                     "env", "object", "Additional environment variables as key-value pairs", False
                 ),
                 ToolArgDef("stdin", "string", "Standard input to pass to the command", False),
-                ToolArgDef(
-                    "timeout", "integer", "Override default timeout in seconds", False
-                ),
+                ToolArgDef("timeout", "integer", "Override default timeout in seconds", False),
             ],
         )
 

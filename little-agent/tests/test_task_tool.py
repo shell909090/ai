@@ -38,42 +38,42 @@ def simple_agent() -> AgentCore:
 
 
 def test_task_tool_list() -> None:
-    """TaskToolProvider exposes create_task via __iter__."""
+    """TaskToolProvider exposes task via __iter__."""
     from unittest.mock import MagicMock
 
     agent = MagicMock()
     agent.tools.desc_tool.return_value = {}
     provider = TaskToolProvider(agent)
     names = {name for name, _, _ in provider}
-    assert "create_task" in names
+    assert "task" in names
 
 
 @pytest.mark.asyncio
-async def test_create_task_basic(simple_agent: AgentCore) -> None:
-    """create_task returns a completed result for a simple prompt."""
+async def test_task_basic(simple_agent: AgentCore) -> None:
+    """Task tool returns a completed result for a simple prompt."""
     provider = TaskToolProvider(simple_agent)
-    result = await provider._create_task_dispatch({"prompt": "hello"})
+    result = await provider._task_dispatch({"prompt": "hello"})
     assert isinstance(result, dict)
     assert result["status"] == "completed"
     assert "output" in result
 
 
 @pytest.mark.asyncio
-async def test_create_task_missing_prompt() -> None:
-    """create_task returns failed when prompt is absent or not a string."""
+async def test_task_missing_prompt() -> None:
+    """Task tool returns failed when prompt is absent or not a string."""
     from unittest.mock import MagicMock
 
     agent = MagicMock()
     agent.tools.desc_tool.return_value = {}
     provider = TaskToolProvider(agent)
-    result = await provider._create_task_dispatch({})
+    result = await provider._task_dispatch({})
     assert isinstance(result, dict)
     assert result["status"] == "failed"
 
 
 @pytest.mark.asyncio
-async def test_create_task_timeout(simple_agent: AgentCore) -> None:
-    """create_task returns timeout when asyncio.wait_for raises TimeoutError."""
+async def test_task_timeout(simple_agent: AgentCore) -> None:
+    """Task tool returns timeout when asyncio.wait_for raises TimeoutError."""
     provider = TaskToolProvider(simple_agent)
 
     def _raise_timeout(coro: object, **_: object) -> None:
@@ -82,7 +82,7 @@ async def test_create_task_timeout(simple_agent: AgentCore) -> None:
         raise TimeoutError
 
     with patch("little_agent.tools.task.asyncio.wait_for", side_effect=_raise_timeout):
-        result = await provider._create_task_dispatch({"prompt": "test"})
+        result = await provider._task_dispatch({"prompt": "test"})
 
     assert isinstance(result, dict)
     assert result["status"] == "timeout"
@@ -90,8 +90,8 @@ async def test_create_task_timeout(simple_agent: AgentCore) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_task_exception(simple_agent: AgentCore) -> None:
-    """create_task returns failed when sub-session raises an unexpected error."""
+async def test_task_exception(simple_agent: AgentCore) -> None:
+    """Task tool returns failed when sub-session raises an unexpected error."""
     provider = TaskToolProvider(simple_agent)
 
     def _raise_runtime(coro: object, **_: object) -> None:
@@ -100,15 +100,15 @@ async def test_create_task_exception(simple_agent: AgentCore) -> None:
         raise RuntimeError("boom")
 
     with patch("little_agent.tools.task.asyncio.wait_for", side_effect=_raise_runtime):
-        result = await provider._create_task_dispatch({"prompt": "test"})
+        result = await provider._task_dispatch({"prompt": "test"})
 
     assert isinstance(result, dict)
     assert result["status"] == "failed"
     assert "boom" in str(result.get("output", ""))
 
 
-def test_get_allowed_tools_excludes_create_task(simple_agent: AgentCore) -> None:
-    """Sub-task allowed tools never include create_task (prevents recursion)."""
+def test_get_allowed_tools_excludes_task(simple_agent: AgentCore) -> None:
+    """Sub-task allowed tools never include task (prevents recursion)."""
     mgr = ToolManager()
     mgr.register(
         MockToolProvider(
@@ -120,12 +120,12 @@ def test_get_allowed_tools_excludes_create_task(simple_agent: AgentCore) -> None
     simple_agent.tools = mgr
 
     allowed = provider._get_allowed_tools(None)
-    assert "create_task" not in allowed
+    assert "task" not in allowed
     assert "echo" in allowed
 
 
 def test_get_allowed_tools_filter_by_names(simple_agent: AgentCore) -> None:
-    """Sub-task allowed tools are limited to requested names, excluding create_task."""
+    """Sub-task allowed tools are limited to requested names, excluding task."""
     mgr = ToolManager()
     mgr.register(
         MockToolProvider(
@@ -147,7 +147,7 @@ def test_get_allowed_tools_filter_by_names(simple_agent: AgentCore) -> None:
     allowed = provider._get_allowed_tools(["echo"])
     assert "echo" in allowed
     assert "add" not in allowed
-    assert "create_task" not in allowed
+    assert "task" not in allowed
 
 
 @pytest.mark.asyncio

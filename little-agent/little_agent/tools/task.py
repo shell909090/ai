@@ -89,7 +89,7 @@ def _collect_done_tasks(
 
 
 class TaskToolProvider:
-    """Provides the built-in create_task tool for spawning sub-sessions."""
+    """Provides the built-in task tool for spawning sub-sessions."""
 
     _TOOL_DEF = ToolDef(
         desc="Create a sub-task with its own session and execute it",
@@ -112,16 +112,16 @@ class TaskToolProvider:
         self._scheduler: asyncio.Task[None] | None = None
 
     def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
-        """Yield the single create_task tool triple."""
-        yield ("create_task", self._TOOL_DEF, self._create_task_dispatch)
+        """Yield the single task tool triple."""
+        yield ("task", self._TOOL_DEF, self._task_dispatch)
 
-    async def _create_task_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
-        return await self.create_task(**args)
+    async def _task_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
+        return await self.task(**args)
 
     def _get_allowed_tools(self, tool_names: Sequence[str] | None) -> list[str]:
-        """Return allowed tool names for a sub-task, always excluding create_task."""
+        """Return allowed tool names for a sub-task, always excluding task."""
         names = set(tool_names) if tool_names is not None else None
-        return list(self._agent.tools.desc_tool(names, exclude={"create_task"}).keys())
+        return list(self._agent.tools.desc_tool(names, exclude={"task"}).keys())
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:
         """Fork a new session from the current, sharing frozen history."""
@@ -140,11 +140,10 @@ class TaskToolProvider:
         sub_session.tail = fork_tail
         return sub_session
 
-    async def create_task(self, **kwargs: JSONValue) -> JSONValue:
-        # Registration is fully synchronous so that all create_task coroutines
-        # launched by the same asyncio.gather complete registration before the
-        # scheduler (appended to the event-loop queue after these coroutines)
-        # starts running.
+    async def task(self, **kwargs: JSONValue) -> JSONValue:
+        # Registration is fully synchronous so that all task coroutines launched
+        # by the same asyncio.gather complete registration before the scheduler
+        # (appended to the event-loop queue after these coroutines) starts running.
         task_id_raw = kwargs.get("id")
         task_id = int(task_id_raw) if isinstance(task_id_raw, (int, float)) else None
 

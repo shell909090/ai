@@ -13,7 +13,5 @@ current_session: contextvars.ContextVar["SessionCore | None"] = contextvars.Cont
 )
 
 # Injected into every log record via _ContextFilter when set.
-current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "session_id", default="-"
-)
+current_session_id: contextvars.ContextVar[str] = contextvars.ContextVar("session_id", default="-")
 current_turn_id: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="-")
