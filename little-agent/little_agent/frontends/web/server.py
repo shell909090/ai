@@ -85,9 +85,11 @@ def build_app(client: WebClient, agent: Agent) -> web.Application:
     app.on_response_prepare.append(_add_csp_header)
 
     # Prefer package-data dir (_static/); fall back to old path for compatibility.
-    static_dir = Path(__file__).parent.parent / "_static"
+    static_dir = Path(__file__).parent.parent.parent / "_static"
     if not static_dir.exists():
-        static_dir = Path(__file__).parent.parent / "static"
+        static_dir = Path(__file__).parent.parent.parent / "static"
+    app.router.add_get("/ws", handle_websocket)
+
     if static_dir.exists():
         index = static_dir / "index.html"
 
@@ -98,8 +100,6 @@ def build_app(client: WebClient, agent: Agent) -> web.Application:
         app.router.add_static("/", static_dir, name="static")
     else:
         logger.warning("Static directory not found at %s; web UI not served", static_dir)
-
-    app.router.add_get("/ws", handle_websocket)
     return app
 
 

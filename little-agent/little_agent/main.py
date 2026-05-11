@@ -277,7 +277,7 @@ def _load_compressor(
         return None
 
     if not isinstance(compressor_section, dict):
-        compressor_section = {}
+        compressor_section = _DEFAULT_CONFIG["compressor"]
 
     # Use a dedicated compressor backend if configured; otherwise fall back to primary.
     compressor_cfg = backends_config.get("compressor")
@@ -287,8 +287,8 @@ def _load_compressor(
         else primary_backend
     )
 
-    keep_turns = int(compressor_section.get("keep_turns", 3))
-    compressed_window = float(compressor_section.get("compressed_window", 0.15))
+    keep_turns = int(compressor_section["keep_turns"])
+    compressed_window = float(compressor_section["compressed_window"])
     compressed_window_tokens = int(compressed_window * primary_backend.context_window)
     return LLMCompressor(
         compressor_backend,

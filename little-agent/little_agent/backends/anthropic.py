@@ -243,6 +243,7 @@ class AnthropicBackend(_StreamingBackend):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         system_injected: str | None = None,
+        session_id: str = "",
     ) -> AsyncGenerator[Any, None]:
         """Inner generator that wraps the Anthropic stream with timeout and exception handling."""
         import anthropic
@@ -258,6 +259,8 @@ class AnthropicBackend(_StreamingBackend):
         effective_system = system_injected or self._system
         if effective_system:
             kwargs["system"] = effective_system
+        if session_id:
+            kwargs["metadata"] = {"user_id": session_id}
 
         try:
             async with asyncio.timeout(self._timeout):
@@ -282,7 +285,9 @@ class AnthropicBackend(_StreamingBackend):
 
             acc = _StreamAccumulator(finish_reason_raw="end_turn")
 
-            async for event in self._generate_stream_inner(messages, tools, system_injected):
+            async for event in self._generate_stream_inner(
+                messages, tools, system_injected, session.id
+            ):
                 if logger.isEnabledFor(logging.DEBUG):
                     _log_anthropic_event(logger, event)
                 update = _process_event(event, acc)

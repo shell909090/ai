@@ -53,8 +53,8 @@ export function sendMessage(msg: ClientMessage): void {
 export function updateInputState(): void {
     messageInput.disabled = isProcessing;
     sendBtn.disabled = isProcessing;
-    spinnerEl.style.display = isProcessing ? "inline-block" : "none";
-    cancelBtn.style.display = isProcessing ? "inline-block" : "none";
+    spinnerEl.classList.toggle("visible", isProcessing);
+    cancelBtn.classList.toggle("visible", isProcessing);
     if (!isProcessing) {
         cancelBtn.textContent = "Cancel";
         cancelBtn.disabled = false;
@@ -290,7 +290,7 @@ export function connect(): void {
         setIsProcessing(false);
         sendBtn.disabled = false;
         messageInput.disabled = false;
-        cancelBtn.style.display = "none";
+        cancelBtn.classList.remove("visible");
     };
 }
 

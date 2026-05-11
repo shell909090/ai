@@ -324,6 +324,7 @@ class OpenAIBackend(_StreamingBackend):
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
+        session_id: str = "",
     ) -> Any:
         import openai
 
@@ -336,6 +337,7 @@ class OpenAIBackend(_StreamingBackend):
                     tool_choice="auto" if tools else None,
                     stream=True,
                     stream_options={"include_usage": True},
+                    user=session_id or None,
                 ),
                 timeout=self._timeout,
             )
@@ -356,7 +358,7 @@ class OpenAIBackend(_StreamingBackend):
             _log_streaming_request(logger, "OpenAI", self._model, messages, tools)
 
             start_time = time.perf_counter()
-            stream = await self._open_stream(messages, tools)
+            stream = await self._open_stream(messages, tools, session.id)
 
             acc = _StreamAccumulator(finish_reason_raw="stop")
             parser = ThinkTagParser()
