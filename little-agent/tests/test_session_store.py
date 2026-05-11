@@ -28,9 +28,7 @@ def _make_user_node(node_id: str | None = None, prompt: str = "hello") -> UserPr
     return UserPromptNode(id=node_id or str(uuid.uuid4()), prompt=prompt)
 
 
-def _make_assistant_node(
-    node_id: str | None = None, text: str = "world"
-) -> AssistantResponseNode:
+def _make_assistant_node(node_id: str | None = None, text: str = "world") -> AssistantResponseNode:
     return AssistantResponseNode(id=node_id or str(uuid.uuid4()), text=text)
 
 
@@ -353,29 +351,28 @@ def test_iter_yields_search_session(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (d) search_session_fn raises NotImplementedError
+# (d) search_session_fn returns a list result
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_search_session_fn_raises_not_implemented(tmp_path: Path) -> None:
-    """Calling search_session_fn raises NotImplementedError (TASK-D5 placeholder)."""
+async def test_search_session_fn_returns_list(tmp_path: Path) -> None:
+    """Calling search_session_fn returns a list (empty when no data exists)."""
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
     items = list(store)
     _, _, fn = items[0]
-    with pytest.raises(NotImplementedError):
-        await fn({"query": "test"})
+    result = await fn({"query": "test"})
+    assert isinstance(result, list)
 
 
 # ---------------------------------------------------------------------------
-# (e) Skip-marked test for _search
+# (e) _search returns a list
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="_search not yet implemented; see TASK-D5")
 @pytest.mark.asyncio
 async def test_search_returns_results(tmp_path: Path) -> None:
-    """_search returns matching records from the JSONL store."""
+    """_search returns a list (empty when no JSONL file exists for the session)."""
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
     result = await store._search("some-session", query="hello", kind="turn", limit=5)
     assert isinstance(result, list)

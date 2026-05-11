@@ -1,5 +1,5 @@
 import { chatContainer } from "./dom.js";
-import { appendMessage } from "./messages.js";
+import { appendMessage, showEmptyState, hideEmptyState } from "./messages.js";
 import { createToolCallBubble, updateToolCallBubble } from "./toolCalls.js";
 import { autoScroll } from "./state.js";
 import type { CallData, SessionHistoryNode } from "./types.js";
@@ -41,6 +41,7 @@ export function renderHistory(nodes: SessionHistoryNode[]): void {
                 }
                 const calls = (node.calls ?? {}) as Record<string, CallData>;
                 for (const [callId, callData] of Object.entries(calls)) {
+                    hideEmptyState();
                     const bubble = createToolCallBubble(callId, callData as CallData);
                     chatContainer.appendChild(bubble);
                     historyCallMap.set(callId, bubble);
@@ -67,4 +68,6 @@ export function renderHistory(nodes: SessionHistoryNode[]): void {
             }
         }
     }
+    // If nothing was rendered (empty history), show the empty state placeholder.
+    showEmptyState();
 }

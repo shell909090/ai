@@ -3,7 +3,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 // Set up DOM before importing modules.
 document.body.innerHTML = `<div id="chat-container"></div>`;
 
-import { appendMessage, buildBubble, finalizeStreaming } from "./messages.js";
+import {
+    appendMessage,
+    buildBubble,
+    finalizeStreaming,
+    showEmptyState,
+    hideEmptyState,
+} from "./messages.js";
 
 const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
 
@@ -119,5 +125,58 @@ describe("finalizeStreaming", () => {
 
     it("does nothing when container is empty", () => {
         expect(() => finalizeStreaming()).not.toThrow();
+    });
+});
+
+describe("showEmptyState / hideEmptyState", () => {
+    it("showEmptyState adds placeholder when container is empty", () => {
+        showEmptyState();
+        const el = chatContainer.querySelector(".empty-state");
+        expect(el).not.toBeNull();
+        expect(el?.textContent).toBe("Start a conversation by typing below");
+    });
+
+    it("showEmptyState does not add placeholder when messages exist", () => {
+        appendMessage("user", "hello");
+        showEmptyState();
+        const empties = chatContainer.querySelectorAll(".empty-state");
+        expect(empties.length).toBe(0);
+    });
+
+    it("showEmptyState does not add duplicate placeholders", () => {
+        showEmptyState();
+        showEmptyState();
+        const empties = chatContainer.querySelectorAll(".empty-state");
+        expect(empties.length).toBe(1);
+    });
+
+    it("hideEmptyState removes the placeholder", () => {
+        showEmptyState();
+        expect(chatContainer.querySelector(".empty-state")).not.toBeNull();
+        hideEmptyState();
+        expect(chatContainer.querySelector(".empty-state")).toBeNull();
+    });
+
+    it("hideEmptyState is a no-op when no placeholder exists", () => {
+        expect(() => hideEmptyState()).not.toThrow();
+    });
+
+    it("appendMessage removes the placeholder automatically", () => {
+        showEmptyState();
+        expect(chatContainer.querySelector(".empty-state")).not.toBeNull();
+        appendMessage("user", "hello");
+        expect(chatContainer.querySelector(".empty-state")).toBeNull();
+    });
+
+    it("streaming appendMessage removes placeholder when first chunk arrives", () => {
+        showEmptyState();
+        appendMessage("agent", "chunk", { streaming: true });
+        expect(chatContainer.querySelector(".empty-state")).toBeNull();
+    });
+
+    it("blank streaming chunk does not remove placeholder", () => {
+        showEmptyState();
+        appendMessage("agent", "   ", { streaming: true });
+        expect(chatContainer.querySelector(".empty-state")).not.toBeNull();
     });
 });

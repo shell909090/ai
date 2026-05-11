@@ -303,9 +303,7 @@ def _load_session_store(
         return SessionJSONLStore(sessions_dir=sessions_dir, filename_template=filename_template)
     elif session_store_cfg is None and frontend_type == "web":
         # Auto-inject for web frontend using the same sessions_dir as the web client.
-        sessions_dir_raw = frontend_cfg.get(
-            "sessions_dir", "~/.local/state/little_agent/sessions/"
-        )
+        sessions_dir_raw = frontend_cfg.get("sessions_dir", "~/.local/state/little_agent/sessions/")
         store = SessionJSONLStore(sessions_dir=str(sessions_dir_raw))
         logger.info("session_store auto-enabled for web frontend")
         return store
@@ -315,9 +313,7 @@ def _load_session_store(
 def _load_hooks(config: dict[str, Any]) -> list[Any]:
     """Load hooks from config. Raises if loggers: key found (deprecated)."""
     if "loggers" in config:
-        raise ValueError(
-            "Rename `loggers:` to `hooks:` or migrate to `session_store:`"
-        )
+        raise ValueError("Rename `loggers:` to `hooks:` or migrate to `session_store:`")
     hooks_cfg = config.get("hooks")
     if hooks_cfg is None:
         return []
@@ -502,9 +498,7 @@ def main() -> None:
 
     mcp_cfgs = _parse_mcp_provider_configs(config)
 
-    asyncio.run(
-        _async_main(client, agent, tools, config, frontend_type, args.prompt, mcp_cfgs)
-    )
+    asyncio.run(_async_main(client, agent, tools, config, frontend_type, args.prompt, mcp_cfgs))
 
 
 if __name__ == "__main__":

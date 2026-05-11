@@ -11,6 +11,27 @@ function scrollIfAutoScroll(): void {
     }
 }
 
+export function showEmptyState(): void {
+    const container = getContainer();
+    if (container.querySelector(".message")) {
+        return;
+    }
+    if (!container.querySelector(".empty-state")) {
+        const el: HTMLDivElement = document.createElement("div");
+        el.className = "empty-state";
+        el.textContent = "Start a conversation by typing below";
+        container.appendChild(el);
+    }
+}
+
+export function hideEmptyState(): void {
+    const container = getContainer();
+    const el = container.querySelector(".empty-state");
+    if (el) {
+        el.remove();
+    }
+}
+
 export function finalizeStreaming(): void {
     const lastMsg = getContainer().lastElementChild as HTMLElement | null;
     if (lastMsg && lastMsg.dataset.streaming === "true") {
@@ -85,12 +106,14 @@ export function appendMessage(
         if (!text.trim()) {
             return;
         }
+        hideEmptyState();
         const div = buildBubble(type, text, label);
         div.dataset.streaming = "true";
         container.appendChild(div);
         scrollIfAutoScroll();
     } else {
         finalizeStreaming();
+        hideEmptyState();
         const div = buildBubble(type, text, label);
         div.dataset.streaming = "false";
         container.appendChild(div);

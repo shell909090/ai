@@ -14,7 +14,7 @@ import {
     forkSessionBtn,
     deleteSessionBtn,
 } from "./dom.js";
-import { appendMessage, finalizeStreaming } from "./messages.js";
+import { appendMessage, finalizeStreaming, showEmptyState, hideEmptyState } from "./messages.js";
 import { renderHistory } from "./history.js";
 import { renderSessionList, updateSessionActiveState, initSessionList } from "./sessionList.js";
 import { createToolCallBubble, updateToolCallBubble } from "./toolCalls.js";
@@ -87,6 +87,7 @@ export function resumeSession(id: string): void {
     // Clear chat immediately; buffer any incoming updates until history arrives.
     chatContainer.innerHTML = "";
     toolCallElements.clear();
+    showEmptyState();
     setHistoryPending(true);
     setPendingUpdates([]);
     sendMessage({ type: "session/resume", session_id: id });
@@ -143,6 +144,7 @@ export function handleUpdate(update: SessionUpdatePayload): void {
         }
         case "tool_call": {
             finalizeStreaming();
+            hideEmptyState();
             const calls: Record<string, CallData> = update.data?.calls ?? {};
             for (const [callId, callData] of Object.entries(calls)) {
                 const bubble = createToolCallBubble(callId, callData);
@@ -170,6 +172,7 @@ export function handleMessage(msg: ServerMessage): void {
         case "session/new_response":
             chatContainer.innerHTML = "";
             toolCallElements.clear();
+            showEmptyState();
             setHistoryPending(false);
             setPendingUpdates([]);
             setActiveSession(msg.session_id);
@@ -220,6 +223,7 @@ export function handleMessage(msg: ServerMessage): void {
                     setActiveSession(null);
                     chatContainer.innerHTML = "";
                     toolCallElements.clear();
+                    showEmptyState();
                     createSession();
                 }
             }

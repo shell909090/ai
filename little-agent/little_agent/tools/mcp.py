@@ -149,9 +149,7 @@ class MCPStdioProvider:
         """Yield (namespaced_name, tooldef, fn) for each MCP tool."""
         for namespaced_name, tooldef, original_name in self._tools:
 
-            async def _call(
-                args: dict[str, JSONValue], _name: str = original_name
-            ) -> JSONValue:
+            async def _call(args: dict[str, JSONValue], _name: str = original_name) -> JSONValue:
                 if not self._running:
                     raise RuntimeError(f"MCP server '{self._name}' is not running")
                 try:

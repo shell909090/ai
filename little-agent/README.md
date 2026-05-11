@@ -15,6 +15,7 @@ little-agent features:
 - **MCP tool support (stdio)** — connect any MCP-compatible tool server via stdio transport (`tools.mcp` config)
 - **Permission system** — Chain of Responsibility: per-tool allow/deny rules with user prompt fallback
 - **Auto-compression** — automatically summarize history when context window fills up
+- **Session search** — recall content from earlier turns that have been compressed
 
 ## Installation
 
