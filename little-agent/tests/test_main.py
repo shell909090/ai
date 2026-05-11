@@ -70,7 +70,7 @@ def _mock_config(primary_overrides: dict[str, Any] | None = None) -> dict[str, A
     return {
         "backends": {"primary": primary},
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
+        "tools": {"providers": {}},
     }
 
 
@@ -113,7 +113,7 @@ def test_main_missing_backends_raises() -> None:
     """Test main raises ValueError when backends section is missing."""
     mock_config = {
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
+        "tools": {"providers": {}},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):
@@ -129,7 +129,7 @@ def test_main_missing_primary_raises() -> None:
     mock_config = {
         "backends": {"compressor": {"type": "openai", "api_key": "k"}},
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
+        "tools": {"providers": {}},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):
@@ -393,7 +393,7 @@ def test_main_with_compressor_backend() -> None:
             "compressor": {"type": "openai", "api_key": "ck", "model": "gpt-3.5-turbo"},
         },
         "logging": {"version": 1, "loggers": {"": {"level": "INFO"}}},
-        "tools": {"providers": []},
+        "tools": {"providers": {}},
     }
 
     with patch("little_agent.main.load_config", return_value=mock_config):

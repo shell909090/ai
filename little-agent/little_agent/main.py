@@ -22,7 +22,6 @@ from little_agent.backends.openai import OpenAIBackend
 from little_agent.frontends.acp import AcpClient
 from little_agent.frontends.cli import CliClient
 from little_agent.frontends.web import WebClient
-from little_agent.tools.bash import BashToolProvider
 from little_agent.tools.manager import ToolManager
 from little_agent.tools.task import TaskToolProvider
 
@@ -83,38 +82,76 @@ def load_config(path: Path) -> dict[str, Any]:
     return data
 
 
-_BASH_PROVIDER_PATH = "little_agent.tools.bash.BashToolProvider"
+_TASK_PROVIDER_PATH = "little_agent.tools.task.TaskToolProvider"
 
 
-def load_providers_from_config(config: dict[str, Any]) -> list[Any]:
-    """Load tool providers from configuration, always including bash."""
+def _validate_tools_config(tools_config: dict[str, Any]) -> None:
+    """Raise ValueError for deprecated tools config fields."""
+    if "task_tool" in tools_config:
+        raise ValueError(
+            "'tools.task_tool' is no longer supported. "
+            "Enable task tool via: tools.providers: "
+            "{little_agent.tools.task.TaskToolProvider: {}}"
+        )
+    if "bash" in tools_config and isinstance(tools_config.get("bash"), dict):
+        raise ValueError(
+            "'tools.bash.*' is no longer supported. "
+            "Configure bash via: tools.providers: "
+            "{little_agent.tools.bash.BashToolProvider: {timeout: 30}}"
+        )
+    providers_cfg = tools_config.get("providers")
+    if providers_cfg is not None and not isinstance(providers_cfg, dict):
+        raise ValueError(
+            "'tools.providers' must be a dict mapping class paths to constructor args. "
+            "Old list format is not supported. "
+            "Example: tools.providers: {little_agent.tools.bash.BashToolProvider: {}}"
+        )
+
+
+def _import_provider(path: str, args: dict[str, Any]) -> Any:
+    """Import and instantiate a provider class by dotted path."""
+    module_path, _, class_name = path.rpartition(".")
+    if not module_path:
+        raise ImportError(f"Invalid provider class path: '{path}'")
+    try:
+        mod = importlib.import_module(module_path)
+    except ImportError as e:
+        raise ImportError(f"Cannot import provider '{path}': {e}") from e
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        raise ImportError(f"Provider class not found: '{path}'")
+    return cls(**args)
+
+
+def load_providers_from_config(config: dict[str, Any]) -> tuple[list[Any], bool]:
+    """Load tool providers from config dict; returns (providers, task_tool_enabled).
+
+    Expects tools.providers to be a dict[class_path, constructor_args].
+    Raises ValueError for old list-format or deprecated fields (task_tool, bash.*).
+    TaskToolProvider is detected and excluded; caller must register it after agent creation.
+    """
     tools_config = config.get("tools") or {}
     if not isinstance(tools_config, dict):
         tools_config = {}
 
-    # Bash provider is always included; timeout is configurable via tools.bash config.
-    bash_cfg = tools_config.get("bash") or {}
-    if not isinstance(bash_cfg, dict):
-        bash_cfg = {}
-    bash_timeout = int(bash_cfg.get("timeout", 30))
-    bash_max_timeout = int(bash_cfg.get("max_timeout", 1800))
-    providers: list[Any] = [BashToolProvider(timeout=bash_timeout, max_timeout=bash_max_timeout)]
+    _validate_tools_config(tools_config)
+    providers_cfg: dict[str, Any] = tools_config.get("providers") or {}
 
-    # Additional providers from class paths; deduplicate and skip the bash provider
-    # (always instantiated above with its config).
-    seen: set[str] = {_BASH_PROVIDER_PATH}
-    class_paths: list[str] = list(tools_config.get("providers") or [])
-    for class_path in class_paths:
-        if class_path in seen:
+    task_enabled = False
+    providers: list[Any] = []
+
+    for path, args in providers_cfg.items():
+        if args is None or not isinstance(args, dict):
+            raise ValueError(
+                f"Provider '{path}': constructor args must be a dict. "
+                "Use {} for no-arg providers."
+            )
+        if path == _TASK_PROVIDER_PATH:
+            task_enabled = True
             continue
-        seen.add(class_path)
-        try:
-            module_path, cls_name = class_path.rsplit(".", 1)
-            mod = importlib.import_module(module_path)
-            providers.append(getattr(mod, cls_name)())
-        except Exception:
-            logger.exception("Failed to load provider: %s", class_path)
-    return providers
+        providers.append(_import_provider(path, args))
+
+    return providers, task_enabled
 
 
 def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicBackend:
@@ -170,15 +207,16 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
     )
 
 
-def _load_tools(config: dict[str, Any]) -> ToolManager:
-    """Load and register tool providers from config."""
+def _load_tools(config: dict[str, Any]) -> tuple[ToolManager, bool]:
+    """Load and register tool providers from config; returns (tools, task_tool_enabled)."""
     tools = ToolManager()
-    for provider in load_providers_from_config(config):
+    providers, task_enabled = load_providers_from_config(config)
+    for provider in providers:
         try:
             tools.register(provider)
         except (TypeError, ValueError) as e:
             logger.warning("Failed to register provider %s: %s", provider, e)
-    return tools
+    return tools, task_enabled
 
 
 def _load_backend(config: dict[str, Any]) -> Any:
@@ -246,37 +284,6 @@ def _load_permissions(config: dict[str, Any], client: PermissionChecker) -> Perm
     return client
 
 
-def _validate_memory_path(mem_path: str) -> None:
-    """Reject paths that escape CWD or home directory to prevent path traversal."""
-    p = Path(mem_path)
-    if p.is_absolute():
-        home = Path.home()
-        if not p.resolve().is_relative_to(home):
-            raise ValueError(f"Memory path '{mem_path}' must be within the user's home directory")
-    elif ".." in p.parts:
-        raise ValueError(f"Memory path '{mem_path}' must not contain '..' components")
-
-
-def _load_memory(config: dict[str, Any], backend: Any, backends_config: dict[str, Any]) -> Any:
-    """Load memory system from config if present."""
-    memory_cfg = config.get("memory")
-    if isinstance(memory_cfg, dict):
-        from little_agent.memory import FileMemory
-
-        mem_type = memory_cfg.get("type", "file")
-        if mem_type == "file":
-            mem_path = memory_cfg.get("path", "memory.jsonl")
-            _validate_memory_path(str(mem_path))
-            mem_backend_name = memory_cfg.get("backend", "primary")
-            mem_backend_cfg = backends_config.get(mem_backend_name)
-            if isinstance(mem_backend_cfg, dict):
-                mem_backend = _build_backend(mem_backend_cfg, mem_backend_name)
-                return FileMemory(backend=mem_backend, path=mem_path)
-            logger.warning("Memory backend '%s' not found, using primary", mem_backend_name)
-            return FileMemory(backend=backend, path=mem_path)
-    return None
-
-
 def _load_loggers(config: dict[str, Any]) -> list[Any]:
     """Load session loggers from config list."""
     loggers_cfg = config.get("loggers", [])
@@ -296,6 +303,33 @@ def _load_loggers(config: dict[str, Any]) -> list[Any]:
     return result
 
 
+def _run_frontend(
+    client: CliClient | WebClient | AcpClient,
+    agent: AgentCore,
+    config: dict[str, Any],
+    frontend_type: str,
+    initial_prompt: str | None,
+) -> None:
+    """Start and run the selected frontend."""
+    if frontend_type == "web":
+        from little_agent.frontends.web import WebClient as _WebClient
+
+        cfg = config.get("frontend", {})
+        if isinstance(client, _WebClient):
+            host = cfg.get("host", "127.0.0.1") if isinstance(cfg, dict) else "127.0.0.1"
+            port_raw = cfg.get("port", 8080) if isinstance(cfg, dict) else 8080
+            port = int(port_raw) if isinstance(port_raw, (int, float)) else 8080
+            asyncio.run(client.run(agent, host=str(host), port=port))
+            return
+    elif frontend_type == "cli":
+        from little_agent.frontends.cli import CliClient as _CliClient
+
+        if isinstance(client, _CliClient):
+            asyncio.run(client.run(agent, initial_prompt=initial_prompt))
+            return
+    asyncio.run(client.run(agent))
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
@@ -313,10 +347,15 @@ def main() -> None:
     log_config = config.get("logging")
     setup_logging(log_config, args.loglevel)
 
-    tools = _load_tools(config)
+    if "memory" in config:
+        raise ValueError(
+            "'memory:' config key is no longer supported. "
+            "Use session_store: for session history search (TASK-D5)."
+        )
+
+    tools, task_enabled = _load_tools(config)
     backend, backends_config = _load_backend(config)
     compressor = _load_compressor(config, backend, backends_config)
-    memory = _load_memory(config, backend, backends_config)
     loggers = _load_loggers(config)
 
     frontend_type = config.get("frontend", {}).get("type", "cli")
@@ -347,36 +386,15 @@ def main() -> None:
         tools=tools,
         compressor=compressor,
         permissions=permissions,
-        memory=memory,
         loggers=loggers,
         compress_ratio=compress_ratio,
         context_window=backend.context_window,
     )
 
-    tools_cfg = config.get("tools", {})
-    if not isinstance(tools_cfg, dict) or tools_cfg.get("task_tool", True):
+    if task_enabled:
         tools.register(TaskToolProvider(agent))
 
-    if frontend_type == "web":
-        from little_agent.frontends.web import WebClient as _WebClient
-
-        cfg = config.get("frontend", {})
-        if isinstance(client, _WebClient):
-            host = cfg.get("host", "127.0.0.1") if isinstance(cfg, dict) else "127.0.0.1"
-            port_raw = cfg.get("port", 8080) if isinstance(cfg, dict) else 8080
-            port = int(port_raw) if isinstance(port_raw, (int, float)) else 8080
-            asyncio.run(client.run(agent, host=str(host), port=port))
-        else:
-            asyncio.run(client.run(agent))
-    elif frontend_type == "cli":
-        from little_agent.frontends.cli import CliClient as _CliClient
-
-        if isinstance(client, _CliClient):
-            asyncio.run(client.run(agent, initial_prompt=args.prompt))
-        else:
-            asyncio.run(client.run(agent))
-    else:
-        asyncio.run(client.run(agent))
+    _run_frontend(client, agent, config, frontend_type, args.prompt)
 
 
 if __name__ == "__main__":

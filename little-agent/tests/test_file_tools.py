@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from little_agent.tools.file import FileToolProvider
+from little_agent.tools.file import EditFileToolProvider
 from little_agent.tools.manager import ToolManager
 
 
 def _make_manager() -> ToolManager:
     mgr = ToolManager()
-    mgr.register(FileToolProvider())
+    mgr.register(EditFileToolProvider())
     return mgr
 
 
 def test_file_tool_listed() -> None:
-    """FileToolProvider.__iter__ only yields 'edit_file', not 'write_file'."""
-    provider = FileToolProvider()
+    """EditFileToolProvider.__iter__ only yields 'edit_file', not 'write_file'."""
+    provider = EditFileToolProvider()
     tools = {name for name, _tooldef, _ in provider}
     assert "edit_file" in tools
     assert "write_file" not in tools

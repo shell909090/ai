@@ -10,8 +10,11 @@ from little_agent.types import JSONValue
 from .protocol import AsyncToolFn, ToolArgDef, ToolDef
 
 
-class FileToolProvider:
+class EditFileToolProvider:
     """Read and write files on the local filesystem."""
+
+    def __init__(self, **kwargs: object) -> None:
+        """Create EditFileToolProvider. Accepts no configuration kwargs."""
 
     _EDIT_TOOL_DEF = ToolDef(
         desc=(

@@ -3,6 +3,7 @@ import {
     cancelBtn,
     messageInput,
     sendBtn,
+    spinnerEl,
     statusEl,
     permissionModal,
     permissionText,
@@ -45,10 +46,9 @@ export function sendMessage(msg: ClientMessage): void {
     }
 }
 
-function updateInputState(): void {
+export function updateInputState(): void {
     messageInput.disabled = isProcessing;
     sendBtn.disabled = isProcessing;
-    const spinnerEl = document.getElementById("spinner") as HTMLDivElement;
     spinnerEl.style.display = isProcessing ? "inline-block" : "none";
     cancelBtn.style.display = isProcessing ? "inline-block" : "none";
     if (!isProcessing) {

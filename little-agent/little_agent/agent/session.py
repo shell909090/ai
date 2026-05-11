@@ -17,7 +17,6 @@ from .exceptions import SessionBusyError
 from .nodes import (
     AssistantResponseNode,
     Node,
-    SummaryNode,
     UserPromptNode,
     _rebuild_chain,
 )
@@ -120,16 +119,6 @@ class SessionCore(Session):
         """Inner turn execution after context vars are set."""
         self._turn_allowed_tools = allowed_tools
 
-        if self.agent.memory is not None:
-            memory_text = await self.agent.memory.recall()
-            if memory_text:
-                mem_node = SummaryNode(
-                    id=str(uuid.uuid4()),
-                    prev=self.tail,
-                    summary=memory_text,
-                )
-                self.append_node(mem_node)
-
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
             prev=self.tail,
@@ -164,7 +153,6 @@ class SessionCore(Session):
 
             raise RuntimeError("Max turn iterations exceeded")
         finally:
-            await self._update_memory()
             for _logger in self.agent.loggers:
                 try:
                     await _logger.log(self)
@@ -297,11 +285,6 @@ class SessionCore(Session):
                 ),
             )
         return ("end_turn", result.output_text)
-
-    async def _update_memory(self) -> None:
-        """Update memory after a turn completes or is cancelled."""
-        if self.agent.memory is not None:
-            await self.agent.memory.remember(self)
 
     def append_node(self, node: Node) -> None:
         if self.tail is not None:

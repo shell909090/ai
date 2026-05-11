@@ -14,7 +14,6 @@ little-agent features:
 - **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)
 - **MCP tool support (planned)** — currently tools are loaded as Python modules via the `tools.providers` config
 - **Permission system** — Chain of Responsibility: per-tool allow/deny rules with user prompt fallback
-- **Memory** — persist and recall facts across sessions
 - **Auto-compression** — automatically summarize history when context window fills up
 
 ## Installation
@@ -59,48 +58,6 @@ frontend:
   type: cli
 ```
 
-### Auto-compression
-
-little-agent compresses conversation history automatically when the context window
-fills up. **No configuration is required** — compression is on by default and uses
-the primary backend.
-
-When the ratio of `(input_tokens + output_tokens) / context_window` exceeds `agent.R`
-(default 0.75), the oldest turns are summarised into `SummaryNode`s and the raw history
-is discarded. The most recent `compressor.keep_turns` (default 3) turns are always
-kept verbatim.
-
-**Tuning compression:**
-
-```yaml
-agent:
-  R: 0.75                            # trigger compression when context is 75% full (default 0.75)
-
-compressor:
-  keep_turns: 3                      # keep this many recent turns verbatim (default 3)
-  compressed_window: 0.15            # discard old summaries beyond 20% of context_window (default 0.15)
-```
-
-**Using a dedicated, cheaper backend for compression** (optional — saves cost):
-
-```yaml
-backends:
-  primary:
-    type: openai
-    model: gpt-4o
-    api_key_env: OPENAI_API_KEY
-  compressor:                        # if omitted, primary backend is used
-    type: openai
-    model: gpt-4o-mini
-    api_key_env: OPENAI_API_KEY
-```
-
-**Disabling compression entirely:**
-
-```yaml
-compressor: false
-```
-
 ### Full config example
 
 ```yaml
@@ -139,14 +96,12 @@ permissions:                         # list of checkers, evaluated top-to-bottom
   # To allow ALL tools without prompting:  - type: yesman
   # To prompt for EVERY tool (default):   omit permissions key or use []
 
-memory:
-  type: file
-  path: memory.jsonl
-  backend: primary                   # which backend to use for memory summarisation
-
 tools:
-  providers: []                      # Python module providers
-  task_tool: true                    # set false to disable the built-in create_task tool
+  providers:
+    little_agent.tools.bash.BashToolProvider: {}
+    little_agent.tools.task.TaskToolProvider: {}    # omit to disable
+    little_agent.tools.http.HttpToolProvider: {}
+    little_agent.tools.file.EditFileToolProvider: {}
 
 logging:
   version: 1
@@ -219,20 +174,21 @@ A list of checkers evaluated top-to-bottom. Omit or set to `[]` to prompt the us
 | `blackwhitelist` | `blacklist`, `whitelist` (lists of tool name patterns, fnmatch) | Blacklist checked first; match → deny. Whitelist match → allow. No match → pass to next checker |
 | `yesman` | — | Allow everything unconditionally |
 
-#### `memory`
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `type` | — | `file` (only supported type) |
-| `path` | — | Path to the JSONL file storing memories |
-| `backend` | `primary` | Which backend to use for memory summarisation |
-
 #### `tools`
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `providers` | `[]` | List of `{type: python, module: "my.module"}` entries; each module must expose `create_provider()` returning a `ToolProvider` |
-| `task_tool` | `true` | Set `false` to disable the built-in `create_task` tool |
+`tools.providers` is a dict mapping provider class paths to constructor args.
+Omit a provider to disable it. Example with all built-in providers:
+
+```yaml
+tools:
+  providers:
+    little_agent.tools.bash.BashToolProvider:
+      timeout: 30        # default command timeout (seconds)
+      max_timeout: 1800  # per-call maximum
+    little_agent.tools.task.TaskToolProvider: {}
+    little_agent.tools.http.HttpToolProvider: {}
+    little_agent.tools.file.EditFileToolProvider: {}
+```
 
 ### Running
 
@@ -281,8 +237,7 @@ little_agent/
   agent/          # AgentCore, SessionCore, node chain, compression, permissions
   backends/       # OpenAI and Anthropic streaming backends
   frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
-  tools/          # BashTool, TaskTool, MCP tool manager
-  memory.py       # file-based session memory
+  tools/          # BashTool, TaskTool, HttpTool, EditFileTool
   main.py         # config loading and entry point
 ```
 

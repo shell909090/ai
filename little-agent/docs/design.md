@@ -424,7 +424,7 @@ class ToolRegistry(Protocol):
 - 参数：`command`(string, req)、`cwd`(string)、`env`(object)、`stdin`(string)、`timeout`(integer, 覆盖默认超时秒数，受 `max_timeout` 上限保护)
 - 返回：`{"stdout": str, "stderr": str, "returncode": int}`；超时返回 `returncode: -1`、stderr 含超时信息
 - 实现：`asyncio.create_subprocess_shell` + `start_new_session=True` + `os.killpg`；`env` 合并 `os.environ` 但拒绝 `LD_*`/`PATH`/`PYTHON*` 等危险变量。
-- 配置参数（在 `tools.bash` 下）：
+- 构造参数（通过 `tools.providers` dict 传入）：
 
 | 字段 | 默认 | 说明 |
 |------|------|------|
@@ -434,9 +434,10 @@ class ToolRegistry(Protocol):
 - 启动配置示例：
   ```yaml
   tools:
-    bash:
-      timeout: 600
-      max_timeout: 3600
+    providers:
+      little_agent.tools.bash.BashToolProvider:
+        timeout: 600
+        max_timeout: 3600
   ```
 
 #### task
@@ -788,10 +789,15 @@ compressor:
   compressed_window: 0.15                # W = compressed_window * primary.context_window，默认 0.15
 
 tools:
-  task_tool: true                        # default true；false 则不注册 task
   providers:
-    - type: python
-      module: my_tools.weather
+    little_agent.tools.bash.BashToolProvider:
+      timeout: 30
+      max_timeout: 1800
+    little_agent.tools.task.TaskToolProvider: {}     # 出现即启用，缺省即禁用
+    little_agent.tools.http.HttpToolProvider: {}
+    little_agent.tools.file.EditFileToolProvider: {}
+    my_tools.weather.WeatherProvider:
+      api_key_env: WEATHER_KEY
 
 # 列表为空或省略时，所有 tool 调用直接询问 client
 permissions:

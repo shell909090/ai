@@ -41,7 +41,6 @@ class AgentCore(Agent):
         tools: ToolRegistry,
         compressor: Compressor | None = None,
         permissions: PermissionChecker | None = None,
-        memory: Any = None,
         loggers: list[Any] | None = None,
         compress_ratio: float = 0.75,
         context_window: int = 128000,
@@ -53,7 +52,6 @@ class AgentCore(Agent):
         self.permissions: PermissionChecker = (
             permissions if permissions is not None else cast(PermissionChecker, client)
         )
-        self.memory = memory
         self.loggers: list[Any] = loggers or []
         self.compress_ratio = compress_ratio
         self.context_window = context_window

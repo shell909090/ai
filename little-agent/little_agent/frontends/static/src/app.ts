@@ -1,21 +1,7 @@
 import { chatContainer, messageInput, sendBtn, cancelBtn } from "./dom.js";
 import { appendMessage } from "./messages.js";
-import { connect, sendMessage, initSessionButtons } from "./ws.js";
+import { connect, sendMessage, initSessionButtons, updateInputState } from "./ws.js";
 import { sessionId, isProcessing, setIsProcessing, setAutoScroll } from "./state.js";
-
-function updateInputState(): void {
-    messageInput.disabled = isProcessing;
-    sendBtn.disabled = isProcessing;
-    const spinnerEl = document.getElementById("spinner") as HTMLDivElement;
-    spinnerEl.style.display = isProcessing ? "inline-block" : "none";
-    cancelBtn.style.display = isProcessing ? "inline-block" : "none";
-    if (!isProcessing) {
-        cancelBtn.textContent = "Cancel";
-        cancelBtn.disabled = false;
-        const statusEl = document.getElementById("status") as HTMLDivElement;
-        statusEl.textContent = "Connected";
-    }
-}
 
 function sendPrompt(): void {
     const text: string = messageInput.value.trim();
