@@ -5,10 +5,14 @@ import {
     sendBtn,
     spinnerEl,
     statusEl,
+    sessionInfo,
     permissionModal,
     permissionText,
     permAllowBtn,
     permDenyBtn,
+    newSessionBtn,
+    forkSessionBtn,
+    deleteSessionBtn,
 } from "./dom.js";
 import { appendMessage, finalizeStreaming } from "./messages.js";
 import { renderHistory } from "./history.js";
@@ -70,11 +74,10 @@ function scrollIfAutoScroll(): void {
 
 function setActiveSession(id: string | null): void {
     setSessionId(id);
-    const sessionInfoEl = document.getElementById("session-info") as HTMLDivElement;
     if (id) {
-        sessionInfoEl.textContent = `Session: ${id.slice(0, 8)}...`;
+        sessionInfo.textContent = `Session: ${id.slice(0, 8)}...`;
     } else {
-        sessionInfoEl.textContent = "No session";
+        sessionInfo.textContent = "No session";
     }
     updateSessionActiveState(id);
 }
@@ -312,10 +315,6 @@ permDenyBtn.addEventListener("click", (): void => {
 
 // --- Session management buttons ---
 export function initSessionButtons(): void {
-    const newSessionBtn = document.getElementById("new-session-btn") as HTMLButtonElement;
-    const forkSessionBtn = document.getElementById("fork-session-btn") as HTMLButtonElement;
-    const deleteSessionBtn = document.getElementById("delete-session-btn") as HTMLButtonElement;
-
     newSessionBtn.addEventListener("click", (): void => {
         createSession();
     });
