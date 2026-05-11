@@ -98,6 +98,12 @@ export interface SessionDeleteResponseMsg {
     session_id: string;
 }
 
+export interface SessionCompactResponseMsg {
+    type: "session/compact_response";
+    ok: boolean;
+    error?: string;
+}
+
 export type ServerMessage =
     | SessionNewResponseMsg
     | SessionPromptResponseMsg
@@ -107,7 +113,8 @@ export type ServerMessage =
     | SessionListResponseMsg
     | SessionHistoryMsg
     | SessionForkResponseMsg
-    | SessionDeleteResponseMsg;
+    | SessionDeleteResponseMsg
+    | SessionCompactResponseMsg;
 
 export interface ClientMessage {
     type: string;

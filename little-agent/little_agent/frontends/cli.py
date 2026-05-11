@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 _SLASH_COMMANDS = [
     "/cancel",
+    "/compact",
     "/exit",
     "/fork",
     "/list-tools",
@@ -160,6 +161,9 @@ class CliClient(Client):
             case ["/cancel"]:
                 await session.cancel()
                 return session, True
+            case ["/compact"]:
+                await self._do_compact(session)
+                return session, True
             case ["/fork"]:
                 session = await session.fork()
                 print("Forked new session.")
@@ -182,6 +186,14 @@ class CliClient(Client):
             case _:
                 print(f"Unknown command: {stripped}")
                 return session, True
+
+    async def _do_compact(self, session: Session) -> None:
+        """Compress session history; print result."""
+        try:
+            await session.compress()
+            print("Session history compressed.")
+        except Exception as exc:
+            print(f"Compact failed: {exc}")
 
     def _print_tools(self, agent: Agent) -> None:
         """Print all registered tools."""
@@ -266,7 +278,7 @@ class CliClient(Client):
             return
         print(
             "Little Agent CLI. "
-            "Commands: /new /save <path> /load <path> /cancel /fork /quit  "
+            "Commands: /new /save <path> /load <path> /cancel /fork /compact /quit  "
             "(Ctrl-C to cancel running turn)"
         )
         await self._run_loop(agent, session)

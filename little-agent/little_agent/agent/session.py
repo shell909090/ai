@@ -263,10 +263,16 @@ class SessionCore(Session):
             if overflow_retried or self.agent.compressor is None:
                 raise
             logger.info("in-turn context overflow: compressing and retrying")
+            old_tail = self.tail
             new_tail = await self.agent.compressor.compress(self.tail)
-            if new_tail is not None:
-                self.tail = new_tail
-                await self._call_hooks("on_compress", self)
+            if new_tail is None or new_tail is old_tail:
+                logger.warning(
+                    "in-turn compress was a no-op (too few turns to compress); "
+                    "re-raising ContextOverflowError"
+                )
+                raise
+            self.tail = new_tail
+            await self._call_hooks("on_compress", self)
             result, did_stream = await self._generate_backend_result()
             return result, did_stream, True
 

@@ -163,6 +163,26 @@ async def do_session_delete(
     return {"type": "session/delete_response", "session_id": session_id}
 
 
+async def do_session_compact(
+    client: WebClient, agent: Agent, ws: web.WebSocketResponse, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Manually trigger history compression for a session."""
+    from .client import _is_valid_session_id
+
+    session_id: str = msg.get("session_id", "")
+    if not _is_valid_session_id(session_id):
+        return {"error": "Invalid session"}
+    sess = client.store.get_session(session_id)
+    if sess is None:
+        return {"error": "Unknown session"}
+    try:
+        await sess.compress()
+    except Exception as exc:
+        return {"type": "session/compact_response", "ok": False, "error": str(exc)}
+    await client.store.auto_save(sess)
+    return {"type": "session/compact_response", "ok": True}
+
+
 _DISPATCH: dict[str, _Handler] = {
     "session/new": do_session_new,
     "session/prompt": do_session_prompt,
@@ -170,6 +190,7 @@ _DISPATCH: dict[str, _Handler] = {
     "session/list": do_session_list,
     "session/fork": do_session_fork,
     "session/delete": do_session_delete,
+    "session/compact": do_session_compact,
 }
 
 

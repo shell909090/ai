@@ -12,4 +12,7 @@ export const permDenyBtn = document.getElementById("perm-deny") as HTMLButtonEle
 export const sessionListEl = document.getElementById("session-list") as HTMLDivElement;
 export const newSessionBtn = document.getElementById("new-session-btn") as HTMLButtonElement;
 export const forkSessionBtn = document.getElementById("fork-session-btn") as HTMLButtonElement;
+export const compactSessionBtn = document.getElementById(
+    "compact-session-btn",
+) as HTMLButtonElement;
 export const deleteSessionBtn = document.getElementById("delete-session-btn") as HTMLButtonElement;

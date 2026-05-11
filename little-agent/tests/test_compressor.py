@@ -9,8 +9,8 @@ import pytest
 
 from little_agent.agent.compressor import (
     LLMCompressor,
-    _CompressorSession,
     _apply_w_limit,
+    _CompressorSession,
     _nodes_to_text,
     _split_into_turns,
 )
@@ -523,8 +523,6 @@ def test_nodes_to_text_includes_tool_call_output_text() -> None:
 
 def test_compressor_session_has_id() -> None:
     """_CompressorSession must expose an 'id' attribute required by backends."""
-    from little_agent.backends.protocol import Backend
-
     backend = MockBackend()
     session = _CompressorSession(backend, "test prompt")  # type: ignore[arg-type]
     assert hasattr(session, "id")

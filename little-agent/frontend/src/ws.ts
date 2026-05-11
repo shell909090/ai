@@ -12,9 +12,16 @@ import {
     permDenyBtn,
     newSessionBtn,
     forkSessionBtn,
+    compactSessionBtn,
     deleteSessionBtn,
 } from "./dom.js";
-import { appendMessage, finalizeStreaming, showEmptyState, hideEmptyState } from "./messages.js";
+import {
+    appendMessage,
+    appendSystemMessage,
+    finalizeStreaming,
+    showEmptyState,
+    hideEmptyState,
+} from "./messages.js";
 import { renderHistory } from "./history.js";
 import { renderSessionList, updateSessionActiveState, initSessionList } from "./sessionList.js";
 import { createToolCallBubble, updateToolCallBubble } from "./toolCalls.js";
@@ -100,6 +107,12 @@ function createSession(): void {
 function forkSession(): void {
     if (!sessionId) return;
     sendMessage({ type: "session/fork", session_id: sessionId });
+}
+
+function compactSession(): void {
+    if (!sessionId) return;
+    compactSessionBtn.disabled = true;
+    sendMessage({ type: "session/compact", session_id: sessionId });
 }
 
 function deleteSession(): void {
@@ -229,6 +242,15 @@ export function handleMessage(msg: ServerMessage): void {
             }
             break;
         }
+        case "session/compact_response":
+            compactSessionBtn.disabled = false;
+            if (msg.ok) {
+                appendSystemMessage("--- Context compressed ---");
+                scrollIfAutoScroll();
+            } else {
+                appendMessage("agent", `Compact failed: ${msg.error ?? "unknown error"}`);
+            }
+            break;
         case "session/prompt_response":
             setIsProcessing(false);
             updateInputState();
@@ -324,6 +346,9 @@ export function initSessionButtons(): void {
     });
     forkSessionBtn.addEventListener("click", (): void => {
         forkSession();
+    });
+    compactSessionBtn.addEventListener("click", (): void => {
+        compactSession();
     });
     deleteSessionBtn.addEventListener("click", (): void => {
         deleteSession();

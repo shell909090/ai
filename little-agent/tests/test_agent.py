@@ -816,16 +816,18 @@ async def test_in_turn_overflow_retry_success() -> None:
                 output_text="ok after retry", tool_calls=[], finish_reason="completed"
             )
 
-    class _NoopCompressor:
+    class _MinimalCompressor:
         async def compress(self, tail):
-            return tail
+            import dataclasses
+
+            return dataclasses.replace(tail)  # new object signals compression ran
 
     backend = _OverflowOnceThenSucceed()
     agent = AgentCore(
         client=MockClient(),
         backend=backend,  # type: ignore[arg-type]
         tools=MockToolProvider(),
-        compressor=_NoopCompressor(),
+        compressor=_MinimalCompressor(),
         compress_ratio=0.99,
         context_window=128000,
     )

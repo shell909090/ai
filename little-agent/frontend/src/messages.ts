@@ -82,6 +82,18 @@ export function buildBubble(
  * @param opts.streaming - When true, attempt to append to existing streaming bubble
  *                         of the same type before creating a new one.
  */
+export function appendSystemMessage(text: string): void {
+    finalizeStreaming();
+    const container = getContainer();
+    const div: HTMLDivElement = document.createElement("div");
+    div.className = "message system";
+    div.dataset.type = "system";
+    div.dataset.streaming = "false";
+    div.textContent = text;
+    container.appendChild(div);
+    scrollIfAutoScroll();
+}
+
 export function appendMessage(
     type: "user" | "agent" | "thinking",
     text: string,
