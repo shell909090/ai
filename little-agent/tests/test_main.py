@@ -8,18 +8,22 @@ import pytest
 
 from little_agent.agent.permissions import YesManChecker
 from little_agent.main import (
+    _DEFAULT_CONFIG,
     _build_backend,
+    _deep_merge,
     _load_permissions,
     load_config,
     main,
     setup_logging,
 )
 
+_DEFAULT_LOGGING = _DEFAULT_CONFIG["logging"]
+
 
 def test_setup_logging_default_config() -> None:
-    """Test setup_logging uses default config when no config provided."""
+    """Test setup_logging with default logging config produces INFO level."""
     with patch("logging.config.dictConfig") as mock_dict_config:
-        setup_logging(None, None)
+        setup_logging(dict(_DEFAULT_LOGGING), None)
         assert mock_dict_config.called
         cfg = mock_dict_config.call_args.args[0]
         assert cfg["loggers"][""]["level"] == "INFO"
@@ -28,7 +32,7 @@ def test_setup_logging_default_config() -> None:
 def test_setup_logging_override_level() -> None:
     """Test setup_logging overrides level via --loglevel."""
     with patch("logging.config.dictConfig") as mock_dict_config:
-        setup_logging(None, "DEBUG")
+        setup_logging(dict(_DEFAULT_LOGGING), "DEBUG")
         assert mock_dict_config.called
         cfg = mock_dict_config.call_args.args[0]
         assert cfg["loggers"][""]["level"] == "DEBUG"
@@ -432,3 +436,49 @@ def test_load_permissions_dict_warns_and_returns_client() -> None:
     assert result is client
     mock_logger.warning.assert_called_once()
     assert "old format" in mock_logger.warning.call_args.args[0]
+
+
+class TestDeepMerge:
+    """Unit tests for _deep_merge."""
+
+    def test_deep_merge_scalar_override(self) -> None:
+        """Override scalar values replace base values."""
+        base = {"a": 1, "b": 2}
+        override = {"b": 99}
+        result = _deep_merge(base, override)
+        assert result == {"a": 1, "b": 99}
+
+    def test_deep_merge_dict_recursive(self) -> None:
+        """Nested dicts are merged recursively; base-only keys are preserved."""
+        base = {"x": {"keep": True, "overwrite": "old"}}
+        override = {"x": {"overwrite": "new", "added": 42}}
+        result = _deep_merge(base, override)
+        assert result == {"x": {"keep": True, "overwrite": "new", "added": 42}}
+
+    def test_deep_merge_none_override_wins(self) -> None:
+        """None in override takes precedence over a dict in base."""
+        base = {"compressor": {"keep_turns": 3}}
+        override = {"compressor": None}
+        result = _deep_merge(base, override)
+        assert result["compressor"] is None
+
+    def test_deep_merge_false_override_wins(self) -> None:
+        """False in override takes precedence over a dict in base (compressor: false scenario)."""
+        base = {"compressor": {"keep_turns": 3}}
+        override = {"compressor": False}
+        result = _deep_merge(base, override)
+        assert result["compressor"] is False
+
+    def test_deep_merge_does_not_mutate_base(self) -> None:
+        """Merging does not modify the base dict."""
+        base: dict[str, Any] = {"a": {"nested": 1}}
+        override: dict[str, Any] = {"a": {"nested": 2, "extra": 3}}
+        _deep_merge(base, override)
+        assert base == {"a": {"nested": 1}}
+
+    def test_deep_merge_does_not_mutate_override(self) -> None:
+        """Merging does not modify the override dict."""
+        base: dict[str, Any] = {"a": {"nested": 1, "only_base": True}}
+        override: dict[str, Any] = {"a": {"nested": 2}}
+        _deep_merge(base, override)
+        assert override == {"a": {"nested": 2}}

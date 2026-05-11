@@ -27,30 +27,6 @@ from little_agent.tools.task import TaskToolProvider
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LOGGING_CONFIG: dict[str, Any] = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "default": {
-            "format": "%(asctime)s [%(levelname)s] %(session_id).8s %(turn_id).8s"
-            " %(name)s: %(message)s",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "default",
-            "stream": "ext://sys.stdout",
-        },
-    },
-    "loggers": {
-        "": {
-            "level": "INFO",
-            "handlers": ["console"],
-        },
-    },
-}
-
 
 class _ContextFilter(logging.Filter):
     """Inject session_id and turn_id from ContextVars into every log record."""
@@ -63,13 +39,11 @@ class _ContextFilter(logging.Filter):
         return True
 
 
-def setup_logging(config: dict[str, Any] | None, level: str | None) -> None:
-    """Configure logging from config or fallback to default config."""
-    cfg = config if config is not None else _DEFAULT_LOGGING_CONFIG.copy()
+def setup_logging(config: dict[str, Any], level: str | None) -> None:
+    """Configure logging from the merged config dict."""
     if level is not None:
-        cfg.setdefault("loggers", {}).setdefault("", {})["level"] = level
-    logging.config.dictConfig(cfg)
-    # Attach the context filter to the root logger so it applies to all handlers.
+        config.setdefault("loggers", {}).setdefault("", {})["level"] = level
+    logging.config.dictConfig(config)
     logging.getLogger().addFilter(_ContextFilter())
 
 
@@ -83,6 +57,60 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 _TASK_PROVIDER_PATH = "little_agent.tools.task.TaskToolProvider"
+_BASH_PROVIDER_PATH = "little_agent.tools.bash.BashToolProvider"
+
+_DEFAULT_CONFIG: dict[str, Any] = yaml.safe_load("""
+tools:
+  providers:
+    little_agent.tools.bash.BashToolProvider:
+      timeout: 30
+      max_timeout: 1800
+    little_agent.tools.task.TaskToolProvider: {}
+agent:
+  R: 0.75
+compressor:
+  keep_turns: 3
+  compressed_window: 0.15
+frontend:
+  type: cli
+logging:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    default:
+      format: "%(asctime)s [%(levelname)s] %(session_id).8s %(turn_id).8s %(name)s: %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: default
+      stream: "ext://sys.stdout"
+  loggers:
+    "":
+      level: INFO
+      handlers: [console]
+""")
+
+_DEFAULT_BACKEND_CONFIG: dict[str, Any] = yaml.safe_load("""
+timeout: 60.0
+max_concurrency: 1
+context_window: 128000
+""")
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge override into base, returning a new dict.
+
+    override takes precedence including None values.
+    When both values are dicts, merge recursively.
+    base and override are not modified.
+    """
+    result = dict(base)
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
 
 
 def _validate_tools_config(tools_config: dict[str, Any]) -> None:
@@ -141,7 +169,9 @@ def load_providers_from_config(config: dict[str, Any]) -> tuple[list[Any], bool]
     providers: list[Any] = []
 
     for path, args in providers_cfg.items():
-        if args is None or not isinstance(args, dict):
+        if args is None:
+            continue  # explicit opt-out from default provider
+        if not isinstance(args, dict):
             raise ValueError(
                 f"Provider '{path}': constructor args must be a dict. "
                 "Use {} for no-arg providers."
@@ -156,6 +186,7 @@ def load_providers_from_config(config: dict[str, Any]) -> tuple[list[Any], bool]
 
 def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicBackend:
     """Build a backend from a named backend config dict."""
+    cfg = _deep_merge(_DEFAULT_BACKEND_CONFIG, cfg)
     backend_type = cfg.get("type")
     if not backend_type:
         raise ValueError(f"Backend '{name}' must contain a 'type' field")
@@ -177,11 +208,9 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
     if not model:
         raise ValueError(f"Backend '{name}' must contain a 'model' field")
 
-    timeout_raw = cfg.get("timeout", 60.0)
-    timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 60.0
-
-    max_concurrency = int(cfg.get("max_concurrency", 1))
-    context_window = int(cfg.get("context_window", 128000))
+    timeout = float(cfg["timeout"])
+    max_concurrency = int(cfg["max_concurrency"])
+    context_window = int(cfg["context_window"])
 
     if backend_type == "anthropic":
         system: str | None = cfg.get("system") or None
@@ -434,9 +463,9 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
+    config = _deep_merge(_DEFAULT_CONFIG, config)
 
-    log_config = config.get("logging")
-    setup_logging(log_config, args.loglevel)
+    setup_logging(config["logging"], args.loglevel)
 
     if "memory" in config:
         raise ValueError(
@@ -448,10 +477,8 @@ def main() -> None:
     backend, backends_config = _load_backend(config)
     compressor = _load_compressor(config, backend, backends_config)
 
-    frontend_type = config.get("frontend", {}).get("type", "cli")
-    frontend_cfg = config.get("frontend", {})
-    if not isinstance(frontend_cfg, dict):
-        frontend_cfg = {}
+    frontend_cfg = config.get("frontend") or {}
+    frontend_type = str(frontend_cfg.get("type", "cli"))
 
     session_store = _load_session_store(config, frontend_type, frontend_cfg)
     hooks = _load_hooks(config)
@@ -476,8 +503,7 @@ def main() -> None:
 
     permissions = _load_permissions(config, client)
 
-    agent_cfg = config.get("agent") or {}
-    compress_ratio = float(agent_cfg.get("R", 0.75))
+    compress_ratio = float(config["agent"]["R"])
     if not (0 < compress_ratio <= 1):
         raise ValueError(f"agent.R must be in range (0, 1], got {compress_ratio}")
 

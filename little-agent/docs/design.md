@@ -774,7 +774,7 @@ class Backend(Protocol):
 little-agent = "little_agent.main:main"
 ```
 
-`main()` 加载 YAML、初始化 logging（`logging.config.dictConfig`，`--loglevel` 覆盖根 logger）、构造 `ToolManager` / Backends / Compressor / Hook 列表 / Client / Permission chain，注入 `AgentCore`，调 `client.run(agent)`。
+`main()` 加载 YAML、与内置 `_DEFAULT_CONFIG` 深度合并（用户配置优先，缺省字段由默认值补全）、初始化 logging（`logging.config.dictConfig`，`--loglevel` 覆盖根 logger）、构造 `ToolManager` / Backends / Compressor / Hook 列表 / Client / Permission chain，注入 `AgentCore`，调 `client.run(agent)`。
 
 ### 6.2 配置 schema
 
@@ -804,10 +804,10 @@ compressor:
 
 tools:
   providers:
-    little_agent.tools.bash.BashToolProvider:
+    little_agent.tools.bash.BashToolProvider:        # 默认注入；设为 null 可禁用
       timeout: 30
       max_timeout: 1800
-    little_agent.tools.task.TaskToolProvider: {}     # 出现即启用，缺省即禁用
+    little_agent.tools.task.TaskToolProvider: {}     # 默认注入（特例：需 agent 引用，main.py 专用注册路径）；设为 null 可禁用
     little_agent.tools.http.HttpToolProvider: {}
     little_agent.tools.file.EditFileToolProvider: {}
     my_tools.weather.WeatherProvider:

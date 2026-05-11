@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from little_agent.main import load_providers_from_config
+from little_agent.main import _DEFAULT_CONFIG, _deep_merge, load_providers_from_config
 from little_agent.tools.bash import BashToolProvider
 
 
@@ -65,11 +65,12 @@ def test_custom_provider_loaded_with_args() -> None:
     assert fake_instance in providers
 
 
-def test_args_none_raises_value_error() -> None:
-    """Provider with null args raises ValueError with Use {} hint."""
+def test_args_none_skips_provider() -> None:
+    """Provider with null args is silently skipped (opt-out from default)."""
     config = {"tools": {"providers": {"little_agent.tools.bash.BashToolProvider": None}}}
-    with pytest.raises(ValueError, match="Use {} for no-arg providers"):
-        load_providers_from_config(config)
+    providers, task_enabled = load_providers_from_config(config)
+    assert providers == []
+    assert task_enabled is False
 
 
 def test_args_non_dict_raises_value_error() -> None:
@@ -124,3 +125,12 @@ def test_no_tools_section_returns_empty() -> None:
     providers, task_enabled = load_providers_from_config({})
     assert providers == []
     assert task_enabled is False
+
+
+def test_default_config_injects_bash() -> None:
+    """After _deep_merge with _DEFAULT_CONFIG, bash provider is auto-loaded."""
+    # Merging an empty user config with defaults yields the default providers.
+    merged = _deep_merge(_DEFAULT_CONFIG, {})
+    providers, task_enabled = load_providers_from_config(merged)
+    assert any(isinstance(p, BashToolProvider) for p in providers)
+    assert task_enabled is True
