@@ -126,6 +126,18 @@ body {
     color: #a0a0c0;
     font-style: italic;
 }
+.message.system {
+    align-self: center;
+    background: transparent;
+    border: 1px dashed #0f3460;
+    color: #888;
+    font-family: monospace;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 90%;
+    text-align: left;
+}
 .message.tool-call {
     align-self: flex-start;
     background: #2d1b4e;

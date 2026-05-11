@@ -25,7 +25,14 @@
             <div id="chat-container"></div>
             <div id="status">Disconnected</div>
             <div id="input-area">
-                <input type="text" id="message-input" placeholder="Type a message..." disabled aria-label="Message input">
+                <input type="text" id="message-input" placeholder="Type a message or /command..." disabled aria-label="Message input">
+                <datalist id="slash-commands">
+                    <option value="/cancel">
+                    <option value="/compact">
+                    <option value="/fork">
+                    <option value="/list-tools">
+                    <option value="/new">
+                </datalist>
                 <button id="send-btn" disabled>Send</button>
                 <div id="spinner"></div>
                 <button id="cancelButton">Cancel</button>

@@ -104,6 +104,11 @@ export interface SessionCompactResponseMsg {
     error?: string;
 }
 
+export interface ToolsListResponseMsg {
+    type: "tools/list_response";
+    tools: Array<{ name: string; desc: string }>;
+}
+
 export type ServerMessage =
     | SessionNewResponseMsg
     | SessionPromptResponseMsg
@@ -114,7 +119,8 @@ export type ServerMessage =
     | SessionHistoryMsg
     | SessionForkResponseMsg
     | SessionDeleteResponseMsg
-    | SessionCompactResponseMsg;
+    | SessionCompactResponseMsg
+    | ToolsListResponseMsg;
 
 export interface ClientMessage {
     type: string;

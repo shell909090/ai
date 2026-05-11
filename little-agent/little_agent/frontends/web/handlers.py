@@ -183,6 +183,17 @@ async def do_session_compact(
     return {"type": "session/compact_response", "ok": True}
 
 
+async def do_tools_list(
+    client: WebClient, agent: Agent, ws: web.WebSocketResponse, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the list of registered tools."""
+    tools = agent.tools.desc_tool()
+    return {
+        "type": "tools/list_response",
+        "tools": [{"name": name, "desc": td.desc} for name, td in tools.items()],
+    }
+
+
 _DISPATCH: dict[str, _Handler] = {
     "session/new": do_session_new,
     "session/prompt": do_session_prompt,
@@ -191,6 +202,7 @@ _DISPATCH: dict[str, _Handler] = {
     "session/fork": do_session_fork,
     "session/delete": do_session_delete,
     "session/compact": do_session_compact,
+    "tools/list": do_tools_list,
 }
 
 

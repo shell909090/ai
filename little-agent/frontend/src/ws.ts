@@ -109,10 +109,27 @@ function forkSession(): void {
     sendMessage({ type: "session/fork", session_id: sessionId });
 }
 
-function compactSession(): void {
+export function compactSession(): void {
     if (!sessionId) return;
     compactSessionBtn.disabled = true;
     sendMessage({ type: "session/compact", session_id: sessionId });
+}
+
+export function cancelSession(): void {
+    if (!sessionId) return;
+    sendMessage({ type: "session/cancel", session_id: sessionId });
+}
+
+export function listTools(): void {
+    sendMessage({ type: "tools/list" });
+}
+
+export function newSession(): void {
+    createSession();
+}
+
+export function forkCurrentSession(): void {
+    forkSession();
 }
 
 function deleteSession(): void {
@@ -271,6 +288,13 @@ export function handleMessage(msg: ServerMessage): void {
         case "session/request_permission":
             showPermissionModal(msg.id, msg.kind, msg.payload);
             break;
+        case "tools/list_response": {
+            const lines = msg.tools.length
+                ? msg.tools.map((t) => `  ${t.name}: ${t.desc}`).join("\n")
+                : "  (no tools registered)";
+            appendSystemMessage(`Available tools:\n${lines}`);
+            break;
+        }
         case "error":
             setIsProcessing(false);
             updateInputState();

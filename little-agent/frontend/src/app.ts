@@ -1,11 +1,53 @@
 import { chatContainer, messageInput, sendBtn, cancelBtn } from "./dom.js";
-import { appendMessage } from "./messages.js";
-import { connect, sendMessage, initSessionButtons, updateInputState } from "./ws.js";
+import { appendMessage, appendSystemMessage } from "./messages.js";
+import {
+    connect,
+    sendMessage,
+    initSessionButtons,
+    updateInputState,
+    compactSession,
+    cancelSession,
+    listTools,
+    newSession,
+    forkCurrentSession,
+} from "./ws.js";
 import { sessionId, isProcessing, setIsProcessing, setAutoScroll } from "./state.js";
+
+const SLASH_COMMANDS: string[] = ["/cancel", "/compact", "/fork", "/list-tools", "/new"];
+
+function handleSlashCommand(cmd: string): void {
+    switch (cmd) {
+        case "/compact":
+            compactSession();
+            break;
+        case "/cancel":
+            cancelSession();
+            break;
+        case "/list-tools":
+            listTools();
+            break;
+        case "/new":
+            newSession();
+            break;
+        case "/fork":
+            forkCurrentSession();
+            break;
+        default:
+            appendSystemMessage(`Unknown command: ${cmd}. Available: ${SLASH_COMMANDS.join(" ")}`);
+    }
+}
 
 function sendPrompt(): void {
     const text: string = messageInput.value.trim();
-    if (!text || !sessionId || isProcessing) return;
+    if (!text) return;
+
+    if (text.startsWith("/")) {
+        messageInput.value = "";
+        handleSlashCommand(text);
+        return;
+    }
+
+    if (!sessionId || isProcessing) return;
 
     setAutoScroll(true);
     appendMessage("user", text);
@@ -30,6 +72,14 @@ document.addEventListener("DOMContentLoaded", (): void => {
             cancelBtn.disabled = true;
             cancelBtn.textContent = "Cancelling…";
             sendMessage({ type: "session/cancel", session_id: sessionId });
+        }
+    });
+
+    messageInput.addEventListener("input", (): void => {
+        if (messageInput.value.startsWith("/")) {
+            messageInput.setAttribute("list", "slash-commands");
+        } else {
+            messageInput.removeAttribute("list");
         }
     });
 
