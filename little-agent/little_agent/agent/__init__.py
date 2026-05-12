@@ -13,7 +13,8 @@ from .nodes import (
 )
 from .permissions import BlackWhiteListChecker, YesManChecker, build_permission_chain
 from .protocol import Agent, Compressor, PermissionChecker, Session
-from .session import MAX_TURN_ITERATIONS, SessionCore
+from .session import SessionCore
+from .turn_runner import MAX_TURN_ITERATIONS
 
 __all__ = [
     "Agent",

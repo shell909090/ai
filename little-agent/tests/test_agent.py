@@ -11,7 +11,8 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
 from little_agent.agent.nodes import ToolCallNode, UserPromptNode
-from little_agent.agent.session import MAX_TURN_ITERATIONS, SessionCore
+from little_agent.agent.session import SessionCore
+from little_agent.agent.turn_runner import MAX_TURN_ITERATIONS
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.tools.protocol import ToolArgDef, ToolDef
