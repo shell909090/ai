@@ -62,8 +62,7 @@ def test_bash_unknown_tool_raises() -> None:
 @pytest.mark.asyncio
 async def test_bash_timeout() -> None:
     """Test bash tool times out on long-running command."""
-    provider = BashToolProvider()
-    provider._TIMEOUT = 2  # Speed up test; default 30s is too slow for CI
+    provider = BashToolProvider(timeout=2)
     mgr = ToolManager()
     mgr.register(provider)
     result = await mgr["bash"]({"command": "sleep 60"})

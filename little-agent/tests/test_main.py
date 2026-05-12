@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from little_agent.agent.permissions import YesManChecker
+from little_agent.backends.build import _build_backend
+from little_agent.frontends.build import build_permissions as _load_permissions
 from little_agent.main import (
     _DEFAULT_CONFIG,
-    _build_backend,
     _deep_merge,
-    _load_permissions,
     load_config,
     main,
     setup_logging,
@@ -85,8 +85,8 @@ def test_main_success() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value="test-key"):
-                with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
-                    with patch("little_agent.main.CliClient") as mock_client_cls:
+                with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                    with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                         mock_client = MagicMock()
                         mock_client.run = AsyncMock(return_value=None)
                         mock_client_cls.return_value = mock_client
@@ -164,8 +164,8 @@ def test_main_api_key_from_config() -> None:
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
-                with patch("little_agent.main.CliClient") as mock_client_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                     mock_client = MagicMock()
                     mock_client.run = AsyncMock(return_value=None)
                     mock_client_cls.return_value = mock_client
@@ -194,8 +194,8 @@ def test_main_api_key_priority_over_env() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value="env-key"):
-                with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
-                    with patch("little_agent.main.CliClient") as mock_client_cls:
+                with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                    with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                         mock_client = MagicMock()
                         mock_client.run = AsyncMock(return_value=None)
                         mock_client_cls.return_value = mock_client
@@ -223,8 +223,8 @@ def test_main_base_url_passthrough() -> None:
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
-                with patch("little_agent.main.CliClient") as mock_client_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                     mock_client = MagicMock()
                     mock_client.run = AsyncMock(return_value=None)
                     mock_client_cls.return_value = mock_client
@@ -248,7 +248,7 @@ def test_main_base_url_passthrough() -> None:
 
 def test_build_backend_openai() -> None:
     """Test _build_backend constructs OpenAIBackend correctly."""
-    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+    with patch("little_agent.backends.build.OpenAIBackend") as mock_cls:
         mock_cls.return_value = MagicMock()
         _build_backend({"type": "openai", "model": "gpt-4", "api_key": "k"}, "primary")
         mock_cls.assert_called_once_with(
@@ -263,7 +263,7 @@ def test_build_backend_openai() -> None:
 
 def test_build_backend_default_max_concurrency_and_context_window() -> None:
     """Default cfg yields max_concurrency=1 and context_window=128000."""
-    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+    with patch("little_agent.backends.build.OpenAIBackend") as mock_cls:
         mock_cls.return_value = MagicMock()
         _build_backend({"type": "openai", "model": "gpt-4", "api_key": "k"}, "primary")
         kwargs = mock_cls.call_args.kwargs
@@ -273,7 +273,7 @@ def test_build_backend_default_max_concurrency_and_context_window() -> None:
 
 def test_build_backend_explicit_max_concurrency_and_context_window() -> None:
     """Explicit max_concurrency and context_window in cfg are passed through."""
-    with patch("little_agent.main.OpenAIBackend") as mock_cls:
+    with patch("little_agent.backends.build.OpenAIBackend") as mock_cls:
         mock_cls.return_value = MagicMock()
         _build_backend(
             {
@@ -319,14 +319,14 @@ def _run_main_with_config(mock_config: dict[str, Any]) -> MagicMock:
     """Helper: run main() with given config and return the mock AgentCore call args."""
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
                 mock_backend = MagicMock()
                 mock_backend.context_window = 128000
                 mock_backend_cls.return_value = mock_backend
                 with patch("little_agent.main.AgentCore") as mock_agent_cls:
                     mock_agent = MagicMock()
                     mock_agent_cls.return_value = mock_agent
-                    with patch("little_agent.main.CliClient") as mock_client_cls:
+                    with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                         mock_client = MagicMock()
                         mock_client.run = AsyncMock(return_value=None)
                         mock_client_cls.return_value = mock_client
@@ -362,7 +362,7 @@ def test_main_agent_invalid_compress_ratio_zero_raises() -> None:
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
                 mock_backend = MagicMock()
                 mock_backend.context_window = 128000
                 mock_backend_cls.return_value = mock_backend
@@ -379,7 +379,7 @@ def test_main_agent_invalid_compress_ratio_above_1_raises() -> None:
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
                 mock_backend = MagicMock()
                 mock_backend.context_window = 128000
                 mock_backend_cls.return_value = mock_backend
@@ -402,8 +402,8 @@ def test_main_with_compressor_backend() -> None:
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
-            with patch("little_agent.main.OpenAIBackend") as mock_backend_cls:
-                with patch("little_agent.main.CliClient") as mock_client_cls:
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
                     mock_client = MagicMock()
                     mock_client.run = AsyncMock(return_value=None)
                     mock_client_cls.return_value = mock_client
@@ -431,7 +431,7 @@ def test_load_permissions_dict_warns_and_returns_client() -> None:
     """Dict config (old format) logs a warning and returns client unchanged."""
     client = MagicMock()
     config = {"permissions": {"default": "allow", "rules": []}}
-    with patch("little_agent.main.logger") as mock_logger:
+    with patch("little_agent.frontends.build.logger") as mock_logger:
         result = _load_permissions(config, client)
     assert result is client
     mock_logger.warning.assert_called_once()

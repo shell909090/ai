@@ -105,6 +105,17 @@ def _tool_def_to_json_schema(tooldef: ToolDef) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": required}
 
 
+def _parse_tool_call_args(raw: str) -> tuple[dict[str, Any], str | None]:
+    """Parse tool call JSON arguments; returns (args_dict, error_or_None)."""
+    if not raw:
+        return {}, None
+    try:
+        result: dict[str, Any] = json.loads(raw)
+        return result, None
+    except json.JSONDecodeError:
+        return {}, f"Invalid JSON arguments: {raw!r}"
+
+
 def _is_context_overflow(
     e: Any,
     substrings: tuple[str, ...],

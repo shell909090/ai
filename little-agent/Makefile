@@ -74,7 +74,7 @@ ts-coverage-warn:
 	" 2>/dev/null || true
 
 ci-test:
-	uv run pytest tests/test_ci.py -v
+	uv run pytest ci_tests/ -v
 
 ts-deps:
 	cd $(FRONTEND) && npm ci

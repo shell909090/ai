@@ -30,12 +30,14 @@
 - docs/log.md：运行日志，记录需要保留的重要过程，由AI维护，使用中文并带时间，不加入git。
 - frontend/：前后端分离时存放前端代码。
 - backend/：前后端分离时存放后端代码。
+- tests/: unittest测试用例。
+- ci_tests/: CI test测试用例。
 
 # 代码规范
 
 - 代码和注释使用英文；一般文档使用中文，README.md除外。
 - git commit message使用英文，要求简明扼要，禁止把AI列为co-author。
-- 流程由Makefile统一控制。
+- 流程由Makefile统一控制。常用指令在Makefile里能找到入口。
 - 代码质量检测使用make fmt、make lint、make build。
 - 代码测试使用make unittest、make test。
 - 测试覆盖率底线为50%，一般目标为75%；分模块覆盖率不得低于50%，低于50%必须警告用户；总体覆盖率低于75%时应尽力提升。

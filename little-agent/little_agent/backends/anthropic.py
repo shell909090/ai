@@ -20,11 +20,12 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _StreamAccumulator, _StreamingBackend
+from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _format_tool_result,
     _log_streaming_request,
     _log_streaming_response,
+    _parse_tool_call_args,
     _tool_def_to_json_schema,
 )
 from .protocol import BackendToolCall, BackendTurnResult
@@ -110,12 +111,7 @@ def _chain_to_messages(
     as regular user messages so history context is preserved.
     """
     messages: list[dict[str, Any]] = []
-    node: Node | None = session.tail if hasattr(session, "tail") else None
-    chain: list[Node] = []
-    while node is not None:
-        chain.append(node)
-        node = node.prev
-    chain.reverse()
+    chain = _iter_chain(session)
 
     system_injected: str | None = None
     for n in chain:
@@ -209,6 +205,25 @@ def _log_anthropic_event(logger: logging.Logger, event: Any) -> None:
         logger.debug("SSE event: %r", event)
 
 
+def _build_tool_calls(acc: _StreamAccumulator) -> list[BackendToolCall]:
+    """Build BackendToolCall list from Anthropic accumulated stream blocks."""
+    tool_calls: list[BackendToolCall] = []
+    for idx in sorted(acc.tool_blocks.keys()):
+        tb = acc.tool_blocks[idx]
+        arguments, error = _parse_tool_call_args(tb["input_json"])
+        if error:
+            logger.error("Failed to parse tool call arguments: %r", tb["input_json"])
+        tool_calls.append(
+            BackendToolCall(
+                call_id=tb["id"],
+                tool_name=tb["name"],
+                arguments=arguments,
+                error=error,
+            )
+        )
+    return tool_calls
+
+
 class AnthropicBackend(_StreamingBackend):
     """Anthropic backend implementation."""
 
@@ -296,29 +311,7 @@ class AnthropicBackend(_StreamingBackend):
 
             elapsed = time.perf_counter() - start_time
 
-            # Build tool calls from accumulated data
-            tool_calls: list[BackendToolCall] = []
-            for idx in sorted(acc.tool_blocks.keys()):
-                tb = acc.tool_blocks[idx]
-                raw_input = tb["input_json"]
-                tc_error: str | None = None
-                if raw_input:
-                    try:
-                        arguments: dict[str, Any] = json.loads(raw_input)
-                    except json.JSONDecodeError:
-                        logger.error("Failed to parse tool call arguments: %r", raw_input)
-                        arguments = {}
-                        tc_error = f"Invalid JSON arguments: {raw_input!r}"
-                else:
-                    arguments = {}
-                tool_calls.append(
-                    BackendToolCall(
-                        call_id=tb["id"],
-                        tool_name=tb["name"],
-                        arguments=arguments,
-                        error=tc_error,
-                    )
-                )
+            tool_calls = _build_tool_calls(acc)
 
             finish_reason: Literal["completed", "tool_call"] = (
                 "tool_call" if acc.finish_reason_raw == "tool_use" else "completed"

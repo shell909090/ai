@@ -20,11 +20,12 @@ from little_agent.agent.nodes import (
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _StreamAccumulator, _StreamingBackend
+from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _format_tool_result,
     _log_streaming_request,
     _log_streaming_response,
+    _parse_tool_call_args,
     _tool_def_to_json_schema,
 )
 from .protocol import BackendToolCall, BackendTurnResult
@@ -87,15 +88,10 @@ def _node_to_message(n: Node) -> list[dict[str, Any]]:
     return []
 
 
-def _chain_to_messages(session: "SessionCore" | Node) -> list[dict[str, Any]]:
+def _chain_to_messages(session: "SessionCore") -> list[dict[str, Any]]:
     """Convert chain of nodes to OpenAI messages, injecting memory if present."""
     messages: list[dict[str, Any]] = []
-    node = session.tail if hasattr(session, "tail") else session
-    chain: list[Node] = []
-    while node is not None:
-        chain.append(node)
-        node = node.prev
-    chain.reverse()
+    chain = _iter_chain(session)
 
     system_injected = False
     for n in chain:
@@ -266,16 +262,9 @@ def _build_tool_calls(tool_blocks: dict[int, dict[str, Any]]) -> list[BackendToo
     result = []
     for tc_data in (tool_blocks[i] for i in sorted(tool_blocks.keys())):
         raw_args = tc_data["arguments"]
-        error: str | None = None
-        if raw_args:
-            try:
-                arguments = json.loads(raw_args)
-            except json.JSONDecodeError:
-                logger.error("Failed to parse tool call arguments: %r", raw_args)
-                arguments = {}
-                error = f"Invalid JSON arguments: {raw_args!r}"
-        else:
-            arguments = {}
+        arguments, error = _parse_tool_call_args(raw_args)
+        if error:
+            logger.error("Failed to parse tool call arguments: %r", raw_args)
         result.append(
             BackendToolCall(
                 call_id=tc_data["id"],
