@@ -523,8 +523,7 @@ def test_nodes_to_text_includes_tool_call_output_text() -> None:
 
 def test_compressor_session_has_id() -> None:
     """_CompressorSession must expose an 'id' attribute required by backends."""
-    backend = MockBackend()
-    session = _CompressorSession(backend, "test prompt")  # type: ignore[arg-type]
+    session = _CompressorSession("test prompt")
     assert hasattr(session, "id")
     assert isinstance(session.id, str)
     assert len(session.id) > 0

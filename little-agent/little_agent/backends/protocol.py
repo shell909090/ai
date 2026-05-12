@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from little_agent.types import SessionUpdate
 
 if TYPE_CHECKING:
-    from little_agent.agent.session import SessionCore
+    from little_agent.agent.nodes import Node
+    from little_agent.tools.protocol import ToolMap
 
 
 @dataclass
@@ -33,11 +34,20 @@ class BackendTurnResult:
     thinking_text: str | None = None
 
 
+class BackendSession(Protocol):
+    """Minimal session contract required by Backend.generate()."""
+
+    id: str
+    tail: "Node | None"
+
+    def get_turn_tool_map(self) -> "ToolMap": ...
+
+
 class Backend(Protocol):
     """Backend protocol for LLM providers."""
 
     context_window: int
 
     def generate(
-        self, session: SessionCore
+        self, session: BackendSession
     ) -> AsyncIterator[SessionUpdate | BackendTurnResult]: ...

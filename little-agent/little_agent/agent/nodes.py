@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from little_agent.types import ContentBlock, JSONValue
+
+
+def _format_result(result: dict[str, Any]) -> str:
+    """Format a tool result dict as multi-line k: v text for backend messages."""
+    lines = []
+    for k, v in result.items():
+        if isinstance(v, str):
+            lines.append(f"{k}: {v}")
+        else:
+            try:
+                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            except (TypeError, ValueError):
+                lines.append(f"{k}: {v!s}")
+    return "\n".join(lines)
 
 
 def _parse_created_at(value: Any) -> datetime:
@@ -32,6 +47,14 @@ class Node:
         """Serialize node to dict."""
         return {"kind": self.kind, "id": self.id, "created_at": self.created_at.isoformat()}
 
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert node to Anthropic API message(s); empty list if node produces no message."""
+        return []
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert node to OpenAI API message(s); empty list if node produces no message."""
+        return []
+
     def freeze(self) -> None:
         """Freeze this node (no-op for nodes without mutable state)."""
 
@@ -52,6 +75,16 @@ class UserPromptNode(Node):
         base = Node.to_dict(self)
         base["prompt"] = self.prompt  # type: ignore[assignment]
         return base
+
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert to Anthropic user message."""
+        content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
+        return [{"role": "user", "content": content}]
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert to OpenAI user message."""
+        content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
+        return [{"role": "user", "content": content}]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
@@ -86,6 +119,14 @@ class AssistantResponseNode(Node):
             base["thinking"] = self.thinking
         return base
 
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert to Anthropic assistant message (text only; thinking not fed back)."""
+        return [{"role": "assistant", "content": [{"type": "text", "text": self.text}]}]
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert to OpenAI assistant message (thinking not fed back)."""
+        return [{"role": "assistant", "content": self.text}]
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
         text = data.get("text", "")
@@ -118,6 +159,40 @@ class ToolCallNode(Node):
             base["thinking"] = self.thinking
         base["calls"] = self.calls  # type: ignore[assignment]
         return base
+
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert to Anthropic assistant message with tool_use blocks."""
+        content_blocks: list[dict[str, Any]] = []
+        if self.output_text:
+            content_blocks.append({"type": "text", "text": self.output_text})
+        content_blocks.extend(
+            {
+                "type": "tool_use",
+                "id": call_id,
+                "name": call_data["tool_name"],
+                "input": call_data["arguments"],
+            }
+            for call_id, call_data in self.calls.items()
+        )
+        return [{"role": "assistant", "content": content_blocks}]
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert to OpenAI assistant message with tool_calls."""
+        tool_calls = [
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": call_data["tool_name"],
+                    "arguments": json.dumps(call_data["arguments"]),
+                },
+            }
+            for call_id, call_data in self.calls.items()
+        ]
+        msg: dict[str, Any] = {"role": "assistant", "tool_calls": tool_calls}
+        if self.output_text:
+            msg["content"] = self.output_text
+        return [msg]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
@@ -153,6 +228,33 @@ class ToolResultNode(Node):
         base["results"] = self.results  # type: ignore[assignment]
         return base
 
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert to Anthropic user message with tool_result blocks."""
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": _format_result(result),
+                    }
+                    for call_id, result in self.results.items()
+                ],
+            }
+        ]
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert to one OpenAI tool message per result."""
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": _format_result(result),
+            }
+            for call_id, result in self.results.items()
+        ]
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
         results = data.get("results", {})
@@ -178,6 +280,14 @@ class SummaryNode(Node):
         base = Node.to_dict(self)
         base["summary"] = self.summary
         return base
+
+    def to_anthropic(self) -> list[dict[str, Any]]:
+        """Convert to Anthropic user message; backend hoists the first one to system."""
+        return [{"role": "user", "content": self.summary}]
+
+    def to_openai(self) -> list[dict[str, Any]]:
+        """Convert to OpenAI system message."""
+        return [{"role": "system", "content": self.summary}]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:

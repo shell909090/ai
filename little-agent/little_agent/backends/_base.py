@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import Any, NoReturn
 
 from little_agent.agent.nodes import Node
 from little_agent.types import SessionUpdate
@@ -18,15 +18,12 @@ from .exceptions import (
     BackendTimeoutError,
     ContextOverflowError,
 )
-from .protocol import BackendTurnResult
-
-if TYPE_CHECKING:
-    from little_agent.agent.session import SessionCore
+from .protocol import BackendSession, BackendTurnResult
 
 logger = logging.getLogger(__name__)
 
 
-def _iter_chain(session: "SessionCore") -> list[Node]:
+def _iter_chain(session: BackendSession) -> list[Node]:
     """Walk session node chain from head to tail."""
     # Handle both session objects (have .tail) and raw Node starts.
     tail = getattr(session, "tail", session)
@@ -77,11 +74,11 @@ class _StreamingBackend:
         self._sem = asyncio.Semaphore(max_concurrency)
         self.context_window = context_window
 
-    def generate(self, session: "SessionCore") -> AsyncIterator[SessionUpdate | BackendTurnResult]:
+    def generate(self, session: BackendSession) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
         """Return async iterator streaming the backend response."""
         return self._stream(session)
 
-    def _stream(self, session: "SessionCore") -> AsyncIterator[SessionUpdate | BackendTurnResult]:
+    def _stream(self, session: BackendSession) -> AsyncIterator[SessionUpdate | BackendTurnResult]:
         """Subclass hook for the streaming loop."""
         raise NotImplementedError
 

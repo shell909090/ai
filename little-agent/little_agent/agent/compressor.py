@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from little_agent.agent.nodes import (
     AssistantResponseNode,
@@ -99,32 +99,15 @@ def _apply_w_limit(chain: list[Node], w_tokens: int) -> tuple[int, list[Node]]:
 
 
 class _CompressorSession:
-    """Minimal session stub for issuing a single backend call."""
+    """Minimal BackendSession for a single-prompt backend call with no tools."""
 
-    def __init__(self, backend: Backend, prompt: str) -> None:
+    def __init__(self, prompt: str) -> None:
         self.id: str = str(uuid.uuid4())
-        self.tail: Node = UserPromptNode(id=str(uuid.uuid4()), prev=None, prompt=prompt)
-        self._backend = backend
-        self.agent: _CompressorAgent
-
-    def _set_agent(self, agent: _CompressorAgent) -> None:
-        self.agent = agent
+        self.tail: Node | None = UserPromptNode(id=str(uuid.uuid4()), prev=None, prompt=prompt)
 
     def get_turn_tool_map(self) -> ToolMap:
         """Return empty ToolMap — compressor sessions have no tools."""
         return {}
-
-
-class _CompressorAgent:
-    """Minimal agent stub providing empty tools to the compressor session."""
-
-    def __init__(self, backend: Backend) -> None:
-        from little_agent.tools.manager import ToolManager
-
-        self.backend = backend
-        self.tools = ToolManager()
-        self.client: Any = None
-        self.compressor: Any = None
 
 
 class LLMCompressor:
@@ -240,11 +223,9 @@ class LLMCompressor:
             "Please summarize the following conversation turn, preserving important facts, "
             "decisions, tool interactions, and context in reasonable detail:\n\n" + history
         )
-        agent = _CompressorAgent(self._backend)
-        session = _CompressorSession(self._backend, prompt)
-        session._set_agent(agent)
+        session = _CompressorSession(prompt)
         final: BackendTurnResult | None = None
-        async for item in self._backend.generate(session):  # type: ignore[arg-type]
+        async for item in self._backend.generate(session):
             if isinstance(item, BackendTurnResult):
                 final = item
         if final is None:

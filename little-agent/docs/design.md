@@ -87,7 +87,8 @@ class SummaryNode(Node):
    - 追加新节点时旧尾若可变，立刻冻结。
    - session 被 fork 时当前尾若可变，立刻冻结。
    - 当前 turn 结束或被取消时，尾节点立刻冻结。
-6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填（`AnthropicBackend._node_to_message` 等只读 `text` / `output_text`）。空字符串时序列化跳过该字段，节省体积。
+6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填（`Node.to_anthropic()` / `Node.to_openai()` 只读 `text` / `output_text`）。空字符串时序列化跳过该字段，节省体积。
+7. 每个 Node 子类实现 `to_anthropic() -> list[dict[str, Any]]` 和 `to_openai() -> list[dict[str, Any]]`，把节点转换为对应 provider 的消息列表（空列表表示该节点不产生消息）。把"chain → provider messages"的逐节点知识固化在节点自身，避免分散到各 backend 实现。Provider 特定的整合逻辑（如 Anthropic 把链首 `SummaryNode` 提升为 `system` 参数、assistant/user 序列拼装）由 backend 层完成（§5）。
 
 ### 2.2 Session 状态
 
@@ -690,24 +691,32 @@ class BackendTurnResult:
 ### 5.2 Backend 接口
 
 ```python
+class BackendSession(Protocol):
+    """Backend.generate() 所需的最小 session 契约。"""
+    id: str
+    tail: Node | None
+    def get_turn_tool_map(self) -> ToolMap: ...
+
+
 class Backend(Protocol):
     context_window: int
 
     def generate(
-        self, session: "Session"
+        self, session: BackendSession
     ) -> AsyncIterator[SessionUpdate | BackendTurnResult]: ...
 ```
 
 约束：
 
 1. `generate()` 先 yield 零到多个 `SessionUpdate`，最后 yield 一个 `BackendTurnResult`。
-2. backend 接收 `session`，自行读取链式历史并转换为后端输入；同时把 `session.get_turn_tool_map()` 转换为后端工具定义。
-3. 流式 backend 用 streaming API，逐 chunk yield；流结束后 yield 最终 result。
-4. 性能计数：`BackendTurnResult` yield 前 INFO 日志含 input/output token、cached_tokens、耗时。
-5. DEBUG 日志：请求开始前记录完整 payload。
-6. 超时：streaming 模式对整个流设超时，超时 raise `BackendTimeoutError`。
-7. context-overflow：识别后 raise `ContextOverflowError`（`backends/exceptions.py`）；其他 `BadRequestError` 原样上抛。
-8. `<think>` 标签处理（`OpenAIBackend` 专属）：标签外内容作 `agent_message_chunk`，标签内作 `thinking_chunk`；流结束时未闭合 `<think>` 按 thinking 处理。`reasoning_content` 路径不受影响。
+2. backend 接收 `BackendSession`，遍历 `tail` 链式历史，对每个节点调用 `node.to_anthropic()` / `node.to_openai()` 取得 provider 特定消息列表，并按需做整合（如 SummaryNode 链首提升、assistant/user 序列拼装）；同时把 `session.get_turn_tool_map()` 转换为后端工具定义。
+3. `Backend.generate()` 的形参类型是 `BackendSession`（最小化输入契约），不是完整的 `Session`。这样 compressor 等无需活跃 turn / pending queue / fork 状态 / agent 引用的调用方可以直接提供轻量 `BackendSession` 实现，不必伪造 agent 上下文。`SessionCore` 天然满足 `BackendSession`。
+4. 流式 backend 用 streaming API，逐 chunk yield；流结束后 yield 最终 result。
+5. 性能计数：`BackendTurnResult` yield 前 INFO 日志含 input/output token、cached_tokens、耗时。
+6. DEBUG 日志：请求开始前记录完整 payload。
+7. 超时：streaming 模式对整个流设超时，超时 raise `BackendTimeoutError`。
+8. context-overflow：识别后 raise `ContextOverflowError`（`backends/exceptions.py`）；其他 `BadRequestError` 原样上抛。
+9. `<think>` 标签处理（`OpenAIBackend` 专属）：标签外内容作 `agent_message_chunk`，标签内作 `thinking_chunk`；流结束时未闭合 `<think>` 按 thinking 处理。`reasoning_content` 路径不受影响。
 
 ### 5.3 并发控制
 
@@ -717,6 +726,8 @@ class Backend(Protocol):
 
 #### 节点链 → Anthropic messages
 
+下表的逐节点转换在 `Node.to_anthropic()` 上实现（§2.1 规则 7）；本节定义 backend 层负责的整合规则：SummaryNode 链首提升、消息序列拼装、assistant/user 交替约束。
+
 | 节点 | 转换 |
 |------|------|
 | `UserPromptNode` | `{role: user, content: prompt}` |
@@ -724,7 +735,7 @@ class Backend(Protocol):
 | `AssistantResponseNode` + `ToolCallNode`（相邻）| 合并为一条 assistant，content = text(可选) + tool_use 块 |
 | `ToolCallNode`（无前置 text）| `{role: assistant, content: [{type: tool_use, id, name, input}, ...]}` |
 | `ToolResultNode` | `{role: user, content: [{type: tool_result, tool_use_id, content}, ...]}` |
-| `SummaryNode`（链首）| 提升为 `system` 参数，不进 messages |
+| `SummaryNode`（链首）| 提升为 `system` 参数，不进 messages（backend 层处理，节点方法默认返回 user 消息）|
 | `SummaryNode`（链中）| `{role: user, content: summary_text}` |
 
 约束：assistant 与 user message 严格交替；`ToolResultNode` 紧接 `ToolCallNode` 所在 assistant message 后。`AssistantResponseNode.thinking` 与 `ToolCallNode.thinking` 不参与 messages 回填，仅供前端 reload history 时还原 thinking bubble。

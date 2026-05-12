@@ -11,7 +11,6 @@ from little_agent.agent.nodes import (
 from little_agent.backends._utils import _format_tool_result
 from little_agent.backends.openai import (
     _chain_to_messages,
-    _node_to_message,
     _tool_map_to_openai_functions,
 )
 from little_agent.tools.protocol import ToolArgDef, ToolDef
@@ -96,14 +95,14 @@ def test_chain_to_messages_parallel_tool_calls() -> None:
 
 
 def test_tool_call_node_output_text_in_messages_openai() -> None:
-    """OpenAI _node_to_message includes content when output_text is non-empty."""
+    """to_openai includes content when output_text is non-empty."""
     n = ToolCallNode(
         id="n1",
         prev=None,
         output_text="I will use bash",
         calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
-    msgs = _node_to_message(n)
+    msgs = n.to_openai()
     assert len(msgs) == 1
     msg = msgs[0]
     assert msg["role"] == "assistant"
@@ -114,14 +113,14 @@ def test_tool_call_node_output_text_in_messages_openai() -> None:
 
 
 def test_tool_call_node_empty_output_text_in_messages_openai() -> None:
-    """OpenAI _node_to_message omits content key when output_text is empty."""
+    """to_openai omits content key when output_text is empty."""
     n = ToolCallNode(
         id="n2",
         prev=None,
         output_text="",
         calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
     )
-    msgs = _node_to_message(n)
+    msgs = n.to_openai()
     assert len(msgs) == 1
     msg = msgs[0]
     assert msg["role"] == "assistant"

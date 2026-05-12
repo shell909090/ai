@@ -3,35 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-from little_agent.agent.nodes import (
-    AssistantResponseNode,
-    Node,
-    SummaryNode,
-    ToolCallNode,
-    ToolResultNode,
-    UserPromptNode,
-)
+from little_agent.agent.nodes import SummaryNode
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
 from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
 from ._utils import (
-    _format_tool_result,
     _log_streaming_request,
     _log_streaming_response,
     _parse_tool_call_args,
     _tool_def_to_json_schema,
 )
-from .protocol import BackendToolCall, BackendTurnResult
-
-if TYPE_CHECKING:
-    from little_agent.agent.session import SessionCore
+from .protocol import BackendSession, BackendToolCall, BackendTurnResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,60 +36,8 @@ def _tool_map_to_anthropic_tools(tool_map: ToolMap) -> list[dict[str, Any]]:
     ]
 
 
-def _node_to_message(n: Node) -> list[dict[str, Any]]:
-    """Convert a single node to one or more Anthropic messages.
-
-    SummaryNode is not converted here; it is handled by _chain_to_messages.
-    """
-    if isinstance(n, UserPromptNode):
-        content: str | list[Any]
-        if isinstance(n.prompt, str):
-            content = n.prompt
-        else:
-            content = json.dumps(n.prompt)
-        return [{"role": "user", "content": content}]
-
-    if isinstance(n, AssistantResponseNode):
-        return [
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": n.text}],
-            }
-        ]
-
-    if isinstance(n, ToolCallNode):
-        content_blocks: list[dict[str, Any]] = []
-        if n.output_text:
-            content_blocks.append({"type": "text", "text": n.output_text})
-        content_blocks.extend(
-            [
-                {
-                    "type": "tool_use",
-                    "id": call_id,
-                    "name": call_data["tool_name"],
-                    "input": call_data["arguments"],
-                }
-                for call_id, call_data in n.calls.items()
-            ]
-        )
-        return [{"role": "assistant", "content": content_blocks}]
-
-    if isinstance(n, ToolResultNode):
-        tool_result_blocks: list[dict[str, Any]] = [
-            {
-                "type": "tool_result",
-                "tool_use_id": call_id,
-                "content": _format_tool_result(result),
-            }
-            for call_id, result in n.results.items()
-        ]
-        return [{"role": "user", "content": tool_result_blocks}]
-
-    return []
-
-
 def _chain_to_messages(
-    session: "SessionCore",
+    session: BackendSession,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Convert chain of nodes to Anthropic messages list.
 
@@ -119,11 +55,9 @@ def _chain_to_messages(
             if system_injected is None:
                 # First SummaryNode is lifted to the Anthropic system parameter.
                 system_injected = str(n.summary)
-            else:
-                # Subsequent SummaryNodes stay as user messages.
-                messages.append({"role": "user", "content": str(n.summary)})
-            continue
-        for msg in _node_to_message(n):
+                continue
+            # Subsequent SummaryNodes stay as regular messages via to_anthropic().
+        for msg in n.to_anthropic():
             messages.append(msg)
 
     return messages, system_injected
@@ -286,7 +220,7 @@ class AnthropicBackend(_StreamingBackend):
             self._raise_mapped(e, anthropic, _CONTEXT_OVERFLOW_SUBSTRINGS)
 
     async def _stream(
-        self, session: "SessionCore"
+        self, session: BackendSession
     ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         """Stream response from Anthropic, yielding updates then a final BackendTurnResult."""
         async with self._sem:

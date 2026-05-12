@@ -3,35 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-from little_agent.agent.nodes import (
-    AssistantResponseNode,
-    Node,
-    SummaryNode,
-    ToolCallNode,
-    ToolResultNode,
-    UserPromptNode,
-)
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
 from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
 from ._utils import (
-    _format_tool_result,
     _log_streaming_request,
     _log_streaming_response,
     _parse_tool_call_args,
     _tool_def_to_json_schema,
 )
-from .protocol import BackendToolCall, BackendTurnResult
-
-if TYPE_CHECKING:
-    from little_agent.agent.session import SessionCore
+from .protocol import BackendSession, BackendToolCall, BackendTurnResult
 
 logger = logging.getLogger(__name__)
 
@@ -51,51 +38,14 @@ def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
     ]
 
 
-def _node_to_message(n: Node) -> list[dict[str, Any]]:
-    """Convert a single node to one or more OpenAI messages."""
-    if isinstance(n, UserPromptNode):
-        content = n.prompt if isinstance(n.prompt, str) else json.dumps(n.prompt)
-        return [{"role": "user", "content": content}]
-    if isinstance(n, AssistantResponseNode):
-        return [{"role": "assistant", "content": n.text}]
-    if isinstance(n, ToolCallNode):
-        tool_calls = [
-            {
-                "id": call_id,
-                "type": "function",
-                "function": {
-                    "name": call_data["tool_name"],
-                    "arguments": json.dumps(call_data["arguments"]),
-                },
-            }
-            for call_id, call_data in n.calls.items()
-        ]
-        msg: dict[str, Any] = {"role": "assistant", "tool_calls": tool_calls}
-        if n.output_text:
-            msg["content"] = n.output_text
-        return [msg]
-    if isinstance(n, ToolResultNode):
-        return [
-            {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": _format_tool_result(result),
-            }
-            for call_id, result in n.results.items()
-        ]
-    if isinstance(n, SummaryNode):
-        return [{"role": "system", "content": str(n.summary)}]
-    return []
-
-
-def _chain_to_messages(session: "SessionCore") -> list[dict[str, Any]]:
+def _chain_to_messages(session: BackendSession) -> list[dict[str, Any]]:
     """Convert chain of nodes to OpenAI messages, injecting memory if present."""
     messages: list[dict[str, Any]] = []
     chain = _iter_chain(session)
 
     system_injected = False
     for n in chain:
-        for msg in _node_to_message(n):
+        for msg in n.to_openai():
             if msg["role"] == "system":
                 if not system_injected:
                     messages.insert(0, msg)
@@ -336,7 +286,7 @@ class OpenAIBackend(_StreamingBackend):
             )
 
     async def _stream(
-        self, session: SessionCore
+        self, session: BackendSession
     ) -> AsyncGenerator[SessionUpdate | BackendTurnResult, None]:
         """Stream response from OpenAI, yielding updates then a final BackendTurnResult."""
         async with self._sem:
