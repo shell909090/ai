@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from little_agent.agent.permissions import YesManChecker
+from little_agent.agent.tool_invoker import _truncate_tool_result
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
@@ -186,3 +187,133 @@ async def test_no_allowed_names_grants_by_default() -> None:
     update = updates[0]
     assert update.data["status"] == "completed"
     assert update.data["content"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Truncation: _truncate_tool_result unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_truncate_tool_result_within_limit_unchanged() -> None:
+    """Content within max_chars is returned as-is (same object)."""
+    content: JSONValue = {"stdout": "hello", "returncode": 0}
+    result = _truncate_tool_result(content, max_chars=1000)
+    assert result == content
+
+
+def test_truncate_tool_result_string_within_limit() -> None:
+    """A short string is returned unchanged."""
+    result = _truncate_tool_result("short", max_chars=100)
+    assert result == "short"
+
+
+def test_truncate_tool_result_over_limit_returns_string() -> None:
+    """Content exceeding max_chars is serialized, truncated, and annotated."""
+    big = "x" * 200
+    result = _truncate_tool_result(big, max_chars=50)
+    assert isinstance(result, str)
+    assert "[TRUNCATED:" in result
+    assert "chars total" in result  # annotation present
+
+
+def test_truncate_tool_result_over_limit_prefix_length() -> None:
+    """The returned string starts with exactly max_chars JSON-serialized chars."""
+    content: JSONValue = {"body": "a" * 300}
+    result = _truncate_tool_result(content, max_chars=20)
+    assert isinstance(result, str)
+    # First line is the truncated JSON prefix
+    first_line = result.split("\n")[0]
+    assert len(first_line) == 20
+
+
+def test_truncate_tool_result_dict_over_limit() -> None:
+    """A large dict is truncated and annotated."""
+    big_dict: JSONValue = {"key": "v" * 1000}
+    result = _truncate_tool_result(big_dict, max_chars=100)
+    assert isinstance(result, str)
+    assert "[TRUNCATED:" in result
+
+
+def test_truncate_tool_result_list_over_limit() -> None:
+    """A large list is truncated and annotated."""
+    big_list: JSONValue = ["item"] * 500
+    result = _truncate_tool_result(big_list, max_chars=100)
+    assert isinstance(result, str)
+    assert "[TRUNCATED:" in result
+
+
+# ---------------------------------------------------------------------------
+# Truncation: end-to-end via ToolInvoker
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_result_truncated_in_completed_update() -> None:
+    """Large tool output is truncated before being stored and broadcast."""
+    from little_agent.tools.protocol import ToolDef
+
+    big_output = "z" * 10000
+
+    class _BigOutputProvider:
+        def __iter__(self):  # type: ignore[override]
+            async def _big(args: dict[str, JSONValue]) -> JSONValue:
+                return big_output
+
+            yield (
+                "big",
+                ToolDef(desc="returns big output", args=[]),
+                _big,
+            )
+
+    client = MockClient()
+    backend = MockBackend(
+        script=[
+            BackendTurnResult(
+                output_text="",
+                tool_calls=[BackendToolCall(call_id="t1", tool_name="big", arguments={})],
+                finish_reason="tool_call",
+            ),
+            BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
+        ]
+    )
+    agent = MockAgent(
+        backend=backend,
+        tools=_BigOutputProvider(),
+        client=client,
+        permissions=YesManChecker(),
+        max_tool_result_chars=100,
+    )
+    session = await agent.new()
+    await session.prompt("go")
+
+    updates = [
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "t1"
+    ]
+    assert updates, "Expected tool_call_update for t1"
+    content = updates[0].data["content"]
+    assert isinstance(content, str)
+    assert "[TRUNCATED:" in str(content)
+    assert len(str(content)) < 10000
+
+
+@pytest.mark.asyncio
+async def test_tool_result_not_truncated_when_within_limit() -> None:
+    """Small tool output is stored verbatim when within max_tool_result_chars."""
+    client = MockClient()
+    provider = BuiltinToolProvider()
+    backend = MockBackend(script=_make_script_with_tool("echo", {"text": "hi"}))
+    agent = MockAgent(
+        backend=backend,
+        tools=provider,
+        client=client,
+        permissions=YesManChecker(),
+        max_tool_result_chars=100,
+    )
+    session = await agent.new()
+    await session.prompt("hello")
+
+    updates = [
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "t1"
+    ]
+    assert updates
+    assert updates[0].data["content"] == "hi"

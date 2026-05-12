@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from typing import TYPE_CHECKING
@@ -16,6 +17,19 @@ if TYPE_CHECKING:
     from .session import SessionCore
 
 logger = logging.getLogger(__name__)
+
+
+def _truncate_tool_result(content: JSONValue, max_chars: int) -> JSONValue:
+    """Return content unchanged if within max_chars; otherwise serialize, truncate, and annotate."""
+    serialized = json.dumps(content, ensure_ascii=False)
+    if len(serialized) <= max_chars:
+        return content
+    original_len = len(serialized)
+    logger.warning("tool result truncated: %d chars -> %d chars", original_len, max_chars)
+    return (
+        f"{serialized[:max_chars]}\n"
+        f"[TRUNCATED: {original_len} chars total, showing first {max_chars}]"
+    )
 
 
 class ToolInvoker:
@@ -151,7 +165,7 @@ class ToolInvoker:
                     "status": "cancelled",
                     "content": "",
                 }
-            elif isinstance(res, Exception):
+            elif isinstance(res, BaseException):
                 tool_result_node.results[tc.call_id] = {
                     "status": "failed",
                     "content": str(res),
@@ -159,7 +173,9 @@ class ToolInvoker:
             else:
                 tool_result_node.results[tc.call_id] = {
                     "status": "completed",
-                    "content": res,
+                    "content": _truncate_tool_result(
+                        res, self._session.agent.max_tool_result_chars
+                    ),
                 }
 
         for tc in result.tool_calls:

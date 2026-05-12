@@ -159,6 +159,7 @@ class MockAgent:
         tools: ToolProvider | None = None,
         client: MockClient | None = None,
         permissions: Any = None,
+        max_tool_result_chars: int = 50000,
     ) -> None:
         self._backend = backend or MockBackend()
         self._client = client or MockClient()
@@ -173,6 +174,7 @@ class MockAgent:
             backend=self._backend,
             tools=tool_mgr,
             permissions=permissions if permissions is not None else YesManChecker(),
+            max_tool_result_chars=max_tool_result_chars,
         )
 
     async def new(self, cwd: str | None = None) -> Session:

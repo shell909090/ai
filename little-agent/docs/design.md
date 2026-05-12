@@ -801,6 +801,7 @@ backends:
 
 agent:
   R: 0.75                                # 压缩触发阈值，(0,1]，默认 0.75
+  max_tool_result_chars: 50000           # tool result 截断上限（JSON 序列化字符数），默认 50000；超出时截断并附 [TRUNCATED] 标注
 
 compressor:
   keep_turns: 3                          # 保留窗口，下限 1，默认 3

@@ -45,6 +45,7 @@ class AgentCore(Agent):
         hooks: list[Hook] | None = None,
         compress_ratio: float = 0.75,
         context_window: int = 128000,
+        max_tool_result_chars: int = 50000,
     ) -> None:
         self.client = client
         self.backend = backend
@@ -56,6 +57,7 @@ class AgentCore(Agent):
         self.hooks: list[Hook] = hooks if hooks is not None else []
         self.compress_ratio = compress_ratio
         self.context_window = context_window
+        self.max_tool_result_chars = max_tool_result_chars
 
     async def new(self, cwd: str | None = None) -> Session:
         """Create a new session."""

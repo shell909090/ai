@@ -62,6 +62,7 @@ tools:
     little_agent.tools.task.TaskToolProvider: {}
 agent:
   R: 0.75
+  max_tool_result_chars: 50000
 compressor:
   keep_turns: 3
   compressed_window: 0.15
@@ -173,6 +174,10 @@ def main() -> None:
     if not (0 < compress_ratio <= 1):
         raise ValueError(f"agent.R must be in range (0, 1], got {compress_ratio}")
 
+    max_tool_result_chars = int(config["agent"]["max_tool_result_chars"])
+    if max_tool_result_chars <= 0:
+        raise ValueError(f"agent.max_tool_result_chars must be > 0, got {max_tool_result_chars}")
+
     agent = AgentCore(
         client=client,
         backend=backend,
@@ -182,6 +187,7 @@ def main() -> None:
         hooks=hooks,
         compress_ratio=compress_ratio,
         context_window=backend.context_window,
+        max_tool_result_chars=max_tool_result_chars,
     )
 
     if session_store is not None:
