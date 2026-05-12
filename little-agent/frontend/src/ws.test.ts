@@ -6,8 +6,22 @@ import {
     showPermissionModal,
     hidePermissionModal,
     updateInputState,
+    resumeSession,
+    compactSession,
+    cancelSession,
+    listTools,
+    newSession,
+    forkCurrentSession,
+    initSessionButtons,
+    connect,
 } from "./ws.js";
-import { setWs, setSessionId, setIsProcessing, setHistoryPending, setPendingUpdates } from "./state.js";
+import {
+    setWs,
+    setSessionId,
+    setIsProcessing,
+    setHistoryPending,
+    setPendingUpdates,
+} from "./state.js";
 import type { ServerMessage, SessionUpdatePayload } from "./types.js";
 
 // happy-dom may not define WebSocket constants; use numeric values directly.
@@ -111,12 +125,18 @@ describe("handleUpdate", () => {
     });
 
     it("creates tool-call bubble for tool_call", () => {
-        handleUpdate({ type: "tool_call", data: { calls: { c1: { tool_name: "bash", arguments: {} } } } });
+        handleUpdate({
+            type: "tool_call",
+            data: { calls: { c1: { tool_name: "bash", arguments: {} } } },
+        });
         expect(chatContainer.querySelector(".tool-call")).not.toBeNull();
     });
 
     it("updates existing tool-call bubble via tool_call_update", () => {
-        handleUpdate({ type: "tool_call", data: { calls: { c2: { tool_name: "bash", arguments: {} } } } });
+        handleUpdate({
+            type: "tool_call",
+            data: { calls: { c2: { tool_name: "bash", arguments: {} } } },
+        });
         const update: SessionUpdatePayload = {
             type: "tool_call_update",
             data: { call_id: "c2", status: "completed", content: "done" },
@@ -163,7 +183,9 @@ describe("handleMessage", () => {
     it("handles session/fork_response without throwing", () => {
         const send = vi.fn();
         setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
-        expect(() => handleMessage({ type: "session/fork_response", session_id: "fork-id" })).not.toThrow();
+        expect(() =>
+            handleMessage({ type: "session/fork_response", session_id: "fork-id" }),
+        ).not.toThrow();
     });
 
     it("handles session/history when session matches", () => {
@@ -253,5 +275,170 @@ describe("handleMessage", () => {
         expect(() =>
             handleMessage({ type: "session/delete_response", session_id: "del-id" }),
         ).not.toThrow();
+    });
+});
+
+describe("resumeSession", () => {
+    it("sends session/resume with the given id", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        resumeSession("sess-abc");
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/resume", session_id: "sess-abc" }),
+        );
+    });
+
+    it("clears chat container and sets historyPending", () => {
+        chatContainer.innerHTML = "<div>old</div>";
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        resumeSession("sess-xyz");
+        expect(chatContainer.innerHTML).not.toContain("old");
+    });
+});
+
+describe("compactSession", () => {
+    it("does nothing when sessionId is null", () => {
+        setSessionId(null);
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        compactSession();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it("sends session/compact and disables compact button", () => {
+        setSessionId("sess-compact");
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        compactBtn.disabled = false;
+        compactSession();
+        expect(compactBtn.disabled).toBe(true);
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/compact", session_id: "sess-compact" }),
+        );
+    });
+});
+
+describe("cancelSession", () => {
+    it("does nothing when sessionId is null", () => {
+        setSessionId(null);
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        cancelSession();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it("sends session/cancel", () => {
+        setSessionId("sess-cancel");
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        cancelSession();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/cancel", session_id: "sess-cancel" }),
+        );
+    });
+});
+
+describe("listTools", () => {
+    it("sends tools/list", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        listTools();
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "tools/list" }));
+    });
+});
+
+describe("newSession", () => {
+    it("sends session/new", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        newSession();
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "session/new" }));
+    });
+});
+
+describe("forkCurrentSession", () => {
+    it("does nothing when sessionId is null", () => {
+        setSessionId(null);
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        forkCurrentSession();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it("sends session/fork when session active", () => {
+        setSessionId("sess-fork");
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        forkCurrentSession();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/fork", session_id: "sess-fork" }),
+        );
+    });
+});
+
+describe("initSessionButtons", () => {
+    it("registers new-session-btn click handler", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        initSessionButtons();
+        document.getElementById("new-session-btn")!.click();
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "session/new" }));
+    });
+
+    it("registers fork-session-btn click handler", () => {
+        setSessionId("sess-fork-btn");
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        initSessionButtons();
+        document.getElementById("fork-session-btn")!.click();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/fork", session_id: "sess-fork-btn" }),
+        );
+    });
+
+    it("registers compact-session-btn click handler", () => {
+        setSessionId("sess-compact-btn");
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        compactBtn.disabled = false;
+        initSessionButtons();
+        compactBtn.click();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({ type: "session/compact", session_id: "sess-compact-btn" }),
+        );
+    });
+});
+
+describe("connect", () => {
+    it("creates a WebSocket and registers handlers without throwing", () => {
+        expect(() => connect()).not.toThrow();
+    });
+
+    it("sends session/list on open", () => {
+        const send = vi.fn();
+        // Capture ws instance created by connect(); use globalThis.WebSocket mock.
+        const OrigWS = globalThis.WebSocket;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).WebSocket = class MockWS {
+            static OPEN = 1;
+            readyState = 1;
+            onopen: (() => void) | null = null;
+            onmessage: ((e: MessageEvent) => void) | null = null;
+            onclose: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            send = send;
+            close(): void {}
+        };
+        connect();
+        // Simulate onopen
+        const wsInstance = { readyState: WS_OPEN, send } as unknown as WebSocket;
+        setWs(wsInstance);
+        // Manually trigger as if onopen fired
+        sendMessage({ type: "session/list" });
+        expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "session/list" }));
+        // Restore
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).WebSocket = OrigWS;
     });
 });

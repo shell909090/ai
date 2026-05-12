@@ -42,7 +42,9 @@ describe("renderHistory", () => {
     });
 
     it("renders assistant_response thinking bubble when thinking is non-empty", () => {
-        renderHistory([node("assistant_response", { text: "answer", thinking: "  deep thoughts  " })]);
+        renderHistory([
+            node("assistant_response", { text: "answer", thinking: "  deep thoughts  " }),
+        ]);
         expect(chatContainer.querySelector(".message.thinking")).not.toBeNull();
     });
 
@@ -78,7 +80,11 @@ describe("renderHistory", () => {
     });
 
     it("ignores tool_result for unknown call_id", () => {
-        const nodes = [node("tool_result", { results: { "unknown-id": { status: "completed", content: "" } } })];
+        const nodes = [
+            node("tool_result", {
+                results: { "unknown-id": { status: "completed", content: "" } },
+            }),
+        ];
         expect(() => renderHistory(nodes)).not.toThrow();
     });
 });

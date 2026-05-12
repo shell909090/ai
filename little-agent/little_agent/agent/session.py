@@ -325,6 +325,11 @@ class SessionCore(Session):
             self.tail.freeze()
         self.tail = node
 
+    async def wait_compress(self) -> None:
+        """Wait for any in-flight post-turn compress task to complete."""
+        if self.compress_task is not None:
+            await self.compress_task
+
     async def cancel(self) -> None:
         """Cancel the active turn and any running post-turn compress."""
         if not self._active_turn:

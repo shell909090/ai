@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from little_agent._utils import _deep_merge
 from little_agent.backends.anthropic import AnthropicBackend
 from little_agent.backends.openai import OpenAIBackend
 
@@ -20,17 +21,6 @@ _DEFAULT_COMPRESSOR_CONFIG: dict[str, Any] = {
     "keep_turns": 3,
     "compressed_window": 0.15,
 }
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge override into base, returning a new dict."""
-    result = dict(base)
-    for key, val in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
-            result[key] = _deep_merge(result[key], val)
-        else:
-            result[key] = val
-    return result
 
 
 def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicBackend:

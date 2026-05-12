@@ -15,7 +15,7 @@ import { sessionId, isProcessing, setIsProcessing, setAutoScroll } from "./state
 
 const SLASH_COMMANDS: string[] = ["/cancel", "/compact", "/fork", "/list-tools", "/new"];
 
-function handleSlashCommand(cmd: string): void {
+export function handleSlashCommand(cmd: string): void {
     switch (cmd) {
         case "/compact":
             compactSession();
@@ -37,7 +37,7 @@ function handleSlashCommand(cmd: string): void {
     }
 }
 
-function sendPrompt(): void {
+export function sendPrompt(): void {
     const text: string = messageInput.value.trim();
     if (!text) return;
 

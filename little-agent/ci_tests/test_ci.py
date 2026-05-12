@@ -401,15 +401,11 @@ async def test_d1_auto_compression(ci_config: dict[str, Any]) -> None:
 
     reason1, _ = await session.prompt("Say: one")
     assert reason1 == "end_turn"
-    compress_task = getattr(session, "compress_task", None)
-    if compress_task is not None:
-        await compress_task
+    await session.wait_compress()
 
     reason2, _ = await session.prompt("Say: two")
     assert reason2 == "end_turn"
-    compress_task = getattr(session, "compress_task", None)
-    if compress_task is not None:
-        await compress_task
+    await session.wait_compress()
 
     chain = _walk_chain(session)
     assert any(isinstance(n, SummaryNode) for n in chain), (

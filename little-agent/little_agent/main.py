@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 import yaml
 
+from little_agent._utils import _deep_merge
 from little_agent.agent.agent import AgentCore
 from little_agent.backends.build import build_backend, build_compressor
 from little_agent.frontends.build import build_client, build_hooks, build_permissions, run_frontend
@@ -82,22 +83,6 @@ logging:
       level: INFO
       handlers: [console]
 """)
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge override into base, returning a new dict.
-
-    override takes precedence including None values.
-    When both values are dicts, merge recursively.
-    base and override are not modified.
-    """
-    result = dict(base)
-    for key, val in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
-            result[key] = _deep_merge(result[key], val)
-        else:
-            result[key] = val
-    return result
 
 
 def _load_session_store(

@@ -26,7 +26,9 @@ describe("initSessionList", () => {
 describe("renderSessionList", () => {
     it("shows placeholder when no sessions", () => {
         renderSessionList([]);
-        expect(sessionListEl.querySelector(".session-placeholder")?.textContent).toBe("No sessions");
+        expect(sessionListEl.querySelector(".session-placeholder")?.textContent).toBe(
+            "No sessions",
+        );
     });
 
     it("renders one session item", () => {
