@@ -18,4 +18,5 @@ htmlcov/
 frontend/dist/
 frontend/node_modules/
 frontend/coverage/
+frontend/coverage-debug.log
 little_agent/_static/

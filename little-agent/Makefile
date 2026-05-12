@@ -39,8 +39,29 @@ coverage-warn:
 	    pct=$$NF+0; if (pct < 50) print "WARNING: coverage below 50% in " $$1 ": " $$NF \
 	}' || true
 
+# Diagnostic-wrapped ts-coverage. Probabilistic OOM has been observed
+# (see docs/log.md F-1). Each run appends timestamp + mem snapshots + a
+# 2-second polling memory time series to $(FRONTEND)/coverage-debug.log
+# so that if the system hangs, after reboot we can read the file to see:
+#   - when the last run started
+#   - what memory state was at that moment
+#   - how memory evolved up to the hang (time series stops at crash)
+TS_COVERAGE_LOG := $(FRONTEND)/coverage-debug.log
+
 ts-coverage:
-	cd $(FRONTEND) && npx vitest run --coverage
+	@{ echo "=== $$(date -Iseconds) START ==="; \
+	   echo "[before] $$(free -m | grep '^Mem:' | tr -s ' ')"; \
+	} >> $(TS_COVERAGE_LOG)
+	-@LOG="$$(pwd)/$(TS_COVERAGE_LOG)"; \
+	 ( while true; do \
+	     printf '[poll %s] %s\n' "$$(date -Iseconds)" "$$(free -m | grep '^Mem:' | tr -s ' ')" >> "$$LOG"; \
+	     sleep 2; \
+	   done ) & POLLER=$$!; \
+	 ( cd $(FRONTEND) && npx vitest run --coverage 2>&1 | tee -a coverage-debug.log ); \
+	 kill $$POLLER 2>/dev/null; wait $$POLLER 2>/dev/null; true
+	@{ echo "[after]  $$(free -m | grep '^Mem:' | tr -s ' ')"; \
+	   echo "=== $$(date -Iseconds) END ==="; echo ""; \
+	} >> $(TS_COVERAGE_LOG)
 	@$(MAKE) ts-coverage-warn --no-print-directory || true
 
 ts-coverage-warn:
