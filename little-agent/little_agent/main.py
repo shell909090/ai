@@ -46,7 +46,7 @@ def setup_logging(config: dict[str, Any], level: str | None) -> None:
 
 def load_config(path: Path) -> dict[str, Any]:
     """Load YAML configuration."""
-    with open(path, encoding="utf-8") as f:
+    with open(path.expanduser(), encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise ValueError("Config file must contain a YAML mapping")
@@ -147,6 +147,12 @@ def main() -> None:
 
     config = load_config(args.config)
     config = _deep_merge(_DEFAULT_CONFIG, config)
+
+    # ACP uses stdout as the JSON-RPC channel; redirect log output to stderr
+    if str((config.get("frontend") or {}).get("type", "cli")) == "acp":
+        for _h in config.get("logging", {}).get("handlers", {}).values():
+            if isinstance(_h, dict) and _h.get("stream") in (None, "ext://sys.stdout"):
+                _h["stream"] = "ext://sys.stderr"
 
     setup_logging(config["logging"], args.loglevel)
 

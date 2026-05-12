@@ -8,9 +8,9 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, SessionUpdate
 
-from .protocol import Client, SessionUpdate
+from .protocol import Client
 
 if TYPE_CHECKING:
     from little_agent.agent.protocol import Agent, Session
@@ -34,15 +34,40 @@ class AcpClient(Client):
             sys.stdout.flush()
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
-        """Forward session updates to stdout as JSON."""
+        """Forward session updates as ACP session/update notifications."""
         session_id = getattr(session, "id", None)
         await self._write_json(
             {
-                "type": "session/update",
-                "session_id": session_id,
-                "update": {"type": update.type, "data": update.data},
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": self._to_acp_update(update),
+                },
             }
         )
+
+    @staticmethod
+    def _to_acp_update(update: SessionUpdate) -> dict[str, Any]:
+        """Convert a SessionUpdate to ACP update payload."""
+        if update.type in ("agent_message_chunk", "thinking_chunk"):
+            return {
+                "sessionUpdate": update.type,
+                "content": {"text": update.data.get("text", "")},
+            }
+        if update.type == "tool_call":
+            calls = update.data.get("calls", {})
+            if calls and isinstance(calls, dict):
+                first_call = next(iter(calls.values()))
+                tool_name = (
+                    first_call.get("tool_name", "tool") if isinstance(first_call, dict) else "tool"
+                )
+                n = len(calls)
+                title = tool_name if n == 1 else f"{tool_name} (+{n - 1} more)"
+            else:
+                title = "tool"
+            return {"sessionUpdate": "tool_call", "title": title, "kind": "tool_call"}
+        # tool_call_update and other types: pass through
+        return {"sessionUpdate": update.type, **update.data}
 
     async def request_permission(
         self,
@@ -50,22 +75,27 @@ class AcpClient(Client):
         kind: str,
         payload: dict[str, JSONValue],
     ) -> bool:
-        """Send permission request via ACP and wait for response."""
+        """Send permission request via ACP JSON-RPC and wait for response."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
         session_id = getattr(session, "id", None)
         req_id = f"perm_{session_id}_{kind}_{id(payload)}"
 
         await self._write_json(
             {
-                "type": "session/request_permission",
                 "id": req_id,
-                "session_id": session_id,
-                "kind": kind,
-                "payload": payload,
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": session_id,
+                    "toolCall": {"toolCallId": kind},
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow-once", "name": "Allow once"},
+                        {"optionId": "deny", "kind": "deny", "name": "Deny"},
+                    ],
+                    "payload": payload,
+                },
             }
         )
 
-        # Wait for response with a timeout
         try:
             return await asyncio.wait_for(
                 self._wait_permission_response(req_id),
@@ -77,8 +107,6 @@ class AcpClient(Client):
 
     async def _wait_permission_response(self, req_id: str) -> bool:
         """Wait for a permission response matching req_id."""
-        # ACP client reads from stdin in run(); we need a way to receive
-        # responses. For simplicity, store a future and have run() resolve it.
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool] = loop.create_future()
         self._permission_futures[req_id] = future
@@ -101,8 +129,8 @@ class AcpClient(Client):
             return {"id": req_id, "error": str(exc)}
 
     def _get_session(self, params: dict[str, Any]) -> Session:
-        """Look up session by session_id in params."""
-        session_id = params.get("session_id", "")
+        """Look up session by session_id in params (accepts both camelCase and snake_case)."""
+        session_id = params.get("sessionId") or params.get("session_id", "")
         if not isinstance(session_id, str) or session_id not in self._sessions:
             raise ValueError(f"Unknown session_id: {session_id!r}")
         return self._sessions[session_id]
@@ -110,12 +138,17 @@ class AcpClient(Client):
     async def _dispatch(self, agent: Agent, method: str, params: dict[str, Any]) -> JSONValue:
         """Dispatch ACP method to the appropriate handler."""
         match method:
+            case "initialize":
+                return {
+                    "agentInfo": {"name": "little-agent", "version": "1.0"},
+                    "protocolVersion": params.get("protocolVersion", 1),
+                }
             case "session/new":
                 cwd: str | None = params.get("cwd")
                 session = await agent.new(cwd=cwd)
                 session_id: str = getattr(session, "id", "")
                 self._sessions[session_id] = session
-                return {"session_id": session_id}
+                return {"session_id": session_id, "sessionId": session_id}
             case "session/prompt":
                 return await self._do_prompt(params)
             case "session/cancel":
@@ -132,6 +165,13 @@ class AcpClient(Client):
         """Handle session/prompt method."""
         session = self._get_session(params)
         prompt = params.get("prompt", "")
+        if isinstance(prompt, list):
+            # Extract text from list of content blocks
+            prompt = " ".join(
+                block.get("text", "")
+                for block in prompt
+                if isinstance(block, dict) and block.get("type") == "text"
+            ).strip()
         if not isinstance(prompt, str):
             raise ValueError("prompt must be a string")
         stop_reason, text = await session.prompt(prompt)
@@ -145,7 +185,36 @@ class AcpClient(Client):
         session = await agent.load(data)
         session_id = getattr(session, "id", "")
         self._sessions[session_id] = session
-        return {"session_id": session_id}
+        return {"session_id": session_id, "sessionId": session_id}
+
+    async def _handle_and_reply(self, agent: Agent, msg: dict[str, Any]) -> None:
+        """Process a request as a background task and write the response."""
+        try:
+            response = await self._handle_request(agent, msg)
+            await self._write_json(response)
+        except Exception:
+            logger.exception("Unhandled error in background prompt task")
+
+    def _handle_jsonrpc_response(self, msg: dict[str, Any]) -> None:
+        """Resolve a pending permission future from an incoming JSON-RPC response."""
+        req_id = msg.get("id", "")
+        future = self._permission_futures.get(req_id)
+        if future is None or future.done():
+            return
+        # Legacy format: {"id": ..., "granted": bool}
+        if "granted" in msg:
+            granted = bool(msg["granted"])
+        else:
+            # ACP format: {"id": ..., "result": {"outcome": {"outcome": "selected", ...}}}
+            result = msg.get("result", {})
+            outcome = result.get("outcome", {}) if isinstance(result, dict) else {}
+            granted = isinstance(outcome, dict) and outcome.get("outcome") == "selected"
+        future.set_result(granted)
+
+    # Kept for backward compatibility with existing tests
+    def _handle_permission_response(self, msg: dict[str, Any]) -> None:
+        """Resolve a pending permission future (legacy name)."""
+        self._handle_jsonrpc_response(msg)
 
     async def run(self, agent: Agent) -> None:
         """Run the ACP event loop: read JSON requests from stdin, write responses to stdout."""
@@ -176,19 +245,16 @@ class AcpClient(Client):
                 await self._write_json({"error": "Request must be a JSON object"})
                 continue
 
-            msg_type = msg.get("type", "")
-            if msg_type == "session/permission_response":
-                self._handle_permission_response(msg)
+            # JSON-RPC responses to server-initiated requests have "id" but no "method"
+            if "id" in msg and "method" not in msg:
+                self._handle_jsonrpc_response(msg)
+                continue
+
+            # session/prompt is launched as a background task so stdin stays readable
+            # while the prompt is running (needed for permission request/response interleaving)
+            if msg.get("method") == "session/prompt":
+                asyncio.create_task(self._handle_and_reply(agent, msg))
                 continue
 
             response = await self._handle_request(agent, msg)
             await self._write_json(response)
-
-    def _handle_permission_response(self, msg: dict[str, Any]) -> None:
-        """Resolve a pending permission future from a response message."""
-        req_id = msg.get("id", "")
-        future = self._permission_futures.get(req_id)
-        if future is None or future.done():
-            return
-        granted = bool(msg.get("granted", False))
-        future.set_result(granted)

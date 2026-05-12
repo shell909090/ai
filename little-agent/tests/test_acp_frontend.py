@@ -26,7 +26,7 @@ async def test_write_json_outputs_single_line(capsys: pytest.CaptureFixture[str]
 
 @pytest.mark.asyncio
 async def test_acp_update_writes_json(capsys: pytest.CaptureFixture[str]) -> None:
-    """AcpClient.update writes session/update JSON to stdout."""
+    """AcpClient.update writes ACP session/update notification to stdout."""
     client = AcpClient()
     mock_session = MagicMock()
     mock_session.id = "sess-1"
@@ -34,9 +34,10 @@ async def test_acp_update_writes_json(capsys: pytest.CaptureFixture[str]) -> Non
     await client.update(mock_session, update)  # type: ignore[arg-type]
     out = capsys.readouterr().out
     msg = json.loads(out.strip())
-    assert msg["type"] == "session/update"
-    assert msg["session_id"] == "sess-1"
-    assert msg["update"]["type"] == "agent_message_chunk"
+    assert msg["method"] == "session/update"
+    assert msg["params"]["sessionId"] == "sess-1"
+    assert msg["params"]["update"]["sessionUpdate"] == "agent_message_chunk"
+    assert msg["params"]["update"]["content"]["text"] == "hello"
 
 
 @pytest.mark.asyncio
