@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -658,7 +659,7 @@ async def test_anthropic_backend_max_tokens_equals_context_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_anthropic_backend_system_prompt_passed() -> None:
+async def test_anthropic_backend_system_prompt_passed(tmp_path: Path) -> None:
     """Session system_prompt is forwarded to the API as 'system' kwarg."""
     mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
     backend, _ = _make_backend(mod)
@@ -686,7 +687,8 @@ async def test_anthropic_backend_system_prompt_passed() -> None:
         tools=tools,
         system_prompt="You are a helpful assistant.",
     )
-    session = await agent.new()
+    # Use tmp_path (no AGENTS.md) so system_prompt is not augmented.
+    session = await agent.new(cwd=str(tmp_path))
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         await _collect(backend.generate(session))
 

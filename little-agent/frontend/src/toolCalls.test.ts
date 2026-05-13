@@ -17,11 +17,12 @@ describe("createToolCallBubble", () => {
         expect(label?.textContent).toBe("read_file");
     });
 
-    it("shows the callId in the summary", () => {
+    it("shows 'args' in the summary, not the call id", () => {
         const callData: CallData = { tool_name: "write_file", arguments: {} };
         const bubble = createToolCallBubble("call-abc-123", callData);
         const summary = bubble.querySelector("summary.tool-call-summary");
-        expect(summary?.textContent).toBe("call-abc-123");
+        expect(summary?.textContent).toBe("args");
+        expect(summary?.textContent).not.toBe("call-abc-123");
     });
 
     it("uses 'unknown' when tool_name is missing", () => {

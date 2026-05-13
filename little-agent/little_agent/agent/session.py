@@ -147,10 +147,9 @@ class SessionCore(Session):
     def append_node(self, node: Node) -> None:
         self.messages.append(node)
 
-    def _apply_compress_result(self, summary: str, remaining: list[Node]) -> None:
+    def _apply_compress_result(self, summaries: list[str], remaining: list[Node]) -> None:
         """Apply compressor output; trim old summaries per W-limit."""
-        if summary:
-            self.summaries.append(summary)
+        self.summaries.extend(summaries)
         self.messages = remaining
         w_tokens = self.agent.compressed_window_tokens
         if w_tokens > 0:

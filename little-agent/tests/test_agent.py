@@ -413,8 +413,8 @@ async def test_compress_with_compressor() -> None:
     from little_agent.agent.nodes import Node
 
     class FakeCompressor:
-        async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]:
-            return "", messages
+        async def compress(self, messages: list[Node]) -> tuple[list[str], list[Node]]:
+            return [], messages
 
     agent = AgentCore(client=client, backend=backend, tools=tools, compressor=FakeCompressor())
     session = await agent.new()
@@ -582,7 +582,7 @@ async def test_post_turn_compress_triggered_by_token_ratio() -> None:
     class _TrackingCompressor:
         async def compress(self, messages):
             compress_calls.append(messages)
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [
@@ -618,7 +618,7 @@ async def test_post_turn_compress_not_triggered_below_threshold() -> None:
     class _TrackingCompressor:
         async def compress(self, messages):
             compress_calls.append(messages)
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [
@@ -652,7 +652,7 @@ async def test_post_turn_compress_char_fallback_when_usage_none() -> None:
     class _TrackingCompressor:
         async def compress(self, messages):
             compress_calls.append(messages)
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [
@@ -687,7 +687,7 @@ async def test_post_turn_compress_char_fallback_when_usage_zero() -> None:
     class _TrackingCompressor:
         async def compress(self, messages):
             compress_calls.append(messages)
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [
@@ -721,7 +721,7 @@ async def test_post_turn_compress_r_boundary_not_triggered() -> None:
     class _TrackingCompressor:
         async def compress(self, messages):
             compress_calls.append(messages)
-            return "", messages
+            return [], messages
 
     # ratio = 64000 / 128000 = 0.5, R = 0.5 → ratio > R is False
     backend = MockBackend(
@@ -758,7 +758,7 @@ async def test_compress_task_holds_pending_queue() -> None:
         async def compress(self, messages):
             compress_started.set()
             await compress_release.wait()
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [
@@ -820,7 +820,7 @@ async def test_in_turn_overflow_retry_success() -> None:
 
     class _MinimalCompressor:
         async def compress(self, messages):
-            return "compressed", messages  # non-empty summary signals compression ran
+            return ["compressed"], messages  # non-empty list signals compression ran
 
     backend = _OverflowOnceThenSucceed()
     agent = AgentCore(
@@ -852,7 +852,7 @@ async def test_in_turn_overflow_second_raises() -> None:
 
     class _NoopCompressor:
         async def compress(self, messages):
-            return "", messages
+            return [], messages
 
     agent = AgentCore(
         client=MockClient(),
@@ -932,7 +932,7 @@ async def test_cancel_interrupts_compress_task() -> None:
             except asyncio.CancelledError:
                 cancelled_flag.append(True)
                 raise
-            return "", messages
+            return [], messages
 
     backend = MockBackend(
         [

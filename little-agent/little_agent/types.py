@@ -55,7 +55,7 @@ class Node(Protocol):
 class Compressor(Protocol):
     """Compressor protocol; LLMCompressor is the built-in implementation."""
 
-    async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]: ...
+    async def compress(self, messages: list[Node]) -> tuple[list[str], list[Node]]: ...
 
 
 class ToolRegistry(Protocol):
@@ -144,6 +144,9 @@ class Hook:
 
     async def on_compress(self, session: Session) -> None:
         """Called after compress task completes."""
+
+    async def on_session_new(self, session: Session) -> None:
+        """Called after a new session is created (AGENTS.md already applied)."""
 
     async def on_fork(self, source: Session, forked: Session) -> None:
         """Called after fork() creates a new session."""

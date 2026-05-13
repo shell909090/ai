@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAX_COMPRESS_BATCHES = 3
+
 
 def _nodes_to_text(nodes: list[Node]) -> str:
     """Format a list of nodes as readable conversation history."""
@@ -37,6 +39,24 @@ def _nodes_to_text(nodes: list[Node]) -> str:
             results_str = json.dumps(n.results, ensure_ascii=False)
             parts.append(f"[Tool results: {results_str}]")
     return "\n".join(parts)
+
+
+def _batch_turns(turns: list[list[Node]], max_batches: int) -> list[list[Node]]:
+    """Group turns into at most max_batches roughly equal flat node lists."""
+    n = len(turns)
+    if n == 0:
+        return []
+    k = min(n, max_batches)
+    batches: list[list[Node]] = []
+    start = 0
+    for i in range(k):
+        size = n // k + (1 if i < n % k else 0)
+        batch_nodes: list[Node] = []
+        for turn in turns[start : start + size]:
+            batch_nodes.extend(turn)
+        batches.append(batch_nodes)
+        start += size
+    return batches
 
 
 def _split_into_turns(nodes: list[Node]) -> list[list[Node]]:
@@ -86,10 +106,10 @@ class LLMCompressor:
         self._backend = backend
         self._keep_turns = keep_turns
 
-    async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]:
-        """Compress old turns into a single summary string; return (summary, preserve_zone)."""
+    async def compress(self, messages: list[Node]) -> tuple[list[str], list[Node]]:
+        """Compress old turns into up to 3 summary strings; return (summaries, preserve_zone)."""
         if not messages:
-            return "", messages
+            return [], messages
 
         t0 = time.monotonic()
 
@@ -101,34 +121,47 @@ class LLMCompressor:
                 len(user_indices),
                 self._keep_turns,
             )
-            return "", messages
+            return [], messages
 
         preserve_start_idx = user_indices[-self._keep_turns]
         compress_zone = messages[:preserve_start_idx]
         preserve_zone = messages[preserve_start_idx:]
 
         if not compress_zone:
-            return "", messages
+            return [], messages
 
-        # Split compress_zone into turns and summarize concurrently
         turns = _split_into_turns(compress_zone)
         if not turns:
-            return "", messages
+            return [], messages
 
-        summary_texts: list[str] = await asyncio.gather(*[self._summarize(t) for t in turns])
-        combined_summary = "\n\n".join(summary_texts)
+        # Batch turns into at most MAX_COMPRESS_BATCHES groups.
+        batches = _batch_turns(turns, _MAX_COMPRESS_BATCHES)
+        total = len(batches)
+        summary_texts: list[str] = await asyncio.gather(
+            *[self._summarize(batch, i + 1, total) for i, batch in enumerate(batches)]
+        )
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         logger.info(
-            "compress: compressed_turns=%d elapsed_ms=%d",
+            "compress: total_turns=%d batches=%d summaries=%d elapsed_ms=%d",
             len(turns),
+            total,
+            len(summary_texts),
             elapsed_ms,
         )
 
-        return combined_summary, list(preserve_zone)
+        return list(summary_texts), list(preserve_zone)
 
-    async def _summarize(self, nodes: list[Node]) -> str:
-        """Summarize a single conversation turn via the backend."""
+    async def _summarize(self, nodes: list[Node], batch_num: int, total_batches: int) -> str:
+        """Summarize a batch of conversation turns via the backend."""
+        n_turns = sum(1 for n in nodes if isinstance(n, UserPromptNode))
+        logger.info(
+            "compress batch %d/%d start: %d turns, %d nodes",
+            batch_num,
+            total_batches,
+            n_turns,
+            len(nodes),
+        )
         history = _nodes_to_text(nodes)
         prompt = (
             "Please summarize the following conversation turn, preserving important facts, "
@@ -141,4 +174,11 @@ class LLMCompressor:
                 final = item
         if final is None:
             raise RuntimeError("Backend returned no result")
-        return final.output_text
+        result = final.output_text
+        logger.info(
+            "compress batch %d/%d done: %d chars",
+            batch_num,
+            total_batches,
+            len(result),
+        )
+        return result

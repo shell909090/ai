@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from little_agent.agent.agent import AgentCore
@@ -271,8 +273,8 @@ async def test_on_compress_fires() -> None:
     hook = RecordingHook("h", record)
 
     class MockCompressor:
-        async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]:
-            return "compressed summary", messages
+        async def compress(self, messages: list[Node]) -> tuple[list[str], list[Node]]:
+            return ["compressed summary"], messages
 
     backend = MockBackend(
         [BackendTurnResult(output_text="ok", tool_calls=[], finish_reason="completed")]
@@ -295,3 +297,141 @@ async def test_on_compress_fires() -> None:
     # The post-turn compress may not trigger in tests; call compress directly.
     await session.compress()
     assert "h:on_compress" in record
+
+
+# ---------------------------------------------------------------------------
+# on_session_new hook
+# ---------------------------------------------------------------------------
+
+
+class SessionNewHook(Hook):
+    """Records on_session_new calls."""
+
+    def __init__(self, record: list[str]) -> None:
+        self._record = record
+
+    async def on_session_new(self, session: Session) -> None:
+        self._record.append("on_session_new")
+
+
+@pytest.mark.asyncio
+async def test_on_session_new_fires() -> None:
+    """on_session_new fires when agent.new() is called."""
+    record: list[str] = []
+    hook = SessionNewHook(record)
+    backend = MockBackend()
+    agent = _make_agent(backend, hooks=[hook])
+    await agent.new()
+    assert "on_session_new" in record
+
+
+@pytest.mark.asyncio
+async def test_on_session_new_fires_with_agents_md(tmp_path: Path) -> None:
+    """on_session_new fires after AGENTS.md is loaded into system_prompt."""
+    (tmp_path / "AGENTS.md").write_text("project instructions", encoding="utf-8")
+
+    seen_prompts: list[str | None] = []
+
+    class CaptureHook(Hook):
+        async def on_session_new(self, session: Session) -> None:
+            seen_prompts.append(session.system_prompt)
+
+    backend = MockBackend()
+    agent = _make_agent(backend, hooks=[CaptureHook()])
+    await agent.new(cwd=str(tmp_path))
+    assert len(seen_prompts) == 1
+    assert seen_prompts[0] is not None
+    assert "project instructions" in seen_prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_on_session_new_failing_hook_does_not_block() -> None:
+    """A broken on_session_new hook does not prevent session creation."""
+
+    class BrokenHook(Hook):
+        async def on_session_new(self, session: Session) -> None:
+            raise RuntimeError("boom")
+
+    backend = MockBackend()
+    agent = _make_agent(backend, hooks=[BrokenHook()])
+    session = await agent.new()
+    assert session is not None
+
+
+# ---------------------------------------------------------------------------
+# _find_agents_md utility
+# ---------------------------------------------------------------------------
+
+
+def test_find_agents_md_in_cwd(tmp_path: Path) -> None:
+    """AGENTS.md found directly in the given cwd."""
+    from little_agent.agent.agent import _find_agents_md
+
+    (tmp_path / "AGENTS.md").write_text("content here", encoding="utf-8")
+    result = _find_agents_md(str(tmp_path))
+    assert result == "content here"
+
+
+def test_find_agents_md_in_parent(tmp_path: Path) -> None:
+    """AGENTS.md found in parent directory when not in cwd."""
+    from little_agent.agent.agent import _find_agents_md
+
+    subdir = tmp_path / "sub" / "dir"
+    subdir.mkdir(parents=True)
+    (tmp_path / "AGENTS.md").write_text("parent content", encoding="utf-8")
+    result = _find_agents_md(str(subdir))
+    assert result == "parent content"
+
+
+def test_find_agents_md_not_found_returns_none(tmp_path: Path) -> None:
+    """None is returned when no AGENTS.md exists in the hierarchy or ~/.config."""
+    from unittest.mock import patch
+
+    from little_agent.agent.agent import _find_agents_md
+
+    # Patch Path.home() to point to tmp_path so ~/.config/AGENTS.md is absent.
+    with patch("little_agent.agent.agent.Path.home", return_value=tmp_path):
+        result = _find_agents_md(str(tmp_path))
+    assert result is None
+
+
+def test_find_agents_md_fallback_home_config(tmp_path: Path) -> None:
+    """Fallback to ~/.config/AGENTS.md when no AGENTS.md in directory hierarchy."""
+    from unittest.mock import patch
+
+    from little_agent.agent.agent import _find_agents_md
+
+    config_dir = tmp_path / ".config"
+    config_dir.mkdir()
+    (config_dir / "AGENTS.md").write_text("global instructions", encoding="utf-8")
+
+    empty_dir = tmp_path / "project"
+    empty_dir.mkdir()
+
+    with patch("little_agent.agent.agent.Path.home", return_value=tmp_path):
+        result = _find_agents_md(str(empty_dir))
+    assert result == "global instructions"
+
+
+@pytest.mark.asyncio
+async def test_agents_md_combined_with_existing_system_prompt(tmp_path: Path) -> None:
+    """AGENTS.md is appended to an existing system_prompt from backend config."""
+    from little_agent.agent.agent import AgentCore
+    from little_agent.agent.permissions import YesManChecker
+    from little_agent.agent.tool_manager import ToolManager
+
+    (tmp_path / "AGENTS.md").write_text("project rules", encoding="utf-8")
+
+    tool_mgr = ToolManager()
+    tool_mgr.register(MockToolProvider())
+    agent = AgentCore(
+        client=MockClient(),
+        backend=MockBackend(),
+        tools=tool_mgr,
+        permissions=YesManChecker(),
+        system_prompt="base system prompt",
+    )
+    session = await agent.new(cwd=str(tmp_path))
+    assert session.system_prompt is not None
+    assert "base system prompt" in session.system_prompt
+    assert "project rules" in session.system_prompt

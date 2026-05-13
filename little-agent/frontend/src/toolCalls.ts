@@ -18,7 +18,7 @@ export function createToolCallBubble(callId: string, callData: CallData): HTMLDi
     const details = document.createElement("details");
     const summary = document.createElement("summary");
     summary.className = "tool-call-summary";
-    summary.textContent = callId;
+    summary.textContent = "args";
     details.appendChild(summary);
 
     const args = (callData?.arguments ?? {}) as Record<string, unknown>;

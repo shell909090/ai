@@ -60,6 +60,7 @@ tools:
 agent:
   compress_threshold: 0.75
   max_tool_result_chars: 50000
+  ignore_agentsmd: false
 compressor:
   keep_turns: 3
   compressed_window: 0.15
@@ -197,6 +198,7 @@ def main() -> None:
         raise ValueError(f"agent.max_tool_result_chars must be > 0, got {max_tool_result_chars}")
 
     primary_system_prompt = (config.get("backends") or {}).get("primary", {}).get("system") or None
+    ignore_agentsmd = bool(config["agent"].get("ignore_agentsmd", False))
     agent = AgentCore(
         client=client,
         backend=backend,
@@ -209,6 +211,7 @@ def main() -> None:
         max_tool_result_chars=max_tool_result_chars,
         system_prompt=primary_system_prompt,
         compressed_window_tokens=compressed_window_tokens,
+        ignore_agentsmd=ignore_agentsmd,
     )
 
     if session_store is not None:

@@ -82,14 +82,14 @@ class TurnRunner:
             if self._overflow_retried or session.agent.compressor is None:
                 raise
             logger.info("in-turn context overflow: compressing and retrying")
-            summary, remaining = await session.agent.compressor.compress(session.messages)
-            if not summary and remaining is session.messages:
+            summaries, remaining = await session.agent.compressor.compress(session.messages)
+            if not summaries and remaining is session.messages:
                 logger.warning(
                     "in-turn compress was a no-op (too few turns to compress); "
                     "re-raising ContextOverflowError"
                 )
                 raise
-            session._apply_compress_result(summary, remaining)
+            session._apply_compress_result(summaries, remaining)
             await session.call_hooks("on_compress", session)
             self._overflow_retried = True
             return await self._generate_backend_result()
@@ -188,8 +188,8 @@ class TurnRunner:
         try:
             # compressor is non-None: already checked in _schedule_compress_if_needed
             # before this task was created
-            summary, remaining = await session.agent.compressor.compress(session.messages)  # type: ignore[union-attr]
-            session._apply_compress_result(summary, remaining)
+            summaries, remaining = await session.agent.compressor.compress(session.messages)  # type: ignore[union-attr]
+            session._apply_compress_result(summaries, remaining)
             await session.call_hooks("on_compress", session)
         except Exception:
             logger.exception("Post-turn compress failed")

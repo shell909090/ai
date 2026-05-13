@@ -153,17 +153,17 @@ class ToolResultNode(Node):
 
 ```python
 class Compressor(Protocol):
-    async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]: ...
+    async def compress(self, messages: list[Node]) -> tuple[list[str], list[Node]]: ...
 ```
 
 规则：
 
 1. 输入：当前 session 的完整 `messages` 列表（正序）。
-2. 输出：`(summary_str, remaining_messages)`。`summary_str` 为本次压缩产生的摘要文本（空字符串表示无操作）；`remaining_messages` 为保留区节点列表。
+2. 输出：`(summary_strs, remaining_messages)`。`summary_strs` 为本次压缩产生的摘要文本列表（空列表表示无操作，最多 3 条）；`remaining_messages` 为保留区节点列表。
 3. 由启动脚本按配置构造，在 `Agent.__init__` 注入。
 4. 配置中存在名为 `compressor` 的 backend 时使用它，否则与 agent 共用 backend。
 5. `Session.compress()`：未注入 compressor 或存在活跃 turn 抛异常；否则调用 `compressor.compress(messages)` 后通过 `_apply_compress_result()` 更新 session 状态。
-6. `Session._apply_compress_result(summary, remaining)` 执行：① 若 summary 非空则 append 到 summaries；② messages = remaining；③ 按 W-limit 裁剪旧 summaries（W-limit = `agent.compressed_window_tokens`，0 表示无限制）。
+6. `Session._apply_compress_result(summaries, remaining)` 执行：① 将 summaries（列表）extend 到 `session.summaries`；② messages = remaining；③ 按 W-limit 裁剪旧 summaries（W-limit = `agent.compressed_window_tokens`，0 表示无限制）。
 7. agent 编排在每次 turn 结束后自动评估并按需调度，详见 §2.6.2。
 
 #### 2.6.2 自动触发策略
@@ -184,11 +184,12 @@ turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之
 
 `LLMCompressor.compress(messages)` 算法：
 
-1. 找保留区起始：从 `messages` 头开始统计 `UserPromptNode` 数；若总 turn 数 ≤ `keep_turns` 则返回 `("", messages)`（no-op）。
+1. 找保留区起始：从 `messages` 头开始统计 `UserPromptNode` 数；若总 turn 数 ≤ `keep_turns` 则返回 `([], messages)`（no-op）。
 2. **被压区**：`messages[:preserve_start]`（最近 `keep_turns` 个 turn 之前的所有节点）。
 3. **保留区**：`messages[preserve_start:]`（最近 `keep_turns` 个 turn）。
-4. **压缩**：将被压区按 turn 切分，每个 turn 一次 LLM 调用，并发 `asyncio.gather`；将所有摘要文本用 `"\n\n"` 拼接为一个 `summary_str`。
-5. 返回 `(summary_str, preserve_zone)`。
+4. **分批**：将被压区按 turn 切分后，分成至多 3 组（`_batch_turns`）；N ≤ 3 时每组一个 turn，N > 3 时均匀分配。
+5. **压缩**：每组一次 LLM 调用，并发 `asyncio.gather`；每次调用前后各输出 INFO 日志（进入节点数/输出摘要字符数）。
+6. 返回 `(summary_strs, preserve_zone)`，`summary_strs` 每组一条（最多 3 条）。
 
 W-limit（在 `Session._apply_compress_result` 中执行）：`summaries` 超过 W-limit 时从头部丢弃旧摘要，至少保留 1 条。
 
@@ -243,6 +244,7 @@ allowed = await session.agent.permissions.request_permission(
 class Hook:
     """Lifecycle hook. Override only the events you care about."""
 
+    async def on_session_new(self, session: Session) -> None: pass
     async def on_turn_start(self, session: Session) -> None: pass
     async def on_turn_end(self, session: Session) -> None: pass
     async def on_tool_call(self, session: Session) -> None: pass
@@ -259,6 +261,7 @@ class Hook:
 
    | Hook 方法 | 触发时机 | 此时 `session.messages[-1]` |
    |---|---|---|
+   | `on_session_new(session)` | `Agent.new()` 创建 session 后（AGENTS.md 已写入 system_prompt） | messages 为空 |
    | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） | 上一轮最后一个节点（或 messages 为空） |
    | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 | 本轮最后一个节点 |
    | `on_tool_call(session)` | §2.5 步骤 3.3 中 `AssistantNode` 追加后，且在创建 `ToolResultNode` 之前 | 刚追加的 `AssistantNode` |
@@ -813,6 +816,7 @@ backends:
 agent:
   compress_threshold: 0.75               # 压缩触发阈值，(0,1]，默认 0.75
   max_tool_result_chars: 50000           # tool result 截断上限（JSON 序列化字符数），默认 50000；超出时截断并附 [TRUNCATED] 标注
+  ignore_agentsmd: false                 # 为 true 时跳过 AGENTS.md 查找（开发目录下自带 AGENTS.md 时使用）
 
 compressor:
   keep_turns: 3                          # 保留窗口，下限 1，默认 3

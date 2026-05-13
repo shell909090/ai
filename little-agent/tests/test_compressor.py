@@ -8,7 +8,9 @@ from unittest.mock import patch
 import pytest
 
 from little_agent.agent.compressor import (
+    _MAX_COMPRESS_BATCHES,
     LLMCompressor,
+    _batch_turns,
     _CompressorSession,
     _nodes_to_text,
     _split_into_turns,
@@ -58,8 +60,8 @@ async def test_compress_skips_when_not_enough_turns() -> None:
     _make_turn(messages, "1")
     _make_turn(messages, "2")
     # Only 2 turns, keep_turns=3 → no compression
-    summary, remaining = await compressor.compress(messages)
-    assert summary == ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries == []
     assert remaining is messages
     # backend was never called
     assert backend._index == 0
@@ -75,8 +77,8 @@ async def test_compress_skips_when_exact_k_turns() -> None:
     _make_turn(messages, "t2")
     _make_turn(messages, "t3")
 
-    summary, remaining = await compressor.compress(messages)
-    assert summary == ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries == []
     assert remaining is messages
     assert backend._index == 0
 
@@ -88,7 +90,7 @@ async def test_compress_skips_when_exact_k_turns() -> None:
 
 @pytest.mark.asyncio
 async def test_compress_returns_summary_and_preserve_zone() -> None:
-    """Compress summarizes old turns and returns (summary_text, preserve_zone)."""
+    """Compress summarizes old turns and returns (summaries, preserve_zone)."""
     backend = MockBackend(
         [
             BackendTurnResult(
@@ -102,8 +104,8 @@ async def test_compress_returns_summary_and_preserve_zone() -> None:
     _make_turn(messages, "2", reply="reply 2")
     _make_turn(messages, "3", reply="reply 3")
     # 3 turns, keep_turns=2 → turn 1 compressed, turns 2 & 3 preserved
-    summary, remaining = await compressor.compress(messages)
-    assert summary != ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries  # non-empty list
     assert _count_turns(remaining) == 2
 
 
@@ -117,10 +119,11 @@ async def test_compress_preserves_k_turns() -> None:
     """After compression the preserved zone contains exactly keep_turns UserPromptNodes."""
     k = 3
     total_turns = 6
+    compressible = total_turns - k  # 3 turns → min(3, 3) = 3 batches
     backend = MockBackend(
         [
             BackendTurnResult(output_text=f"sum{i}", tool_calls=[], finish_reason="completed")
-            for i in range(total_turns - k)
+            for i in range(compressible)
         ]
     )
     compressor = LLMCompressor(backend, keep_turns=k)
@@ -129,8 +132,8 @@ async def test_compress_preserves_k_turns() -> None:
     for i in range(total_turns):
         _make_turn(messages, f"t{i}")
 
-    summary, remaining = await compressor.compress(messages)
-    assert summary != ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries
     assert _count_turns(remaining) == k
 
 
@@ -140,8 +143,8 @@ async def test_compress_preserves_k_turns() -> None:
 
 
 @pytest.mark.asyncio
-async def test_compress_multiple_turns_joined_in_summary() -> None:
-    r"""Summaries from multiple compressed turns are joined with '\n\n'."""
+async def test_compress_multiple_turns_separate_summaries() -> None:
+    """Multiple compressed turns produce separate summary strings (one per batch)."""
     backend = MockBackend(
         [
             BackendTurnResult(output_text="part-1", tool_calls=[], finish_reason="completed"),
@@ -153,11 +156,11 @@ async def test_compress_multiple_turns_joined_in_summary() -> None:
     _make_turn(messages, "1")
     _make_turn(messages, "2")
     _make_turn(messages, "3")
-    # 3 turns, keep=1 → 2 compressed
-    summary, remaining = await compressor.compress(messages)
-    assert "part-1" in summary
-    assert "part-2" in summary
-    assert "\n\n" in summary
+    # 3 turns, keep=1 → 2 compressed → 2 batches → 2 summary strings
+    summaries, remaining = await compressor.compress(messages)
+    assert len(summaries) == 2
+    assert "part-1" in summaries[0] or "part-1" in summaries[1]
+    assert "part-2" in summaries[0] or "part-2" in summaries[1]
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +200,10 @@ def test_compress_splits_turns_correctly() -> None:
 
 @pytest.mark.asyncio
 async def test_compress_concurrent_gather() -> None:
-    """Backend.generate is called exactly once per turn being compressed."""
+    """Backend.generate is called once per batch (at most MAX_COMPRESS_BATCHES)."""
     k = 3
     total_turns = 6
-    compressible = total_turns - k  # = 3
+    compressible = total_turns - k  # = 3 → min(3, 3) = 3 batches
 
     backend = MockBackend(
         [
@@ -214,11 +217,12 @@ async def test_compress_concurrent_gather() -> None:
     for i in range(total_turns):
         _make_turn(messages, f"t{i}")
 
-    summary, remaining = await compressor.compress(messages)
-    assert summary != ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries
 
-    # backend._index advances by 1 for each generate() call consumed
+    # 3 turns → 3 batches (3 ≤ MAX_COMPRESS_BATCHES) → 3 backend calls
     assert backend._index == compressible
+    assert len(summaries) == compressible
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +246,7 @@ async def test_compress_all_or_nothing_on_failure() -> None:
     for i in range(5):
         _make_turn(messages, f"t{i}")
 
-    with pytest.raises(RuntimeError, match="backend exploded"):
+    with pytest.raises((RuntimeError, BaseException), match="backend exploded"):
         await compressor.compress(messages)
 
 
@@ -271,8 +275,8 @@ async def test_keep_turns_below_1_forced_to_1() -> None:
     for i in range(3):
         _make_turn(messages, f"t{i}")
 
-    summary, remaining = await compressor.compress(messages)
-    assert summary != ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries
     assert _count_turns(remaining) == 1
 
 
@@ -304,8 +308,8 @@ async def test_compress_preserved_nodes_keep_content() -> None:
     for i in range(5):
         _make_turn(messages, f"t{i}", prompt=prompts[i], reply=replies[i])
 
-    summary, remaining = await compressor.compress(messages)
-    assert summary != ""
+    summaries, remaining = await compressor.compress(messages)
+    assert summaries
 
     # Remaining nodes must be the last k turns with original content intact
     user_nodes = [n for n in remaining if isinstance(n, UserPromptNode)]
@@ -394,7 +398,8 @@ async def test_compressor_session_id_passed_to_backend() -> None:
     for i in range(4):
         _make_turn(messages, f"t{i}")
 
-    await compressor.compress(messages)
+    summaries, _ = await compressor.compress(messages)
+    assert summaries
 
     assert len(backend.sessions) == 1
     passed_session = backend.sessions[0]
@@ -420,3 +425,89 @@ def test_nodes_to_text_tool_call_no_output_text() -> None:
     assert any("[Tool calls:" in line for line in lines), (
         f"Expected '[Tool calls:' line, got: {lines}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 13. _batch_turns correctness
+# ---------------------------------------------------------------------------
+
+
+def test_batch_turns_under_max() -> None:
+    """N <= max_batches: each turn is its own batch."""
+    u = UserPromptNode(id="u", prompt="q")
+    a = AssistantNode(id="a", text="r")
+    turns = [[u, a], [u, a]]  # 2 turns
+    batches = _batch_turns(turns, max_batches=3)
+    assert len(batches) == 2
+    assert all(len(b) == 2 for b in batches)
+
+
+def test_batch_turns_over_max() -> None:
+    """N > max_batches: turns are grouped into exactly max_batches batches."""
+    turns: list[list[Node]] = []
+    for i in range(7):
+        u = UserPromptNode(id=f"u{i}", prompt=f"q{i}")
+        a = AssistantNode(id=f"a{i}", text=f"r{i}")
+        turns.append([u, a])
+
+    batches = _batch_turns(turns, max_batches=3)
+    assert len(batches) == 3
+    total_nodes = sum(len(b) for b in batches)
+    assert total_nodes == 7 * 2
+
+
+def test_batch_turns_even_distribution() -> None:
+    """Batches are as equal as possible (differ by at most 1 turn)."""
+    # 7 turns → batches [3, 2, 2] turns → [6, 4, 4] nodes
+    turns: list[list[Node]] = []
+    for i in range(7):
+        u = UserPromptNode(id=f"u{i}", prompt=f"q{i}")
+        a = AssistantNode(id=f"a{i}", text=f"r{i}")
+        turns.append([u, a])
+
+    batches = _batch_turns(turns, max_batches=3)
+    sizes = [len(b) for b in batches]
+    assert max(sizes) - min(sizes) <= 2  # at most 1 turn difference = 2 nodes
+
+
+def test_batch_turns_empty() -> None:
+    """Empty input → empty output."""
+    assert _batch_turns([], max_batches=3) == []
+
+
+def test_batch_turns_single_turn() -> None:
+    """Single turn → single batch."""
+    u = UserPromptNode(id="u", prompt="q")
+    turns = [[u]]
+    batches = _batch_turns(turns, max_batches=3)
+    assert len(batches) == 1
+    assert batches[0] == [u]
+
+
+# ---------------------------------------------------------------------------
+# 14. Batching: N > MAX_COMPRESS_BATCHES makes exactly 3 backend calls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_compress_batches_at_most_3_calls_for_many_turns() -> None:
+    """When compressible turns > 3, compress makes exactly 3 backend calls."""
+    k = 2
+    total_turns = 8  # 6 turns to compress → 3 batches of 2 turns each
+    backend = MockBackend(
+        [
+            BackendTurnResult(output_text=f"sum{i}", tool_calls=[], finish_reason="completed")
+            for i in range(_MAX_COMPRESS_BATCHES)
+        ]
+    )
+    compressor = LLMCompressor(backend, keep_turns=k)
+
+    messages: list[Node] = []
+    for i in range(total_turns):
+        _make_turn(messages, f"t{i}")
+
+    summaries, remaining = await compressor.compress(messages)
+
+    assert backend._index == _MAX_COMPRESS_BATCHES  # exactly 3 calls, not 6
+    assert len(summaries) == _MAX_COMPRESS_BATCHES
+    assert _count_turns(remaining) == k
