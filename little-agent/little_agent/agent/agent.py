@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 from little_agent.types import (
     Agent,
     Client,
+    Compressor,
     Hook,
     JSONValue,
     PermissionChecker,
@@ -15,7 +16,6 @@ from little_agent.types import (
     ToolRegistry,
 )
 
-from .compressor import Compressor
 from .nodes import _parse_messages, validate_node_dict
 from .session import SessionCore
 

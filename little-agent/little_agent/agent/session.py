@@ -9,10 +9,9 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from little_agent.tools.protocol import ToolMap
-from little_agent.types import ContentBlock, JSONValue, PromptReturn, Session
+from little_agent.types import ContentBlock, JSONValue, Node, PromptReturn, Session
 
 from .exceptions import SessionBusyError
-from .nodes import Node
 
 if TYPE_CHECKING:
     from .agent import AgentCore

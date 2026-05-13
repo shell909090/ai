@@ -254,5 +254,3 @@ def test_tool_result_non_string_content_formatted() -> None:
     msgs = n.to_anthropic()
     text = msgs[0]["content"][0]["content"]
     assert '"key": "val"' in text
-
-

@@ -3,7 +3,9 @@
 from little_agent.types import (
     Agent,
     Client,
+    Compressor,
     Hook,
+    Node,
     PermissionChecker,
     PromptReturn,
     Session,
@@ -13,11 +15,10 @@ from little_agent.types import (
 )
 
 from .agent import AgentCore
-from .compressor import Compressor, LLMCompressor
+from .compressor import LLMCompressor
 from .exceptions import SessionBusyError
 from .nodes import (
     AssistantNode,
-    Node,
     ToolResultNode,
     UserPromptNode,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "StopReason",
     "PromptReturn",
     "Compressor",
+    "Node",
     "AgentCore",
     "SessionCore",
     "MAX_TURN_ITERATIONS",

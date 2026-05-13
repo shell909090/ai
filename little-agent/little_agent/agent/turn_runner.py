@@ -161,9 +161,7 @@ class TurnRunner:
             ratio = total_tokens / cw
             metric = f"tokens={total_tokens}"
         else:
-            char_count = sum(
-                len(str(node.to_dict()).encode("utf-8")) for node in session.messages
-            )
+            char_count = sum(len(str(node.to_dict()).encode("utf-8")) for node in session.messages)
             ratio = (char_count / 3) / cw
             metric = f"chars={char_count} (fallback)"
 

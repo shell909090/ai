@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
-from little_agent.types import ContentBlock, JSONValue
+from little_agent.types import ContentBlock, JSONValue, Node
 
 
 def _format_result(result: dict[str, Any]) -> str:
@@ -35,45 +35,22 @@ def _parse_created_at(value: Any) -> datetime:
 
 
 @dataclass(slots=True)
-class Node:
-    """Base chain node."""
-
-    id: str
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    kind: ClassVar[str] = "node"
-
-    def to_dict(self) -> dict[str, JSONValue]:
-        """Serialize node to dict."""
-        return {"kind": self.kind, "id": self.id, "created_at": self.created_at.isoformat()}
-
-    def to_anthropic(self) -> list[dict[str, Any]]:
-        """Convert node to Anthropic API message(s); empty list if node produces no message."""
-        return []
-
-    def to_openai(self) -> list[dict[str, Any]]:
-        """Convert node to OpenAI API message(s); empty list if node produces no message."""
-        return []
-
-    def freeze(self) -> None:
-        """Freeze this node (no-op for nodes without mutable state)."""
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Node:
-        """Deserialize node from dict."""
-        raise NotImplementedError
-
-
-@dataclass(slots=True)
-class UserPromptNode(Node):
+class UserPromptNode:
     """User prompt node."""
 
     kind: ClassVar[str] = "user_prompt"
+    id: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     prompt: str | list[ContentBlock] = ""
 
     def to_dict(self) -> dict[str, JSONValue]:
-        base = Node.to_dict(self)
-        base["prompt"] = self.prompt  # type: ignore[assignment]
-        return base
+        """Serialize node to dict."""
+        return {
+            "kind": self.kind,
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "prompt": self.prompt,  # type: ignore[dict-item]
+        }
 
     def to_anthropic(self) -> list[dict[str, Any]]:
         """Convert to Anthropic user message."""
@@ -85,8 +62,12 @@ class UserPromptNode(Node):
         content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
         return [{"role": "user", "content": content}]
 
+    def freeze(self) -> None:
+        """No-op: user prompt nodes are immutable once created."""
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> UserPromptNode:
+        """Deserialize from dict."""
         prompt = data.get("prompt", "")
         if not isinstance(prompt, (str, list)):
             raise ValueError("UserPromptNode 'prompt' must be a string or list")
@@ -98,27 +79,30 @@ class UserPromptNode(Node):
 
 
 @dataclass(slots=True)
-class AssistantNode(Node):
+class AssistantNode:
     """Assistant message node (text reply or tool call)."""
 
     kind: ClassVar[str] = "assistant"
+    id: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     text: str = ""
     thinking: str = ""
     tool_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
     frozen: bool = False
 
-    def freeze(self) -> None:
-        """Mark this node as frozen."""
-        self.frozen = True
-
     def to_dict(self) -> dict[str, JSONValue]:
-        base = Node.to_dict(self)
-        base["text"] = self.text
+        """Serialize node to dict."""
+        d: dict[str, JSONValue] = {
+            "kind": self.kind,
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "text": self.text,
+        }
         if self.thinking:
-            base["thinking"] = self.thinking
+            d["thinking"] = self.thinking
         if self.tool_calls:
-            base["tool_calls"] = self.tool_calls  # type: ignore[assignment]
-        return base
+            d["tool_calls"] = self.tool_calls  # type: ignore[assignment]
+        return d
 
     def to_anthropic(self) -> list[dict[str, Any]]:
         """Convert to Anthropic assistant message."""
@@ -158,8 +142,13 @@ class AssistantNode(Node):
             msg["content"] = self.text
         return [msg]
 
+    def freeze(self) -> None:
+        """Mark this node as frozen."""
+        self.frozen = True
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> AssistantNode:
+        """Deserialize from dict."""
         text = str(data.get("text") or "")
         thinking = str(data.get("thinking") or "")
         tool_calls = data.get("tool_calls", {})
@@ -176,21 +165,23 @@ class AssistantNode(Node):
 
 
 @dataclass(slots=True)
-class ToolResultNode(Node):
+class ToolResultNode:
     """Tool result node."""
 
     kind: ClassVar[str] = "tool_result"
+    id: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     frozen: bool = False
 
-    def freeze(self) -> None:
-        """Mark this node as frozen, preventing further result additions."""
-        self.frozen = True
-
     def to_dict(self) -> dict[str, JSONValue]:
-        base = Node.to_dict(self)
-        base["results"] = self.results  # type: ignore[assignment]
-        return base
+        """Serialize node to dict."""
+        return {
+            "kind": self.kind,
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "results": self.results,  # type: ignore[dict-item]
+        }
 
     def to_anthropic(self) -> list[dict[str, Any]]:
         """Convert to Anthropic user message with tool_result blocks."""
@@ -219,8 +210,13 @@ class ToolResultNode(Node):
             for call_id, result in self.results.items()
         ]
 
+    def freeze(self) -> None:
+        """Mark this node as frozen, preventing further result additions."""
+        self.frozen = True
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> ToolResultNode:
+        """Deserialize from dict."""
         results = data.get("results", {})
         if not isinstance(results, dict):
             raise ValueError("ToolResultNode 'results' must be a dict")
@@ -232,7 +228,7 @@ class ToolResultNode(Node):
         )
 
 
-_NODE_REGISTRY: dict[str, type[Node]] = {
+_NODE_REGISTRY: dict[str, Any] = {
     UserPromptNode.kind: UserPromptNode,
     AssistantNode.kind: AssistantNode,
     ToolResultNode.kind: ToolResultNode,
@@ -260,7 +256,6 @@ def validate_node_dict(d: dict[str, Any]) -> None:
     required = _KIND_REQUIRED_FIELDS.get(kind, {})
     for fname, expected_type in required.items():
         val = d.get(fname)
-        # Allow optional fields that may be absent (only validate when present).
         if val is not None and not isinstance(val, expected_type):
             raise ValueError(
                 f"invalid session data: {kind}.{fname} must be {expected_type.__name__}, "

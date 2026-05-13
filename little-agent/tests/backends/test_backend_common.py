@@ -67,9 +67,7 @@ def test_chain_to_messages_with_tool_result() -> None:
     node2 = AssistantNode(
         id="2", tool_calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}}
     )
-    node3 = ToolResultNode(
-        id="3", results={"c1": {"status": "completed", "content": "hi"}}
-    )
+    node3 = ToolResultNode(id="3", results={"c1": {"status": "completed", "content": "hi"}})
     session = _FakeSession([node1, node2, node3])
     messages = _chain_to_messages(session)
     assert len(messages) == 3

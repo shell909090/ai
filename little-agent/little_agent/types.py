@@ -9,10 +9,10 @@ signatures stay precise without dragging the tools layer into runtime.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 if TYPE_CHECKING:
-    from little_agent.agent.nodes import Node
     from little_agent.tools.protocol import AsyncToolFn, ToolMap, ToolProvider
 
 
@@ -35,6 +35,25 @@ class SessionUpdate:
         "tool_call_update",
     ]
     data: dict[str, JSONValue]
+
+
+class Node(Protocol):
+    """Protocol for chain nodes."""
+
+    id: str
+    created_at: datetime
+    kind: ClassVar[str]
+
+    def to_dict(self) -> dict[str, JSONValue]: ...
+    def to_anthropic(self) -> list[dict[str, Any]]: ...
+    def to_openai(self) -> list[dict[str, Any]]: ...
+    def freeze(self) -> None: ...
+
+
+class Compressor(Protocol):
+    """Compressor protocol; LLMCompressor is the built-in implementation."""
+
+    async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]: ...
 
 
 class ToolRegistry(Protocol):

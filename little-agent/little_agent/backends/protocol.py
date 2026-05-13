@@ -6,10 +6,9 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from little_agent.types import SessionUpdate
+from little_agent.types import Node, SessionUpdate
 
 if TYPE_CHECKING:
-    from little_agent.agent.nodes import Node
     from little_agent.tools.protocol import ToolMap
 
 
@@ -40,7 +39,7 @@ class BackendSession(Protocol):
     id: str
     system_prompt: str | None
     summaries: list[str]
-    messages: "list[Node]"
+    messages: list[Node]
 
     def get_turn_tool_map(self) -> "ToolMap": ...
 
