@@ -54,8 +54,6 @@ class TurnRunner:
         try:
             for _ in range(MAX_TURN_ITERATIONS):
                 if session.is_cancel_requested:
-                    if session.messages:
-                        session.messages[-1].freeze()
                     await session.call_hooks("on_cancel", session)
                     return ("cancelled", self._partial_output)
 
@@ -130,7 +128,6 @@ class TurnRunner:
             thinking=result.thinking_text or "",
         )
         session.append_node(assistant_node)
-        assistant_node.freeze()
         if not did_stream:
             await session.agent.client.update(
                 session,

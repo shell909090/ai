@@ -62,9 +62,6 @@ class UserPromptNode:
         content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
         return [{"role": "user", "content": content}]
 
-    def freeze(self) -> None:
-        """No-op: user prompt nodes are immutable once created."""
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UserPromptNode:
         """Deserialize from dict."""
@@ -88,7 +85,6 @@ class AssistantNode:
     text: str = ""
     thinking: str = ""
     tool_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
-    frozen: bool = False
 
     def to_dict(self) -> dict[str, JSONValue]:
         """Serialize node to dict."""
@@ -142,10 +138,6 @@ class AssistantNode:
             msg["content"] = self.text
         return [msg]
 
-    def freeze(self) -> None:
-        """Mark this node as frozen."""
-        self.frozen = True
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AssistantNode:
         """Deserialize from dict."""
@@ -159,7 +151,6 @@ class AssistantNode:
             text=text,
             thinking=thinking,
             tool_calls=tool_calls,
-            frozen=True,
             created_at=_parse_created_at(data.get("created_at")),
         )
 
@@ -172,7 +163,6 @@ class ToolResultNode:
     id: str
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
-    frozen: bool = False
 
     def to_dict(self) -> dict[str, JSONValue]:
         """Serialize node to dict."""
@@ -210,10 +200,6 @@ class ToolResultNode:
             for call_id, result in self.results.items()
         ]
 
-    def freeze(self) -> None:
-        """Mark this node as frozen, preventing further result additions."""
-        self.frozen = True
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolResultNode:
         """Deserialize from dict."""
@@ -223,7 +209,6 @@ class ToolResultNode:
         return cls(
             id=data["id"],
             results=results,
-            frozen=True,
             created_at=_parse_created_at(data.get("created_at")),
         )
 

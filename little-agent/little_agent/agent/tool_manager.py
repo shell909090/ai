@@ -240,8 +240,6 @@ async def invoke_turn_tools(
 
     tool_result_node = _create_tool_result_node(session)
     await _invoke_tools(session, result, tool_result_node)
-    if session.messages:
-        session.messages[-1].freeze()
     await session.call_hooks("on_tool_result", session)
 
     return partial_output

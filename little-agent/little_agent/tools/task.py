@@ -9,13 +9,14 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from little_agent.agent.nodes import AssistantNode, ToolResultNode
 from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
 from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
     from little_agent.agent.agent import AgentCore
     from little_agent.agent.session import SessionCore
-    from little_agent.types import Node, Session
+    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 
@@ -124,19 +125,32 @@ class TaskToolProvider:
         return list(self._agent.tools.desc_tool(names, exclude={"task"}).keys())
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:
-        """Fork a new session from the current, sharing history up to the first non-frozen node."""
+        """Fork a new session sharing history excluding the active ToolResultNode.
+
+        Drops messages[-1] (the ToolResultNode currently being filled for this turn),
+        then appends a placeholder ToolResultNode to satisfy Anthropic's requirement
+        that every tool_use block has a matching tool_result.
+        """
         from little_agent.agent.session import SessionCore as SessionCoreImpl
 
-        # Walk messages in reverse; stop at the first node that is not frozen.
-        # Mimics the old prev-chain walk: the fork point is that non-frozen node (inclusive).
-        # If all nodes are frozen (or messages is empty), the sub-session is empty.
-        fork_messages: list[Node] = []
-        for i in range(len(session.messages) - 1, -1, -1):
-            node = session.messages[i]
-            if not getattr(node, "frozen", False):
-                fork_messages = list(session.messages[: i + 1])
-                break
-        # If loop finishes without break: all frozen → fork_messages stays []
+        base_messages = list(session.messages[:-1]) if session.messages else []
+
+        if (
+            base_messages
+            and isinstance(base_messages[-1], AssistantNode)
+            and base_messages[-1].tool_calls
+        ):
+            placeholder = ToolResultNode(
+                id=str(uuid.uuid4()),
+                results={
+                    call_id: {
+                        "status": "completed",
+                        "content": "Sub-task established.",
+                    }
+                    for call_id in base_messages[-1].tool_calls
+                },
+            )
+            base_messages.append(placeholder)
 
         sub_session = SessionCoreImpl(
             session_id=str(uuid.uuid4()),
@@ -145,7 +159,7 @@ class TaskToolProvider:
         )
         sub_session.system_prompt = session.system_prompt
         sub_session.summaries = list(session.summaries)
-        sub_session.messages = fork_messages
+        sub_session.messages = base_messages
         return sub_session
 
     async def task(self, **kwargs: JSONValue) -> JSONValue:

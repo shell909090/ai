@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from little_agent.agent.agent import AgentCore
-from little_agent.agent.nodes import AssistantNode, UserPromptNode
+from little_agent.agent.nodes import AssistantNode, ToolResultNode, UserPromptNode
 from little_agent.agent.session import SessionCore
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
@@ -166,95 +166,88 @@ async def test_fork_for_inheritance_tail_none(simple_agent: AgentCore) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fork_for_inheritance_tail_no_frozen(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance with node lacking frozen uses it as fork point."""
+async def test_fork_for_inheritance_drops_tail_tool_result_node(
+    simple_agent: AgentCore,
+) -> None:
+    """_fork_for_inheritance drops the tail ToolResultNode (the one being written)."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-    node = UserPromptNode(id="n1", prompt="hi")
-    session.messages = [node]
+    user = UserPromptNode(id="u1", prompt="hi")
+    tail = ToolResultNode(id="r1", results={})
+    session.messages = [user, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.messages == [node]
+    # tail ToolResultNode is dropped; user node is kept
+    assert sub.messages == [user]
 
 
 @pytest.mark.asyncio
-async def test_fork_for_inheritance_skips_frozen_nodes(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance skips nodes that have a frozen attribute."""
+async def test_fork_for_inheritance_adds_placeholder_for_tool_calls(
+    simple_agent: AgentCore,
+) -> None:
+    """After dropping tail, a placeholder ToolResultNode is added to close open tool_use."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-
-    # messages: [head(no frozen), mid(frozen=True), tail(frozen=True)]
-    head = UserPromptNode(id="head", prompt="hi")
-    mid = AssistantNode(id="mid", text="mid", frozen=True)
-    tail = AssistantNode(id="tail", text="tail", frozen=True)
-    session.messages = [head, mid, tail]
+    user = UserPromptNode(id="u1", prompt="hi")
+    asst = AssistantNode(
+        id="a1", tool_calls={"call_1": {"tool_name": "task", "arguments": {}}}
+    )
+    tail = ToolResultNode(id="r1", results={})
+    session.messages = [user, asst, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.messages == [head]
+    assert len(sub.messages) == 3
+    assert sub.messages[0] is user
+    assert sub.messages[1] is asst
+    placeholder = sub.messages[2]
+    assert isinstance(placeholder, ToolResultNode)
+    assert "call_1" in placeholder.results
+    assert placeholder.results["call_1"]["status"] == "completed"
 
 
 @pytest.mark.asyncio
-async def test_fork_for_inheritance_partial_frozen(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance stops at first node without frozen attribute."""
+async def test_fork_for_inheritance_no_placeholder_without_tool_calls(
+    simple_agent: AgentCore,
+) -> None:
+    """No placeholder is added when the preceding AssistantNode has no tool_calls."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-
-    # messages: [older(frozen=True), prev(no frozen), tail(frozen=True)]
-    older = AssistantNode(id="older", text="older", frozen=True)
-    prev = UserPromptNode(id="prev", prompt="hi")
-    tail = AssistantNode(id="tail", text="tail", frozen=True)
-    session.messages = [older, prev, tail]
+    user = UserPromptNode(id="u1", prompt="hi")
+    asst = AssistantNode(id="a1", text="reply")
+    tail = ToolResultNode(id="r1", results={})
+    session.messages = [user, asst, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.messages == [older, prev]
+    assert len(sub.messages) == 2
+    assert sub.messages == [user, asst]
 
 
 @pytest.mark.asyncio
-async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance returns empty messages when all nodes have frozen."""
+async def test_fork_for_inheritance_preserves_full_history(
+    simple_agent: AgentCore,
+) -> None:
+    """Full multi-turn history is preserved; only the active ToolResultNode is dropped."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-
-    n1 = AssistantNode(id="n1", text="n1", frozen=True)
-    n2 = AssistantNode(id="n2", text="n2", frozen=True)
-    session.messages = [n1, n2]
+    n1 = UserPromptNode(id="u1", prompt="turn 1")
+    n2 = AssistantNode(id="a1", text="answer 1")
+    n3 = UserPromptNode(id="u2", prompt="turn 2")
+    n4 = AssistantNode(
+        id="a2", tool_calls={"call_x": {"tool_name": "task", "arguments": {}}}
+    )
+    active_result = ToolResultNode(id="r1", results={})
+    session.messages = [n1, n2, n3, n4, active_result]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.messages == []
-
-
-# ---------------------------------------------------------------------------
-# T66: _fork_for_inheritance stops at frozen=False AssistantNode
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_fork_for_inheritance_stops_at_frozen_false(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance stops traversal at the first frozen=False node.
-
-    The loop walks backwards while frozen is True; a frozen=False node causes
-    the loop to stop immediately, and the fork-messages include that very node
-    (not just its predecessor).
-    """
-    provider = TaskToolProvider(simple_agent)
-    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-
-    # messages: [head(frozen=True), middle(frozen=False), tail(frozen=True)]
-    # Walk from tail: frozen=True → continue; middle: frozen=False → stop.
-    # Expected fork-messages include up to and including 'middle'.
-    head = AssistantNode(id="head", text="head", frozen=True)
-    middle = AssistantNode(id="middle", text="middle", frozen=False)
-    tail = AssistantNode(id="tail", text="tail", frozen=True)
-    session.messages = [head, middle, tail]
-
-    sub = await provider._fork_for_inheritance(session)
-
-    # The walker stops at 'middle' (frozen=False) so fork includes [head, middle].
-    assert sub.messages == [head, middle]
+    # n1..n4 kept; active_result dropped; placeholder added for call_x
+    assert sub.messages[:4] == [n1, n2, n3, n4]
+    assert isinstance(sub.messages[4], ToolResultNode)
+    assert sub.messages[4] is not active_result
+    assert "call_x" in sub.messages[4].results
 
 
 # ---------------------------------------------------------------------------

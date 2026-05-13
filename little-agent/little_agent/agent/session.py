@@ -143,8 +143,6 @@ class SessionCore(Session):
             current_turn_id.reset(tid_token)
 
     def append_node(self, node: Node) -> None:
-        if self.messages:
-            self.messages[-1].freeze()
         self.messages.append(node)
 
     def _apply_compress_result(self, summary: str, remaining: list[Node]) -> None:
@@ -177,8 +175,6 @@ class SessionCore(Session):
         """Fork into a new session with a shallow copy of messages and summaries."""
         if self._active_turn:
             raise RuntimeError("Cannot fork session with active turn")
-        if self.messages:
-            self.messages[-1].freeze()
         new_session = SessionCore(
             session_id=str(uuid.uuid4()),
             cwd=self.cwd,
