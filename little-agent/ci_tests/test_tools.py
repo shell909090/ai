@@ -1,4 +1,4 @@
-"""CI integration tests: tool calls (bash, http, edit_file, mcp)."""
+"""CI integration tests: tool calls (bash, http, edit_file, mcp, task)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,11 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.file import EditFileToolProvider
 from little_agent.tools.http import HttpToolProvider
-from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.mcp import MCPStdioProvider
+from little_agent.tools.task import TaskToolProvider
 from tests.mocks import MockClient
 
 from .helpers import build_agent, make_backend, walk_chain
@@ -113,9 +114,7 @@ async def test_mcp_tool(ci_config: dict[str, Any]) -> None:
         tools = ToolManager()
         tools.register(provider)
         client: MockClient = MockClient()
-        agent = AgentCore(
-            client=client, backend=backend, tools=tools, permissions=YesManChecker()
-        )
+        agent = AgentCore(client=client, backend=backend, tools=tools, permissions=YesManChecker())
         session = await agent.new()
 
         sentinel = "mcp-ci-sentinel"
@@ -133,3 +132,29 @@ async def test_mcp_tool(ci_config: dict[str, Any]) -> None:
         assert found, f"MCP echo tool should have returned '{sentinel}' in results"
     finally:
         await provider.stop()
+
+
+@pytest.mark.asyncio
+async def test_task_tool(ci_config: dict[str, Any]) -> None:
+    """Ask the agent to use the task tool; verify a sub-task was executed and returned."""
+    backend = make_backend(ci_config)
+    tools = ToolManager()
+    client: MockClient = MockClient()
+    agent = AgentCore(client=client, backend=backend, tools=tools, permissions=YesManChecker())
+    tools.register(TaskToolProvider(agent))
+    session = await agent.new()
+
+    sentinel = "task-ci-sentinel-xq8z"
+    reason, text = await session.prompt(
+        f"Use the task tool with prompt='Reply with exactly: {sentinel}'. "
+        "Report the sub-task output."
+    )
+
+    assert reason == "end_turn", f"Unexpected stop reason: {reason}"
+
+    chain = walk_chain(session)
+    tool_results = [n for n in chain if isinstance(n, ToolResultNode)]
+    assert tool_results, "Expected at least one task tool call"
+
+    found = any(sentinel in str(r.results) for r in tool_results)
+    assert found, f"task tool result should contain '{sentinel}'"

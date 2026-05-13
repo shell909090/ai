@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from little_agent.agent.tool_setup import load_providers_from_config
+from little_agent.agent.tool_setup import (
+    _import_provider,
+    build_tools,
+    load_providers_from_config,
+    parse_mcp_configs,
+    start_mcp_providers,
+)
 from little_agent.main import _DEFAULT_CONFIG, _deep_merge
 from little_agent.tools.bash import BashToolProvider
 
@@ -135,3 +141,160 @@ def test_default_config_injects_bash() -> None:
     providers, task_enabled = load_providers_from_config(merged)
     assert any(isinstance(p, BashToolProvider) for p in providers)
     assert task_enabled is True
+
+
+# ── _import_provider ─────────────────────────────────────────────────────────
+
+
+def test_import_provider_no_dot_in_path_raises() -> None:
+    """A class path without a dot (no module component) raises ImportError."""
+    with pytest.raises(ImportError, match="Invalid provider class path"):
+        _import_provider("NoDotClass", {})
+
+
+def test_import_provider_class_not_found_raises() -> None:
+    """A valid module but missing class attribute raises ImportError."""
+    fake_mod = MagicMock(spec=[])  # no attributes at all
+    # Make getattr return None for the missing class
+    with patch("importlib.import_module", return_value=fake_mod):
+        with pytest.raises(ImportError, match="Provider class not found"):
+            _import_provider("mypackage.mymod.ReallyMissingClass", {})
+
+
+# ── load_providers_from_config: non-dict tools config ───────────────────────
+
+
+def test_non_dict_tools_config_treated_as_empty() -> None:
+    """Non-dict tools value is silently coerced to empty; returns no providers."""
+    providers, task_enabled = load_providers_from_config({"tools": "not_a_dict"})
+    assert providers == []
+    assert task_enabled is False
+
+
+def test_none_tools_section_treated_as_empty() -> None:
+    """Explicit tools: null is treated as empty config."""
+    providers, task_enabled = load_providers_from_config({"tools": None})
+    assert providers == []
+    assert task_enabled is False
+
+
+# ── build_tools: registration failure ────────────────────────────────────────
+
+
+def test_build_tools_register_failure_warns_and_skips() -> None:
+    """If a provider registration raises ValueError, it is logged and skipped."""
+    from little_agent.agent.tool_manager import ToolManager
+
+    # Pre-fill a ToolManager with BashToolProvider so a second registration conflicts.
+    pre_filled = ToolManager()
+    pre_filled.register(BashToolProvider())
+
+    config = {"tools": {"providers": {"little_agent.tools.bash.BashToolProvider": {}}}}
+
+    with patch("little_agent.agent.tool_setup.logger") as mock_logger:
+        with patch("little_agent.agent.tool_setup.ToolManager", return_value=pre_filled):
+            result_tools, task_enabled = build_tools(config)
+
+    mock_logger.warning.assert_called_once()
+    assert task_enabled is False
+
+
+# ── parse_mcp_configs ────────────────────────────────────────────────────────
+
+
+def test_parse_mcp_configs_no_tools_key() -> None:
+    """No tools: key returns empty list."""
+    assert parse_mcp_configs({}) == []
+
+
+def test_parse_mcp_configs_no_mcp_key() -> None:
+    """tools.mcp absent returns empty list."""
+    assert parse_mcp_configs({"tools": {}}) == []
+
+
+def test_parse_mcp_configs_non_dict_mcp_raises() -> None:
+    """tools.mcp is not a dict raises ValueError."""
+    with pytest.raises(ValueError, match="must be a dict"):
+        parse_mcp_configs({"tools": {"mcp": ["invalid"]}})
+
+
+def test_parse_mcp_configs_server_non_dict_raises() -> None:
+    """MCP server config that is not a dict raises ValueError."""
+    with pytest.raises(ValueError, match="config must be a dict"):
+        parse_mcp_configs({"tools": {"mcp": {"weather": "not-a-dict"}}})
+
+
+def test_parse_mcp_configs_missing_command_raises() -> None:
+    """MCP server config without command raises ValueError."""
+    with pytest.raises(ValueError, match="'command' is required"):
+        parse_mcp_configs({"tools": {"mcp": {"weather": {"env": {}}}}})
+
+
+def test_parse_mcp_configs_non_list_command_raises() -> None:
+    """MCP server config with non-list command raises ValueError."""
+    with pytest.raises(ValueError, match="must be a list of strings"):
+        parse_mcp_configs({"tools": {"mcp": {"weather": {"command": "python server.py"}}}})
+
+
+def test_parse_mcp_configs_non_string_command_items_raises() -> None:
+    """MCP server config with non-string command items raises ValueError."""
+    with pytest.raises(ValueError, match="must be a list of strings"):
+        parse_mcp_configs({"tools": {"mcp": {"weather": {"command": ["python", 42]}}}})
+
+
+def test_parse_mcp_configs_valid_returns_pairs() -> None:
+    """Valid MCP config returns correct (name, cfg) tuples."""
+    config = {
+        "tools": {
+            "mcp": {
+                "weather": {"command": ["python", "server.py"]},
+                "fs": {"command": ["node", "fs.js"], "env": {"K": "V"}},
+            }
+        }
+    }
+    result = parse_mcp_configs(config)
+    assert len(result) == 2
+    names = [name for name, _ in result]
+    assert "weather" in names
+    assert "fs" in names
+
+
+# ── start_mcp_providers ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_start_mcp_providers_start_failure_logs_and_skips() -> None:
+    """A provider that fails to start is logged; other providers are unaffected."""
+    from little_agent.agent.tool_manager import ToolManager
+
+    failing_provider = MagicMock()
+    failing_provider.start = AsyncMock(side_effect=Exception("connect failed"))
+
+    tools = ToolManager()
+
+    # MCPStdioProvider is imported inside start_mcp_providers, so patch its source module.
+    with patch("little_agent.tools.mcp.MCPStdioProvider", return_value=failing_provider):
+        with patch("little_agent.agent.tool_setup.logger") as mock_logger:
+            providers = await start_mcp_providers(
+                [("failing", {"command": ["python", "server.py"]})], tools
+            )
+
+    assert providers == []
+    mock_logger.exception.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_start_mcp_providers_success_registers_provider() -> None:
+    """A provider that starts successfully is registered in tools and returned."""
+    from little_agent.agent.tool_manager import ToolManager
+
+    working_provider = MagicMock()
+    working_provider.start = AsyncMock(return_value=None)
+    working_provider.__iter__ = MagicMock(return_value=iter([]))  # empty ToolProvider
+
+    tools = ToolManager()
+
+    with patch("little_agent.tools.mcp.MCPStdioProvider", return_value=working_provider):
+        providers = await start_mcp_providers([("ok", {"command": ["python", "server.py"]})], tools)
+
+    assert working_provider in providers

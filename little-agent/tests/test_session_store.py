@@ -308,10 +308,14 @@ def test_iter_yields_search_session(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_search_session_fn_returns_list(tmp_path: Path) -> None:
     """Calling search_session_fn returns a list (empty when no data exists)."""
+    from unittest.mock import MagicMock
+
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
     items = list(store)
     _, _, fn = items[0]
-    result = await fn({"query": "test"})
+    mock_session = MagicMock()
+    mock_session.id = "no-such-session"
+    result = await fn({"query": "test"}, mock_session)
     assert isinstance(result, list)
 
 

@@ -26,6 +26,7 @@ def _is_valid_session_id(session_id: str) -> bool:
     """Return True only for canonical UUID v4 strings."""
     return bool(_UUID4_RE.match(session_id))
 
+
 _MAX_SESSIONS = 100
 
 

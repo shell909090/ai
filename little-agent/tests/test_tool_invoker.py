@@ -117,7 +117,7 @@ async def test_cancel_before_gather_marks_tools_cancelled_and_skips_execution() 
 
     class _RecordingToolProvider:
         def __iter__(self):  # type: ignore[override]
-            async def _echo(args: dict[str, JSONValue]) -> JSONValue:
+            async def _echo(args: dict[str, JSONValue], session: object) -> JSONValue:
                 call_log.append("echo_called")
                 return args.get("text", "")
 
@@ -256,7 +256,7 @@ async def test_tool_result_truncated_in_completed_update() -> None:
 
     class _BigOutputProvider:
         def __iter__(self):  # type: ignore[override]
-            async def _big(args: dict[str, JSONValue]) -> JSONValue:
+            async def _big(args: dict[str, JSONValue], session: object) -> JSONValue:
                 return big_output
 
             yield (

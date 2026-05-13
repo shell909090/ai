@@ -8,9 +8,9 @@ import os
 import signal
 from collections.abc import Iterator
 
-from little_agent.types import JSONValue
+from little_agent.types import AsyncToolFn, JSONValue, Session
 
-from .protocol import AsyncToolFn, ToolArgDef, ToolDef
+from .protocol import ToolArgDef, ToolDef
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class BashToolProvider:
         """Yield the single bash tool triple."""
         yield ("bash", self._tool_def, self._dispatch)
 
-    async def _dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
+    async def _dispatch(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
         """Execute a shell command and return stdout/stderr."""
         command = args.get("command", "")
         if not isinstance(command, str):

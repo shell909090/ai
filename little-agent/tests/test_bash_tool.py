@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,6 +17,14 @@ def _make_manager() -> ToolManager:
     return mgr
 
 
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Minimal session mock for direct tool dispatch calls."""
+    s = MagicMock()
+    s.id = "mock-session"
+    return s
+
+
 def test_bash_list() -> None:
     """Test BashToolProvider exposes bash tool via __iter__."""
     provider = BashToolProvider()
@@ -25,31 +34,31 @@ def test_bash_list() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bash_echo() -> None:
+async def test_bash_echo(mock_session: MagicMock) -> None:
     """Test bash tool executes echo command."""
     mgr = _make_manager()
-    result = await mgr["bash"]({"command": "echo hello"})
+    result = await mgr["bash"]({"command": "echo hello"}, mock_session)
     assert isinstance(result, dict)
     assert "hello" in result["stdout"]
     assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
-async def test_bash_stderr_included() -> None:
+async def test_bash_stderr_included(mock_session: MagicMock) -> None:
     """Test bash tool includes stderr in output."""
     mgr = _make_manager()
-    result = await mgr["bash"]({"command": "echo error >&2"})
+    result = await mgr["bash"]({"command": "echo error >&2"}, mock_session)
     assert isinstance(result, dict)
     assert "error" in result["stderr"]
     assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
-async def test_bash_invalid_command_type_raises() -> None:
+async def test_bash_invalid_command_type_raises(mock_session: MagicMock) -> None:
     """Test bash tool with non-string command raises ValueError."""
     mgr = _make_manager()
     with pytest.raises(ValueError, match="command must be a string"):
-        await mgr["bash"]({"command": 123})
+        await mgr["bash"]({"command": 123}, mock_session)
 
 
 def test_bash_unknown_tool_raises() -> None:
@@ -60,37 +69,38 @@ def test_bash_unknown_tool_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bash_timeout() -> None:
+async def test_bash_timeout(mock_session: MagicMock) -> None:
     """Test bash tool times out on long-running command."""
     provider = BashToolProvider(timeout=2)
     mgr = ToolManager()
     mgr.register(provider)
-    result = await mgr["bash"]({"command": "sleep 60"})
+    result = await mgr["bash"]({"command": "sleep 60"}, mock_session)
     assert isinstance(result, dict)
     assert "timed out" in result["stderr"]
     assert result["returncode"] == -1
 
 
 @pytest.mark.asyncio
-async def test_bash_cwd() -> None:
+async def test_bash_cwd(mock_session: MagicMock) -> None:
     """Test bash tool uses custom working directory."""
     import os
     import tempfile
 
     mgr = _make_manager()
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = await mgr["bash"]({"command": "pwd", "cwd": tmpdir})
+        result = await mgr["bash"]({"command": "pwd", "cwd": tmpdir}, mock_session)
         assert isinstance(result, dict)
         assert os.path.realpath(tmpdir) in os.path.realpath(result["stdout"].strip())
         assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
-async def test_bash_env() -> None:
+async def test_bash_env(mock_session: MagicMock) -> None:
     """Test bash tool passes custom environment variables merged with system env."""
     mgr = _make_manager()
     result = await mgr["bash"](
-        {"command": "echo $LITTLE_AGENT_TEST_VAR", "env": {"LITTLE_AGENT_TEST_VAR": "hello123"}}
+        {"command": "echo $LITTLE_AGENT_TEST_VAR", "env": {"LITTLE_AGENT_TEST_VAR": "hello123"}},
+        mock_session,
     )
     assert isinstance(result, dict)
     assert "hello123" in result["stdout"]
@@ -98,20 +108,20 @@ async def test_bash_env() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bash_stdin() -> None:
+async def test_bash_stdin(mock_session: MagicMock) -> None:
     """Test bash tool passes stdin to process."""
     mgr = _make_manager()
-    result = await mgr["bash"]({"command": "cat", "stdin": "hello from stdin"})
+    result = await mgr["bash"]({"command": "cat", "stdin": "hello from stdin"}, mock_session)
     assert isinstance(result, dict)
     assert "hello from stdin" in result["stdout"]
     assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
-async def test_bash_backward_compat_no_new_params() -> None:
+async def test_bash_backward_compat_no_new_params(mock_session: MagicMock) -> None:
     """Test bash tool still works without the new optional params."""
     mgr = _make_manager()
-    result = await mgr["bash"]({"command": "echo compat"})
+    result = await mgr["bash"]({"command": "echo compat"}, mock_session)
     assert isinstance(result, dict)
     assert "compat" in result["stdout"]
     assert result["returncode"] == 0
@@ -138,7 +148,9 @@ def test_bash_tool_lists_new_params() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bash_env_dangerous_vars_filtered(caplog: pytest.LogCaptureFixture) -> None:
+async def test_bash_env_dangerous_vars_filtered(
+    caplog: pytest.LogCaptureFixture, mock_session: MagicMock
+) -> None:
     """Dangerous env vars (e.g. LD_PRELOAD) are stripped; safe vars pass through.
 
     The bash tool must:
@@ -152,7 +164,8 @@ async def test_bash_env_dangerous_vars_filtered(caplog: pytest.LogCaptureFixture
             {
                 "command": "echo LD=${LD_PRELOAD:-ABSENT}; echo MY=${MY_VAR:-ABSENT}",
                 "env": {"LD_PRELOAD": "/evil.so", "MY_VAR": "ok"},
-            }
+            },
+            mock_session,
         )
 
     assert isinstance(result, dict)
@@ -204,25 +217,27 @@ def test_bash_tool_lists_timeout_param() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bash_per_call_timeout_override() -> None:
+async def test_bash_per_call_timeout_override(mock_session: MagicMock) -> None:
     """Per-call timeout arg (within max_timeout) is used instead of default."""
     provider = BashToolProvider(timeout=30, max_timeout=60)
     mgr = ToolManager()
     mgr.register(provider)
     # Passes a timeout of 5s; sleep 0.1s is well within that
-    result = await mgr["bash"]({"command": "echo ok", "timeout": 5})
+    result = await mgr["bash"]({"command": "echo ok", "timeout": 5}, mock_session)
     assert isinstance(result, dict)
     assert result["returncode"] == 0
 
 
 @pytest.mark.asyncio
-async def test_bash_timeout_clamped_to_max(caplog: pytest.LogCaptureFixture) -> None:
+async def test_bash_timeout_clamped_to_max(
+    caplog: pytest.LogCaptureFixture, mock_session: MagicMock
+) -> None:
     """Per-call timeout exceeding max_timeout is clamped with a WARNING."""
     provider = BashToolProvider(timeout=10, max_timeout=20)
     mgr = ToolManager()
     mgr.register(provider)
     with caplog.at_level(logging.WARNING, logger="little_agent.tools.bash"):
-        result = await mgr["bash"]({"command": "echo clamped", "timeout": 9999})
+        result = await mgr["bash"]({"command": "echo clamped", "timeout": 9999}, mock_session)
     assert isinstance(result, dict)
     assert result["returncode"] == 0
     assert any("clamping" in r.message or "max_timeout" in r.message for r in caplog.records), (
@@ -231,12 +246,12 @@ async def test_bash_timeout_clamped_to_max(caplog: pytest.LogCaptureFixture) -> 
 
 
 @pytest.mark.asyncio
-async def test_bash_config_timeout_kills_process() -> None:
+async def test_bash_config_timeout_kills_process(mock_session: MagicMock) -> None:
     """BashToolProvider with low timeout kills long-running process."""
     provider = BashToolProvider(timeout=1, max_timeout=10)
     mgr = ToolManager()
     mgr.register(provider)
-    result = await mgr["bash"]({"command": "sleep 60"})
+    result = await mgr["bash"]({"command": "sleep 60"}, mock_session)
     assert isinstance(result, dict)
     assert "timed out" in result["stderr"]
     assert result["returncode"] == -1

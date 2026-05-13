@@ -8,10 +8,20 @@ import pytest
 
 from little_agent.agent.permissions import YesManChecker
 from little_agent.backends.build import _build_backend
-from little_agent.frontends.build import build_permissions as _load_permissions
+from little_agent.frontends.build import (
+    build_client,
+    build_hooks,
+    run_frontend,
+)
+from little_agent.frontends.build import (
+    build_permissions as _load_permissions,
+)
 from little_agent.main import (
     _DEFAULT_CONFIG,
+    _ContextFilter,
     _deep_merge,
+    _load_session_store,
+    _redirect_acp_logging,
     load_config,
     main,
     setup_logging,
@@ -494,3 +504,282 @@ class TestDeepMerge:
         override: dict[str, Any] = {"a": {"nested": 2}}
         _deep_merge(base, override)
         assert override == {"a": {"nested": 2}}
+
+
+# ── frontends/build.py ──────────────────────────────────────────────────────
+
+
+class TestBuildClient:
+    def test_build_client_web_explicit_sessions_dir(self) -> None:
+        """WebClient is built when frontend.type=web with an explicit sessions_dir."""
+        config = {"frontend": {"type": "web", "sessions_dir": "/tmp/test_sessions"}}
+        with patch("little_agent.frontends.build.WebClient") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            client, frontend_type = build_client(config, session_store=None)
+        assert frontend_type == "web"
+        mock_cls.assert_called_once()
+        kwargs = mock_cls.call_args.kwargs
+        assert "/tmp/test_sessions" in str(kwargs["sessions_dir"])
+
+    def test_build_client_web_default_sessions_dir(self) -> None:
+        """WebClient is built with the default sessions_dir when none is specified."""
+        config = {"frontend": {"type": "web"}}
+        with patch("little_agent.frontends.build.WebClient") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            client, frontend_type = build_client(config, session_store=None)
+        assert frontend_type == "web"
+        mock_cls.assert_called_once()
+
+    def test_build_client_acp(self) -> None:
+        """AcpClient is built when frontend.type=acp."""
+        config = {"frontend": {"type": "acp"}}
+        with patch("little_agent.frontends.build.AcpClient") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            client, frontend_type = build_client(config, session_store=None)
+        assert frontend_type == "acp"
+        mock_cls.assert_called_once()
+
+
+class TestBuildHooks:
+    def test_build_hooks_deprecated_loggers_key_raises(self) -> None:
+        """Legacy loggers: key raises ValueError with migration hint."""
+        with pytest.raises(ValueError, match="hooks"):
+            build_hooks({"loggers": [{"type": "file"}]})
+
+    def test_build_hooks_none_returns_empty(self) -> None:
+        """No hooks: key returns empty list."""
+        assert build_hooks({}) == []
+
+    def test_build_hooks_non_list_warns_and_returns_empty(self) -> None:
+        """Non-list hooks config logs a warning and returns empty list."""
+        with patch("little_agent.frontends.build.logger") as mock_logger:
+            result = build_hooks({"hooks": "invalid"})
+        assert result == []
+        mock_logger.warning.assert_called_once()
+
+    def test_build_hooks_unknown_type_raises(self) -> None:
+        """Dict item with any type in hooks: raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown hook type"):
+            build_hooks({"hooks": [{"type": "file_logger"}]})
+
+    def test_build_hooks_list_with_no_dicts_returns_empty(self) -> None:
+        """A hooks list containing only non-dict items returns empty (no valid hooks)."""
+        assert build_hooks({"hooks": ["some_string", 42]}) == []
+
+
+class TestRunFrontend:
+    @pytest.mark.asyncio
+    async def test_run_frontend_web_default_port(self) -> None:
+        """run_frontend calls client.run with default host/port for web."""
+        mock_client = AsyncMock()
+        mock_agent = MagicMock()
+        config: dict[str, Any] = {"frontend": {"type": "web"}}
+        await run_frontend(mock_client, mock_agent, config, "web", None)
+        mock_client.run.assert_called_once_with(mock_agent, host="127.0.0.1", port=8080)
+
+    @pytest.mark.asyncio
+    async def test_run_frontend_web_explicit_host_port(self) -> None:
+        """run_frontend passes explicit host and port to client.run for web."""
+        mock_client = AsyncMock()
+        mock_agent = MagicMock()
+        config: dict[str, Any] = {"frontend": {"type": "web", "host": "0.0.0.0", "port": 9090}}
+        await run_frontend(mock_client, mock_agent, config, "web", None)
+        mock_client.run.assert_called_once_with(mock_agent, host="0.0.0.0", port=9090)
+
+    @pytest.mark.asyncio
+    async def test_run_frontend_acp(self) -> None:
+        """run_frontend calls client.run(agent) for non-cli, non-web frontend."""
+        mock_client = AsyncMock()
+        mock_agent = MagicMock()
+        await run_frontend(mock_client, mock_agent, {}, "acp", None)
+        mock_client.run.assert_called_once_with(mock_agent)
+
+
+# ── main.py: _ContextFilter / load_config / _load_session_store / _redirect ─
+
+
+def test_context_filter_injects_fields() -> None:
+    """_ContextFilter.filter injects session_id and turn_id from ContextVars."""
+    import logging
+
+    from little_agent.agent.context import current_session_id, current_turn_id
+
+    token_s = current_session_id.set("test-session")
+    token_t = current_turn_id.set("test-turn")
+    try:
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="",
+            args=(),
+            exc_info=None,
+        )
+        f = _ContextFilter()
+        result = f.filter(record)
+        assert result is True
+        assert record.session_id == "test-session"
+        assert record.turn_id == "test-turn"
+    finally:
+        current_session_id.reset(token_s)
+        current_turn_id.reset(token_t)
+
+
+def test_load_config_raises_for_non_mapping(tmp_path: Path) -> None:
+    """load_config raises ValueError when YAML is not a mapping."""
+    bad_yaml = tmp_path / "bad.yaml"
+    bad_yaml.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="YAML mapping"):
+        load_config(bad_yaml)
+
+
+def test_redirect_acp_logging_stdout_to_stderr() -> None:
+    """_redirect_acp_logging redirects stdout handlers and null-stream handlers to stderr."""
+    config: dict[str, Any] = {
+        "logging": {
+            "handlers": {
+                "console": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout"},
+                "null_stream": {"class": "logging.StreamHandler", "stream": None},
+            }
+        }
+    }
+    _redirect_acp_logging(config)
+    assert config["logging"]["handlers"]["console"]["stream"] == "ext://sys.stderr"
+    assert config["logging"]["handlers"]["null_stream"]["stream"] == "ext://sys.stderr"
+
+
+def test_redirect_acp_logging_explicit_stderr_unchanged() -> None:
+    """_redirect_acp_logging leaves handlers already using stderr unchanged."""
+    config: dict[str, Any] = {
+        "logging": {
+            "handlers": {
+                "h": {"class": "logging.StreamHandler", "stream": "ext://sys.stderr"},
+            }
+        }
+    }
+    _redirect_acp_logging(config)
+    assert config["logging"]["handlers"]["h"]["stream"] == "ext://sys.stderr"
+
+
+def test_load_session_store_explicit_dict_config() -> None:
+    """_load_session_store returns a SessionJSONLStore when session_store: is a dict."""
+    from little_agent.agent.session_store import SessionJSONLStore
+
+    config: dict[str, Any] = {
+        "session_store": {
+            "sessions_dir": "/tmp/sessions",
+            "filename_template": "{session_id}.jsonl",
+        }
+    }
+    store = _load_session_store(config, "cli", {})
+    assert isinstance(store, SessionJSONLStore)
+
+
+def test_load_session_store_auto_inject_for_web() -> None:
+    """_load_session_store auto-creates a store for web frontend with no session_store: key."""
+    from little_agent.agent.session_store import SessionJSONLStore
+
+    config: dict[str, Any] = {}  # no session_store key
+    store = _load_session_store(config, "web", {})
+    assert isinstance(store, SessionJSONLStore)
+
+
+def test_load_session_store_returns_none_for_cli() -> None:
+    """_load_session_store returns None for cli frontend with no session_store: key."""
+    config: dict[str, Any] = {}
+    store = _load_session_store(config, "cli", {})
+    assert store is None
+
+
+def test_main_memory_key_raises() -> None:
+    """Legacy memory: config key raises ValueError with migration hint."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["memory"] = {}
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.backends.build.OpenAIBackend"):
+                with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                    mock_parse.return_value = MagicMock(
+                        config=Path("config.yaml"), loglevel=None, mode=None, prompt=None
+                    )
+                    with pytest.raises(ValueError, match="memory"):
+                        main()
+
+
+def test_main_max_tool_result_chars_zero_raises() -> None:
+    """agent.max_tool_result_chars=0 raises ValueError."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["agent"] = {"compress_threshold": 0.75, "max_tool_result_chars": 0}
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                    mock_parse.return_value = MagicMock(
+                        config=Path("config.yaml"), loglevel=None, mode=None, prompt=None
+                    )
+                    with pytest.raises(ValueError, match="max_tool_result_chars"):
+                        main()
+
+
+def test_main_with_session_store_registers_in_hooks_and_tools() -> None:
+    """session_store: config adds the store to both hooks and tools."""
+    mock_config = _mock_config({"api_key": "k"})
+    mock_config["session_store"] = {"sessions_dir": "/tmp/ss"}
+
+    mock_tools = MagicMock()
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("little_agent.main.AgentCore") as mock_agent_cls:
+                    mock_agent = MagicMock()
+                    mock_agent_cls.return_value = mock_agent
+                    with patch("little_agent.frontends.build.CliClient") as mock_client_cls:
+                        mock_client = MagicMock()
+                        mock_client.run = AsyncMock(return_value=None)
+                        mock_client_cls.return_value = mock_client
+                        with patch(
+                            "little_agent.main.build_tools",
+                            return_value=(mock_tools, False),
+                        ):
+                            with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                                mock_parse.return_value = MagicMock(
+                                    config=Path("config.yaml"),
+                                    loglevel=None,
+                                    mode=None,
+                                    prompt=None,
+                                )
+                                main()
+                        # session_store should have been registered in tools (line 215)
+                        assert mock_tools.register.called
+
+
+def test_main_mode_override_sets_frontend_type() -> None:
+    """--mode acp overrides frontend.type in config."""
+    mock_config = _mock_config({"api_key": "k"})
+
+    with patch("little_agent.main.load_config", return_value=mock_config):
+        with patch("little_agent.main.setup_logging"):
+            with patch("little_agent.backends.build.OpenAIBackend") as mock_backend_cls:
+                mock_backend = MagicMock()
+                mock_backend.context_window = 128000
+                mock_backend_cls.return_value = mock_backend
+                with patch("little_agent.frontends.build.AcpClient") as mock_acp_cls:
+                    mock_acp = MagicMock()
+                    mock_acp.run = AsyncMock(return_value=None)
+                    mock_acp_cls.return_value = mock_acp
+                    with patch("argparse.ArgumentParser.parse_args") as mock_parse:
+                        mock_parse.return_value = MagicMock(
+                            config=Path("config.yaml"), loglevel=None, mode="acp", prompt=None
+                        )
+                        main()
+                mock_acp_cls.assert_called_once()

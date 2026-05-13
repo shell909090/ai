@@ -7,9 +7,9 @@ from collections.abc import Iterator
 
 import aiohttp
 
-from little_agent.types import JSONValue
+from little_agent.types import AsyncToolFn, JSONValue, Session
 
-from .protocol import AsyncToolFn, ToolArgDef, ToolDef
+from .protocol import ToolArgDef, ToolDef
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class HttpToolProvider:
         """Yield the single http tool triple."""
         yield ("http", self._TOOL_DEF, self._dispatch)
 
-    async def _dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
+    async def _dispatch(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
         """Send an HTTP request and return status, headers and body."""
         url = args.get("url")
         if not isinstance(url, str):
@@ -56,8 +56,8 @@ class HttpToolProvider:
         timeout: float = float(timeout_val) if isinstance(timeout_val, (int, float)) else 30.0
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.request(
+            async with aiohttp.ClientSession() as http_session:
+                async with http_session.request(
                     method,
                     url,
                     headers=headers,

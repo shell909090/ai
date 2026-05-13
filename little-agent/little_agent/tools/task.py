@@ -10,13 +10,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from little_agent.agent.nodes import AssistantNode, ToolResultNode
-from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
-from little_agent.types import JSONValue
+from little_agent.tools.protocol import ToolArgDef, ToolDef
+from little_agent.types import AsyncToolFn, JSONValue, Session
 
 if TYPE_CHECKING:
     from little_agent.agent.agent import AgentCore
-    from little_agent.agent.session import SessionCore
-    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +27,7 @@ class _TaskSpec:
     task_id: int | None
     depends: list[int]
     kwargs: dict[str, JSONValue]
+    session: Session
     result_future: asyncio.Future[JSONValue]
 
 
@@ -116,15 +115,15 @@ class TaskToolProvider:
         """Yield the single task tool triple."""
         yield ("task", self._TOOL_DEF, self._task_dispatch)
 
-    async def _task_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
-        return await self.task(**args)
+    async def _task_dispatch(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
+        return await self.task(args, session)
 
     def _get_allowed_tools(self, tool_names: Sequence[str] | None) -> list[str]:
         """Return allowed tool names for a sub-task, always excluding task."""
         names = set(tool_names) if tool_names is not None else None
         return list(self._agent.tools.desc_tool(names, exclude={"task"}).keys())
 
-    async def _fork_for_inheritance(self, session: SessionCore) -> Session:
+    async def _fork_for_inheritance(self, session: Session) -> Session:
         """Fork a new session sharing history excluding the active ToolResultNode.
 
         Drops messages[-1] (the ToolResultNode currently being filled for this turn),
@@ -162,14 +161,15 @@ class TaskToolProvider:
         sub_session.messages = base_messages
         return sub_session
 
-    async def task(self, **kwargs: JSONValue) -> JSONValue:
+    async def task(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
+        """Register a sub-task and wait for its result via the scheduler."""
         # Registration is fully synchronous so that all task coroutines launched
         # by the same asyncio.gather complete registration before the scheduler
         # (appended to the event-loop queue after these coroutines) starts running.
-        task_id_raw = kwargs.get("id")
+        task_id_raw = args.get("id")
         task_id = int(task_id_raw) if isinstance(task_id_raw, (int, float)) else None
 
-        depends_raw = kwargs.get("depends")
+        depends_raw = args.get("depends")
         depends = (
             [int(d) for d in depends_raw if isinstance(d, (int, float))]
             if isinstance(depends_raw, list)
@@ -182,7 +182,8 @@ class TaskToolProvider:
         spec = _TaskSpec(
             task_id=task_id,
             depends=depends,
-            kwargs=dict(kwargs),
+            kwargs=dict(args),
+            session=session,
             result_future=asyncio.get_running_loop().create_future(),
         )
         self._pending.append(spec)
@@ -234,15 +235,7 @@ class TaskToolProvider:
         inheritance = bool(kwargs.get("inheritance", False))
 
         if inheritance:
-            from little_agent.agent.context import current_session
-
-            session = current_session.get()
-            if session is None:
-                return {
-                    "status": "failed",
-                    "output": "inheritance=true but no current session context",
-                }
-            sub_session = await self._fork_for_inheritance(session)
+            sub_session = await self._fork_for_inheritance(spec.session)
         else:
             sub_session = await self._agent.new()
 

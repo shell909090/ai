@@ -8,8 +8,8 @@ from typing import Any
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import Backend, BackendTurnResult
-from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef, ToolProvider
-from little_agent.types import Client, JSONValue, Session, SessionUpdate
+from little_agent.tools.protocol import ToolArgDef, ToolDef, ToolProvider
+from little_agent.types import AsyncToolFn, Client, JSONValue, Session, SessionUpdate
 
 # Type alias for a custom generate function
 GenerateFn = Callable[[object], AsyncIterator[SessionUpdate | BackendTurnResult]]
@@ -100,7 +100,9 @@ class MockToolProvider:
         """Yield (name, tooldef, fn) triples."""
         for name, tooldef in self._tools.items():
 
-            async def _fn(args: dict[str, JSONValue], _name: str = name) -> JSONValue:
+            async def _fn(
+                args: dict[str, JSONValue], session: Session, _name: str = name
+            ) -> JSONValue:
                 if _name in self._errors:
                     raise ValueError(f"Tool {_name} failed")
                 if _name in self._responses:
@@ -137,10 +139,10 @@ class BuiltinToolProvider:
             self._add,
         )
 
-    async def _echo(self, args: dict[str, JSONValue]) -> JSONValue:
+    async def _echo(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
         return args.get("text", "")
 
-    async def _add(self, args: dict[str, JSONValue]) -> JSONValue:
+    async def _add(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
         a = args.get("a", 0)
         b = args.get("b", 0)
         if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):

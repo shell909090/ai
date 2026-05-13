@@ -9,13 +9,45 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import BlackWhiteListChecker, YesManChecker
-from little_agent.tools.bash import BashToolProvider
 from little_agent.agent.tool_manager import ToolManager
+from little_agent.tools.bash import BashToolProvider
 from tests.mocks import MockClient
 
 from .helpers import make_backend, walk_chain
 
 pytestmark = [pytest.mark.ci, pytest.mark.timeout(120)]
+
+
+@pytest.mark.asyncio
+async def test_whitelist_allow(ci_config: dict[str, Any]) -> None:
+    """Whitelist-only config allows bash; verify bash tool result has status=completed."""
+    backend = make_backend(ci_config)
+    tools = ToolManager()
+    tools.register(BashToolProvider())
+    # blacklist empty, whitelist=["bash"] → bash is explicitly allowed
+    permissions = BlackWhiteListChecker(
+        blacklist=[], whitelist=["bash"], next_checker=YesManChecker()
+    )
+    client: MockClient = MockClient()
+    agent = AgentCore(client=client, backend=backend, tools=tools, permissions=permissions)
+    session = await agent.new()
+
+    reason, _text = await session.prompt(
+        "You MUST call the bash tool to run `echo whitelist-test`. Call it now."
+    )
+
+    assert reason == "end_turn"
+
+    chain = walk_chain(session)
+    tool_results = [n for n in chain if isinstance(n, ToolResultNode)]
+    assert tool_results, "AI should have attempted the bash tool call"
+
+    allowed = any(
+        result.get("status") == "completed" and "whitelist-test" in str(result.get("content", ""))
+        for r in tool_results
+        for result in r.results.values()
+    )
+    assert allowed, "bash tool result should be completed with 'whitelist-test' in output"
 
 
 @pytest.mark.asyncio
@@ -43,8 +75,7 @@ async def test_blackwhitelist_deny(ci_config: dict[str, Any]) -> None:
     assert tool_results, "AI should have attempted the bash tool call"
 
     denied = any(
-        result.get("status") == "failed"
-        and "Permission denied" in str(result.get("content", ""))
+        result.get("status") == "failed" and "Permission denied" in str(result.get("content", ""))
         for r in tool_results
         for result in r.results.values()
     )

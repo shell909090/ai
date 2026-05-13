@@ -9,8 +9,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
-from little_agent.types import Hook, JSONValue
+from little_agent.tools.protocol import ToolArgDef, ToolDef
+from little_agent.types import AsyncToolFn, Hook, JSONValue, Session
 
 if TYPE_CHECKING:
     from little_agent.types import Session
@@ -352,14 +352,11 @@ class SessionJSONLStore(Hook):
     def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
         """Yield (name, tooldef, fn) triples for registration."""
 
-        async def search_session_fn(args: dict[str, JSONValue]) -> JSONValue:
-            from little_agent.agent.context import current_session_id
-
-            session_id = current_session_id.get("-")
+        async def search_session_fn(args: dict[str, JSONValue], session: Session) -> JSONValue:
             query = str(args.get("query", ""))
             kind = str(args.get("kind", "turn"))
             limit_raw = args.get("limit", 5)
             limit = int(limit_raw) if isinstance(limit_raw, (int, float)) else 5
-            return await self._search(session_id, query=query, kind=kind, limit=limit)
+            return await self._search(session.id, query=query, kind=kind, limit=limit)
 
         yield ("search_session", _SEARCH_TOOLDEF, search_session_fn)

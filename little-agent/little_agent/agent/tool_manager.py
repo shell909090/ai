@@ -17,8 +17,8 @@ import uuid
 from typing import TYPE_CHECKING
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.tools.protocol import AsyncToolFn, ToolDef, ToolMap, ToolProvider
-from little_agent.types import JSONValue, SessionUpdate
+from little_agent.tools.protocol import ToolDef, ToolMap, ToolProvider
+from little_agent.types import AsyncToolFn, JSONValue, SessionUpdate
 
 from .nodes import AssistantNode, ToolResultNode
 
@@ -113,8 +113,6 @@ async def _run_tool_gather(
     tool_result_node: ToolResultNode,
 ) -> tuple[list[BackendToolCall], list[JSONValue | BaseException]]:
     """Execute tools via gather, or skip all if already cancelled."""
-    from little_agent.agent.context import current_session
-
     if session.is_cancel_requested:
         for tc in allowed_calls:
             tool_result_node.results[tc.call_id] = {
@@ -123,19 +121,12 @@ async def _run_tool_gather(
             }
         return [], []
 
-    token = current_session.set(session)
-    try:
+    async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
+        return await session.agent.tools[name](args, session)
 
-        async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
-            return await session.agent.tools[name](args)
-
-        tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
-        results: list[JSONValue | BaseException] = await asyncio.gather(
-            *tasks, return_exceptions=True
-        )
-        return allowed_calls, results
-    finally:
-        current_session.reset(token)
+    tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
+    results: list[JSONValue | BaseException] = await asyncio.gather(*tasks, return_exceptions=True)
+    return allowed_calls, results
 
 
 async def _invoke_tools(

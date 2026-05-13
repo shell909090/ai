@@ -291,3 +291,80 @@ async def test_permission_denies_when_client_rejects() -> None:
     update = updates[0]
     assert update.data["status"] == "failed"
     assert "Permission denied" in str(update.data.get("content", ""))
+
+
+@pytest.mark.asyncio
+async def test_permission_client_as_terminal_allows_tool() -> None:
+    """permissions=None → client is used as terminal; default MockClient allows → tool runs."""
+    client = MockClient()
+    provider = BuiltinToolProvider()
+
+    script = [
+        BackendTurnResult(
+            output_text="",
+            tool_calls=[BackendToolCall(call_id="a1", tool_name="echo", arguments={"text": "hi"})],
+            finish_reason="tool_call",
+        ),
+        BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
+    ]
+    backend = MockBackend(script=script)
+    from little_agent.agent.agent import AgentCore
+    from little_agent.agent.tool_manager import ToolManager
+
+    tool_mgr = ToolManager()
+    tool_mgr.register(provider)
+    # permissions=None → AgentCore defaults to client as terminal
+    agent = AgentCore(client=client, backend=backend, tools=tool_mgr, permissions=None)
+    session = await agent.new()
+
+    await session.prompt("hello")
+
+    updates = [
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "a1"
+    ]
+    assert updates, "Expected a tool_call_update for call_id 'a1'"
+    assert updates[0].data["status"] == "completed"
+    assert updates[0].data["content"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_permission_client_as_terminal_denies_tool() -> None:
+    """permissions=None → client is used as terminal; client that denies → Permission denied."""
+
+    class _DenyingClient(MockClient):
+        async def request_permission(
+            self,
+            session: object,
+            kind: str,
+            payload: dict[str, JSONValue],
+        ) -> bool:
+            return False
+
+    client = _DenyingClient()
+    provider = BuiltinToolProvider()
+
+    script = [
+        BackendTurnResult(
+            output_text="",
+            tool_calls=[BackendToolCall(call_id="b1", tool_name="echo", arguments={"text": "hi"})],
+            finish_reason="tool_call",
+        ),
+        BackendTurnResult(output_text="done", tool_calls=[], finish_reason="completed"),
+    ]
+    backend = MockBackend(script=script)
+    from little_agent.agent.agent import AgentCore
+    from little_agent.agent.tool_manager import ToolManager
+
+    tool_mgr = ToolManager()
+    tool_mgr.register(provider)
+    agent = AgentCore(client=client, backend=backend, tools=tool_mgr, permissions=None)
+    session = await agent.new()
+
+    await session.prompt("hello")
+
+    updates = [
+        u for u in client.updates if u.type == "tool_call_update" and u.data.get("call_id") == "b1"
+    ]
+    assert updates, "Expected a tool_call_update for call_id 'b1'"
+    assert updates[0].data["status"] == "failed"
+    assert "Permission denied" in str(updates[0].data.get("content", ""))

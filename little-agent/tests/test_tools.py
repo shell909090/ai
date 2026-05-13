@@ -1,5 +1,7 @@
 """Tests for tool manager and providers."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from little_agent.agent.tool_manager import ToolManager
@@ -8,8 +10,16 @@ from little_agent.tools.protocol import ToolMap
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
 
 
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Minimal session mock for direct tool dispatch calls."""
+    s = MagicMock()
+    s.id = "mock-session"
+    return s
+
+
 @pytest.mark.asyncio
-async def test_tool_manager_register_and_list() -> None:
+async def test_tool_manager_register_and_list(mock_session: MagicMock) -> None:
     """Test register and desc_tool."""
     manager = ToolManager()
     provider = BuiltinToolProvider()
@@ -20,12 +30,12 @@ async def test_tool_manager_register_and_list() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invoke_routes_to_provider() -> None:
+async def test_invoke_routes_to_provider(mock_session: MagicMock) -> None:
     """Test __getitem__ routes to correct provider callable."""
     manager = ToolManager()
     provider = BuiltinToolProvider()
     manager.register(provider)
-    result = await manager["echo"]({"text": "hello"})
+    result = await manager["echo"]({"text": "hello"}, mock_session)
     assert result == "hello"
 
 
@@ -37,30 +47,30 @@ def test_invoke_unknown_tool_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_builtin_echo() -> None:
+async def test_builtin_echo(mock_session: MagicMock) -> None:
     """Test builtin echo tool."""
     manager = ToolManager()
     manager.register(BuiltinToolProvider())
-    result = await manager["echo"]({"text": "world"})
+    result = await manager["echo"]({"text": "world"}, mock_session)
     assert result == "world"
 
 
 @pytest.mark.asyncio
-async def test_builtin_add() -> None:
+async def test_builtin_add(mock_session: MagicMock) -> None:
     """Test builtin add tool."""
     manager = ToolManager()
     manager.register(BuiltinToolProvider())
-    result = await manager["add"]({"a": 1, "b": 2})
+    result = await manager["add"]({"a": 1, "b": 2}, mock_session)
     assert result == 3
 
 
 @pytest.mark.asyncio
-async def test_builtin_add_invalid_type_raises() -> None:
+async def test_builtin_add_invalid_type_raises(mock_session: MagicMock) -> None:
     """Test builtin add with invalid types raises TypeError."""
     manager = ToolManager()
     manager.register(BuiltinToolProvider())
     with pytest.raises(TypeError):
-        await manager["add"]({"a": "x", "b": "y"})
+        await manager["add"]({"a": "x", "b": "y"}, mock_session)
 
 
 def test_builtin_unknown_tool_raises() -> None:

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from little_agent.types import JSONValue
-
-AsyncToolFn = Callable[[dict[str, JSONValue]], Awaitable[JSONValue]]
+from little_agent.types import AsyncToolFn
 
 
 @dataclass

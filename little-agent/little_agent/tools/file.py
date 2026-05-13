@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from little_agent.types import JSONValue
+from little_agent.types import AsyncToolFn, JSONValue, Session
 
-from .protocol import AsyncToolFn, ToolArgDef, ToolDef
+from .protocol import ToolArgDef, ToolDef
 
 
 class EditFileToolProvider:
@@ -120,7 +120,7 @@ class EditFileToolProvider:
             raise ValueError("len must be non-negative")
         return content[:actual_pos] + new_str + content[actual_pos + actual_len :], None
 
-    async def _edit_dispatch(self, args: dict[str, JSONValue]) -> JSONValue:
+    async def _edit_dispatch(self, args: dict[str, JSONValue], session: Session) -> JSONValue:
         """Create, overwrite, or partially edit a file."""
         path, new_str, old_str, pos, len_val, create, encoding = self._validate(args)
 

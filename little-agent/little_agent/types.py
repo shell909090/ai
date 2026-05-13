@@ -8,17 +8,20 @@ signatures stay precise without dragging the tools layer into runtime.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 if TYPE_CHECKING:
-    from little_agent.tools.protocol import AsyncToolFn, ToolMap, ToolProvider
+    from little_agent.tools.protocol import ToolMap, ToolProvider
 
 
 JSONScalar = str | int | float | bool | None
 JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 ContentBlock = dict[str, JSONValue]
+
+AsyncToolFn = Callable[[dict[str, JSONValue], "Session"], Awaitable[JSONValue]]
 
 StopReason = Literal["end_turn", "cancelled"]
 PromptReturn = tuple[StopReason, str]

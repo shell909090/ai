@@ -6,10 +6,20 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
 from little_agent.tools.mcp import MCPStdioProvider
+
+
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Minimal session mock for tool dispatch."""
+    s = MagicMock()
+    s.id = "mock-session"
+    return s
+
 
 MOCK_SERVER = str(Path(__file__).parent / "fixtures" / "mock_mcp_server.py")
 
@@ -42,7 +52,7 @@ async def test_start_lists_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_call_echo() -> None:
+async def test_tool_call_echo(mock_session: MagicMock) -> None:
     """Calling the echo tool should return the input text."""
     provider = MCPStdioProvider(
         name="svc",
@@ -51,14 +61,14 @@ async def test_tool_call_echo() -> None:
     await provider.start()
     try:
         tools = {t[0]: t[2] for t in provider}
-        result = await tools["svc__echo"]({"text": "hello world"})
+        result = await tools["svc__echo"]({"text": "hello world"}, mock_session)
         assert result == "hello world"
     finally:
         await provider.stop()
 
 
 @pytest.mark.asyncio
-async def test_tool_call_add() -> None:
+async def test_tool_call_add(mock_session: MagicMock) -> None:
     """Calling the add tool should return the sum as a string."""
     provider = MCPStdioProvider(
         name="svc",
@@ -67,7 +77,7 @@ async def test_tool_call_add() -> None:
     await provider.start()
     try:
         tools = {t[0]: t[2] for t in provider}
-        result = await tools["svc__add"]({"a": 3, "b": 4})
+        result = await tools["svc__add"]({"a": 3, "b": 4}, mock_session)
         # The mock server returns str(float(3) + float(4)) == "7.0"
         assert result == "7.0"
     finally:
@@ -80,7 +90,7 @@ async def test_tool_call_add() -> None:
 
 
 @pytest.mark.asyncio
-async def test_call_before_start_raises() -> None:
+async def test_call_before_start_raises(mock_session: MagicMock) -> None:
     """Calling a tool before start() raises RuntimeError."""
     provider = MCPStdioProvider(
         name="test",
@@ -96,7 +106,7 @@ async def test_call_before_start_raises() -> None:
     _, _, fn = tools[0]
 
     with pytest.raises(RuntimeError, match="not running"):
-        await fn({"text": "x"})
+        await fn({"text": "x"}, mock_session)
 
 
 # ---------------------------------------------------------------------------

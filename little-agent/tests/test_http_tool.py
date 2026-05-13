@@ -41,6 +41,14 @@ def _make_mock_session(
     return mock_session, mock_session_cm
 
 
+@pytest.fixture
+def mock_session() -> MagicMock:
+    """Minimal session mock for tool dispatch (session param is unused by http tool)."""
+    s = MagicMock()
+    s.id = "mock-session"
+    return s
+
+
 def test_http_tool_listed() -> None:
     """HttpToolProvider.__iter__ yields 'http' with url as required parameter."""
     provider = HttpToolProvider()
@@ -52,7 +60,7 @@ def test_http_tool_listed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_get() -> None:
+async def test_http_get(mock_session: MagicMock) -> None:
     """HTTP GET returns status, headers, and body from response."""
     mock_session, mock_session_cm = _make_mock_session(
         status=200,
@@ -61,7 +69,7 @@ async def test_http_get() -> None:
     )
     with patch("aiohttp.ClientSession", return_value=mock_session_cm):
         mgr = _make_manager()
-        result = await mgr["http"]({"url": "http://example.com"})
+        result = await mgr["http"]({"url": "http://example.com"}, mock_session)
 
     assert isinstance(result, dict)
     assert result["status"] == 200
@@ -70,13 +78,13 @@ async def test_http_get() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_post_with_body() -> None:
+async def test_http_post_with_body(mock_session: MagicMock) -> None:
     """HTTP POST with body passes method and data to session.request."""
     mock_session, mock_session_cm = _make_mock_session(status=201, body="created")
     with patch("aiohttp.ClientSession", return_value=mock_session_cm):
         mgr = _make_manager()
         result = await mgr["http"](
-            {"url": "http://example.com/api", "method": "POST", "body": "data"}
+            {"url": "http://example.com/api", "method": "POST", "body": "data"}, mock_session
         )
 
     assert isinstance(result, dict)
@@ -94,12 +102,12 @@ async def test_http_post_with_body() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_custom_headers() -> None:
+async def test_http_custom_headers(mock_session: MagicMock) -> None:
     """Custom headers are forwarded to session.request."""
     mock_session, mock_session_cm = _make_mock_session(status=200, body="ok")
     with patch("aiohttp.ClientSession", return_value=mock_session_cm):
         mgr = _make_manager()
-        await mgr["http"]({"url": "http://example.com", "headers": {"X-Foo": "bar"}})
+        await mgr["http"]({"url": "http://example.com", "headers": {"X-Foo": "bar"}}, mock_session)
 
     call_kwargs = mock_session.request.call_args
     assert call_kwargs is not None
@@ -109,7 +117,7 @@ async def test_http_custom_headers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_network_error() -> None:
+async def test_http_network_error(mock_session: MagicMock) -> None:
     """aiohttp.ClientError results in status=-1 response."""
     import aiohttp
 
@@ -119,7 +127,7 @@ async def test_http_network_error() -> None:
 
     with patch("aiohttp.ClientSession", return_value=mock_session_cm):
         mgr = _make_manager()
-        result = await mgr["http"]({"url": "http://unreachable.example.com"})
+        result = await mgr["http"]({"url": "http://unreachable.example.com"}, mock_session)
 
     assert isinstance(result, dict)
     assert result["status"] == -1
@@ -128,8 +136,8 @@ async def test_http_network_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_invalid_url_type() -> None:
+async def test_http_invalid_url_type(mock_session: MagicMock) -> None:
     """Passing a non-string url raises ValueError."""
     mgr = _make_manager()
     with pytest.raises(ValueError):
-        await mgr["http"]({"url": 123})
+        await mgr["http"]({"url": 123}, mock_session)
