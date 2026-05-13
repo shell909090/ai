@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +18,13 @@ if TYPE_CHECKING:
     from little_agent.types import Agent, Session
 
 logger = logging.getLogger(__name__)
+
+_UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+
+
+def _is_valid_session_id(session_id: str) -> bool:
+    """Return True only for canonical UUID v4 strings."""
+    return bool(_UUID4_RE.match(session_id))
 
 _MAX_SESSIONS = 100
 
@@ -134,7 +142,7 @@ class SessionStore:
             try:
                 raw = json.loads(json_path.read_text(encoding="utf-8"))
                 sid = raw.get("id")
-                if not isinstance(sid, str):
+                if not isinstance(sid, str) or not _is_valid_session_id(sid):
                     continue
                 mtime = json_path.stat().st_mtime
                 updated_at = datetime.fromtimestamp(mtime, tz=UTC).isoformat()

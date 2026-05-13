@@ -223,10 +223,13 @@ async def test_list_sessions_ordering_preview_mtime(tmp_path: Path) -> None:
     store = SessionStore(tmp_path, jsonl_store=jsonl_store)
     base_time = time.time() - 1000
 
+    sid_old = "00000000-0000-4000-8000-000000000001"
+    sid_mid = "00000000-0000-4000-8000-000000000002"
+    sid_new = "00000000-0000-4000-8000-000000000003"
     sessions_data = [
-        ("s_old", base_time, "Short prompt"),
-        ("s_mid", base_time + 300, "A" * 80),
-        ("s_new", base_time + 600, "Medium prompt for newest session"),
+        (sid_old, base_time, "Short prompt"),
+        (sid_mid, base_time + 300, "A" * 80),
+        (sid_new, base_time + 600, "Medium prompt for newest session"),
     ]
     for sid, mtime, prompt_text in sessions_data:
         json_path = tmp_path / f"{sid}.json"
@@ -239,12 +242,12 @@ async def test_list_sessions_ordering_preview_mtime(tmp_path: Path) -> None:
     result = await store.list_sessions()
     ids = [s["id"] for s in result]
 
-    assert ids.index("s_new") < ids.index("s_mid") < ids.index("s_old")
+    assert ids.index(sid_new) < ids.index(sid_mid) < ids.index(sid_old)
 
-    mid_entry = next(s for s in result if s["id"] == "s_mid")
+    mid_entry = next(s for s in result if s["id"] == sid_mid)
     assert mid_entry["preview"] == "A" * 50
 
-    new_entry = next(s for s in result if s["id"] == "s_new")
+    new_entry = next(s for s in result if s["id"] == sid_new)
     dt = datetime.fromisoformat(new_entry["updated_at"])
     assert abs(dt.timestamp() - (base_time + 600)) < 2
 
@@ -253,7 +256,7 @@ async def test_list_sessions_ordering_preview_mtime(tmp_path: Path) -> None:
 async def test_list_sessions_missing_jsonl_empty_preview(tmp_path: Path) -> None:
     """list_sessions returns preview='' when _session.jsonl is absent."""
     store = SessionStore(tmp_path)
-    sid = "s_nojsonl"
+    sid = "00000000-0000-4000-8000-000000000004"
     (tmp_path / f"{sid}.json").write_text(json.dumps({"id": sid}), encoding="utf-8")
 
     result = await store.list_sessions()

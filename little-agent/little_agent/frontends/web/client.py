@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,7 +13,7 @@ from aiohttp import web
 
 from little_agent.types import Client, JSONValue, SessionUpdate
 
-from .store import SessionStore
+from .store import SessionStore, _is_valid_session_id
 
 if TYPE_CHECKING:
     from little_agent.agent.session_store import SessionJSONLStore
@@ -22,12 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-
-
-def _is_valid_session_id(session_id: str) -> bool:
-    """Return True only for canonical UUID v4 strings."""
-    return bool(_UUID4_RE.match(session_id))
+__all__ = ["WebClient", "_is_valid_session_id"]
 
 
 class WebClient(Client):
