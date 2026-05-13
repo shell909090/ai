@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 class HttpToolProvider:
     """Send HTTP requests via aiohttp."""
 
-    def __init__(self, **kwargs: object) -> None:
-        """Create HttpToolProvider. Accepts no configuration kwargs."""
-
     _TOOL_DEF = ToolDef(
         desc="Send an HTTP request and return status, headers and body",
         args=[

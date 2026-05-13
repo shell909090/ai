@@ -8,7 +8,7 @@
 
 little-agent 的主要特性：
 
-- **倒链架构** — 高效管理会话历史，支持自动压缩
+- **扁平消息列表 + 自动压缩** — 上下文窗口接近上限时，旧 turn 被压缩为 `summaries` 字符串
 - **基于协议的设计** — 后端、前端、工具均可独立替换
 - **多 LLM 后端** — 支持 OpenAI 兼容 API 和 Anthropic Claude
 - **多前端** — 交互式 CLI、WebSocket（ACP）、HTTP/WebSocket（Web）

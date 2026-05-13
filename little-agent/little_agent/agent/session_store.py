@@ -63,18 +63,22 @@ class SessionJSONLStore(Hook):
         filename = self._filename_template.format(session_id=session_id)
         return self._sessions_dir / filename
 
+    @staticmethod
+    def _evict_if_full(d: dict[str, Any], key: str) -> None:
+        """Evict oldest entry if dict is full and key is new (LRU by insertion order)."""
+        if key not in d and len(d) >= _MAX_LOCKS:
+            d.pop(next(iter(d)))
+
     def _set_last_tail_id(self, session_id: str, node_id: str) -> None:
         """Record last tail id; evict oldest entry when cap is reached."""
-        if session_id not in self._last_tail_ids and len(self._last_tail_ids) >= _MAX_LOCKS:
-            self._last_tail_ids.pop(next(iter(self._last_tail_ids)))
+        self._evict_if_full(self._last_tail_ids, session_id)
         self._last_tail_ids[session_id] = node_id
 
     def _get_lock(self, path: Path) -> asyncio.Lock:
         """Return (creating if needed) the per-file write lock; evict oldest if at cap."""
         key = str(path)
         if key not in self._locks:
-            if len(self._locks) >= _MAX_LOCKS:
-                self._locks.pop(next(iter(self._locks)))
+            self._evict_if_full(self._locks, key)
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
@@ -82,8 +86,7 @@ class SessionJSONLStore(Hook):
         """Return (creating if needed) the per-path init lock; evict oldest if at cap."""
         key = str(path)
         if key not in self._init_locks:
-            if len(self._init_locks) >= _MAX_LOCKS:
-                self._init_locks.pop(next(iter(self._init_locks)))
+            self._evict_if_full(self._init_locks, key)
             self._init_locks[key] = asyncio.Lock()
         return self._init_locks[key]
 
@@ -134,7 +137,7 @@ class SessionJSONLStore(Hook):
         stop_id = self._last_tail_ids.get(session_id)
 
         # Walk from end of messages backwards, collecting nodes until stop_id.
-        messages = getattr(session, "messages", [])
+        messages = session.messages
         nodes: list[Any] = []
         for node in reversed(messages):
             if node.id == stop_id:
@@ -150,9 +153,7 @@ class SessionJSONLStore(Hook):
             await asyncio.to_thread(self._sync_append, path, nodes, session_id)
 
         if messages:
-            last_id = getattr(messages[-1], "id", None)
-            if isinstance(last_id, str):
-                self._set_last_tail_id(session_id, last_id)
+            self._set_last_tail_id(session_id, messages[-1].id)
 
     async def load_history(self, session_id: str) -> list[dict[str, JSONValue]]:
         """Read JSONL file for session_id and return list of records without session_id key."""
@@ -165,9 +166,8 @@ class SessionJSONLStore(Hook):
         """Delete JSONL file for session_id and clean up internal state."""
         path = self.resolve_path(session_id)
         self._last_tail_ids.pop(session_id, None)
-        path_key = str(path)
-        self._rebuilt.discard(path_key)
-        await asyncio.to_thread(lambda: path.unlink(missing_ok=True))
+        self._rebuilt.discard(str(path))
+        await asyncio.to_thread(path.unlink, missing_ok=True)
 
     @staticmethod
     def _read_jsonl_lines(path: Path) -> list[dict[str, Any]]:
@@ -197,10 +197,6 @@ class SessionJSONLStore(Hook):
             records.append(rec)
         return records
 
-    def _sync_load_jsonl(self, path: Path) -> list[dict[str, Any]]:
-        """Read all JSONL records including session_id (needed for multi-session files)."""
-        return self._read_jsonl_lines(path)
-
     def _extract_text(self, record: dict[str, Any]) -> str:
         """Extract searchable text from a JSONL record."""
         node_kind = str(record.get("kind", ""))
@@ -224,8 +220,6 @@ class SessionJSONLStore(Hook):
         if node_kind == "tool_result":
             results = record.get("results", {})
             return json.dumps(results, ensure_ascii=False) if results else ""
-        if node_kind == "summary":
-            return str(record.get("summary", ""))
         return ""
 
     @staticmethod
@@ -341,7 +335,7 @@ class SessionJSONLStore(Hook):
         path = self.resolve_path(session_id)
         if not path.exists():
             return []
-        all_records = await asyncio.to_thread(self._sync_load_jsonl, path)
+        all_records = await asyncio.to_thread(self._read_jsonl_lines, path)
         # Filter to this session only (needed for fixed-filename multi-session files).
         records = [r for r in all_records if str(r.get("session_id", "")) == session_id]
         return cast(JSONValue, self._filter_records(records, query=query, kind=kind, limit=limit))

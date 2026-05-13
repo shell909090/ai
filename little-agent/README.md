@@ -8,7 +8,7 @@ A lightweight, extensible agent framework for building conversational AI applica
 
 little-agent features:
 
-- **Inverted chain architecture** for efficient session history management and compression
+- **Flat message list with auto-compression** — older turns are summarised into a `summaries` list once context fills up
 - **Protocol-based design** — backends, frontends, and tools are all swappable
 - **Multiple LLM backends** — OpenAI-compatible APIs and Anthropic Claude
 - **Multiple frontends** — interactive CLI, WebSocket (ACP), and HTTP/WebSocket (Web)

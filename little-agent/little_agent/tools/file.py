@@ -13,9 +13,6 @@ from .protocol import ToolArgDef, ToolDef
 class EditFileToolProvider:
     """Read and write files on the local filesystem."""
 
-    def __init__(self, **kwargs: object) -> None:
-        """Create EditFileToolProvider. Accepts no configuration kwargs."""
-
     _EDIT_TOOL_DEF = ToolDef(
         desc=(
             "Edit a file. Three mutually exclusive modes: "

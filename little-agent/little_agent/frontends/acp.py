@@ -33,7 +33,7 @@ class AcpClient(Client):
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Forward session updates as ACP session/update notifications."""
-        session_id = getattr(session, "id", None)
+        session_id = session.id
         await self._write_json(
             {
                 "method": "session/update",
@@ -75,7 +75,7 @@ class AcpClient(Client):
     ) -> bool:
         """Send permission request via ACP JSON-RPC and wait for response."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
-        session_id = getattr(session, "id", None)
+        session_id = session.id
         req_id = f"perm_{session_id}_{kind}_{id(payload)}"
 
         await self._write_json(
@@ -144,7 +144,7 @@ class AcpClient(Client):
             case "session/new":
                 cwd: str | None = params.get("cwd")
                 session = await agent.new(cwd=cwd)
-                session_id: str = getattr(session, "id", "")
+                session_id: str = session.id
                 self._sessions[session_id] = session
                 return {"session_id": session_id, "sessionId": session_id}
             case "session/prompt":
@@ -181,7 +181,7 @@ class AcpClient(Client):
         if not isinstance(data, dict):
             raise ValueError("session/load requires 'data' dict")
         session = await agent.load(data)
-        session_id = getattr(session, "id", "")
+        session_id = session.id
         self._sessions[session_id] = session
         return {"session_id": session_id, "sessionId": session_id}
 

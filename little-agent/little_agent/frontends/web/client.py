@@ -42,7 +42,7 @@ class WebClient(Client):
 
     async def update(self, session: Session, update: SessionUpdate) -> None:
         """Send update to WebSocket clients subscribed to this session."""
-        session_id = getattr(session, "id", None)
+        session_id = session.id
         message = {
             "type": "session/update",
             "session_id": session_id,
@@ -58,7 +58,7 @@ class WebClient(Client):
     ) -> bool:
         """Send permission request via WebSocket and wait for response."""
         logger.debug("Permission request: kind=%s payload=%s", kind, payload)
-        session_id = getattr(session, "id", None)
+        session_id = session.id
         req_id = f"perm_{session_id}_{kind}_{id(payload)}"
 
         message = {

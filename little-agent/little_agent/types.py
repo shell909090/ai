@@ -125,9 +125,9 @@ class Hook:
     """Lifecycle hook base class. Override only the events you care about.
 
     Hook callbacks deliberately do NOT receive a node parameter: when each
-    callback fires, ``session.messages[-1]`` is the just-frozen node the
-    callback would have been told about. Implementations that need the node
-    read ``session.messages[-1]``.
+    callback fires, ``session.messages[-1]`` is the node the callback would
+    have been told about. Implementations that need the node read
+    ``session.messages[-1]``.
     """
 
     async def on_turn_start(self, session: Session) -> None:
@@ -137,10 +137,10 @@ class Hook:
         """Called in finally after turn completes, is cancelled, or raises."""
 
     async def on_tool_call(self, session: Session) -> None:
-        """Called after AssistantNode is appended and frozen; session.messages[-1] is that node."""
+        """Called after AssistantNode is appended; session.messages[-1] is that node."""
 
     async def on_tool_result(self, session: Session) -> None:
-        """Called after ToolResultNode is frozen; session.messages[-1] is that node."""
+        """Called after ToolResultNode is fully populated; session.messages[-1] is that node."""
 
     async def on_compress(self, session: Session) -> None:
         """Called after compress task completes."""
@@ -152,7 +152,7 @@ class Hook:
         """Called after fork() creates a new session."""
 
     async def on_cancel(self, session: Session) -> None:
-        """Called after turn is cancelled and unfinalised nodes are frozen."""
+        """Called after turn is cancelled."""
 
 
 class Agent(Protocol):
