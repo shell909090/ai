@@ -80,7 +80,7 @@ frontend:
   type: cli                          # cli | web | acp
 
 agent:
-  R: 0.75                             # compress when context exceeds this ratio (default 0.75)
+  compress_threshold: 0.75            # compress when context exceeds this ratio (default 0.75)
 
 compressor:
   keep_turns: 3                      # recent turns kept verbatim (default 3)

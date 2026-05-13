@@ -94,7 +94,7 @@ def test_main_success() -> None:
 
                         with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                             mock_parse.return_value = MagicMock(
-                                config=Path("config.yaml"), loglevel=None
+                                config=Path("config.yaml"), loglevel=None, mode=None
                             )
                             main()
 
@@ -108,7 +108,7 @@ def test_main_unsupported_backend_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
                 with pytest.raises(ValueError, match="Unsupported backend type"):
                     main()
 
@@ -123,7 +123,7 @@ def test_main_missing_backends_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
                 with pytest.raises(ValueError, match="Config must contain a 'backends' section"):
                     main()
 
@@ -139,7 +139,7 @@ def test_main_missing_primary_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
                 with pytest.raises(ValueError, match="'primary'"):
                     main()
 
@@ -152,7 +152,7 @@ def test_main_missing_api_key_raises() -> None:
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value=None):
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
+                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
                     with pytest.raises(ValueError, match="No API key for backend 'primary'"):
                         main()
 
@@ -203,7 +203,7 @@ def test_main_api_key_priority_over_env() -> None:
 
                         with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                             mock_parse.return_value = MagicMock(
-                                config=Path("config.yaml"), loglevel=None
+                                config=Path("config.yaml"), loglevel=None, mode=None
                             )
                             main()
 
@@ -332,33 +332,33 @@ def _run_main_with_config(mock_config: dict[str, Any]) -> MagicMock:
                         mock_client_cls.return_value = mock_client
                         with patch("argparse.ArgumentParser.parse_args") as mock_parse:
                             mock_parse.return_value = MagicMock(
-                                config=Path("config.yaml"), loglevel=None
+                                config=Path("config.yaml"), loglevel=None, mode=None
                             )
                             main()
                     return mock_agent_cls
 
 
-def test_main_agent_default_compress_ratio() -> None:
-    """Default agent config yields compress_ratio=0.5."""
+def test_main_agent_default_compress_threshold() -> None:
+    """Default agent config yields compress_threshold=0.75."""
     mock_config = _mock_config({"api_key": "k"})
     mock_agent_cls = _run_main_with_config(mock_config)
     kwargs = mock_agent_cls.call_args.kwargs
-    assert kwargs["compress_ratio"] == 0.75
+    assert kwargs["compress_threshold"] == 0.75
 
 
-def test_main_agent_custom_compress_ratio() -> None:
-    """agent.R in config is passed to AgentCore as compress_ratio."""
+def test_main_agent_custom_compress_threshold() -> None:
+    """agent.compress_threshold in config is passed to AgentCore."""
     mock_config = _mock_config({"api_key": "k"})
-    mock_config["agent"] = {"R": 0.8}
+    mock_config["agent"] = {"compress_threshold": 0.8}
     mock_agent_cls = _run_main_with_config(mock_config)
     kwargs = mock_agent_cls.call_args.kwargs
-    assert kwargs["compress_ratio"] == pytest.approx(0.8)
+    assert kwargs["compress_threshold"] == pytest.approx(0.8)
 
 
-def test_main_agent_invalid_compress_ratio_zero_raises() -> None:
-    """agent.R=0 raises ValueError (must be in (0, 1])."""
+def test_main_agent_invalid_compress_threshold_zero_raises() -> None:
+    """agent.compress_threshold=0 raises ValueError (must be in (0, 1])."""
     mock_config = _mock_config({"api_key": "k"})
-    mock_config["agent"] = {"R": 0.0}
+    mock_config["agent"] = {"compress_threshold": 0.0}
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -367,15 +367,17 @@ def test_main_agent_invalid_compress_ratio_zero_raises() -> None:
                 mock_backend.context_window = 128000
                 mock_backend_cls.return_value = mock_backend
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
-                    with pytest.raises(ValueError, match="agent.R must be in range"):
+                    mock_parse.return_value = MagicMock(
+                        config=Path("config.yaml"), loglevel=None, mode=None
+                    )
+                    with pytest.raises(ValueError, match="agent.compress_threshold"):  # noqa: E501
                         main()
 
 
-def test_main_agent_invalid_compress_ratio_above_1_raises() -> None:
-    """agent.R=1.5 raises ValueError."""
+def test_main_agent_invalid_compress_threshold_above_1_raises() -> None:
+    """agent.compress_threshold=1.5 raises ValueError."""
     mock_config = _mock_config({"api_key": "k"})
-    mock_config["agent"] = {"R": 1.5}
+    mock_config["agent"] = {"compress_threshold": 1.5}
 
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
@@ -384,8 +386,10 @@ def test_main_agent_invalid_compress_ratio_above_1_raises() -> None:
                 mock_backend.context_window = 128000
                 mock_backend_cls.return_value = mock_backend
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None)
-                    with pytest.raises(ValueError, match="agent.R must be in range"):
+                    mock_parse.return_value = MagicMock(
+                        config=Path("config.yaml"), loglevel=None, mode=None
+                    )
+                    with pytest.raises(ValueError, match="agent.compress_threshold"):  # noqa: E501
                         main()
 
 

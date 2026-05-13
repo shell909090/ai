@@ -154,7 +154,7 @@ class TurnRunner:
         """Evaluate §2.6.2 trigger criteria; schedule post-turn compress if triggered."""
         session = self._session
         cw = session.agent.context_window
-        compress_ratio = session.agent.compress_ratio
+        compress_threshold = session.agent.compress_threshold
 
         metric: str
         ratio: float
@@ -170,12 +170,12 @@ class TurnRunner:
             ratio = (char_count / 3) / cw
             metric = f"chars={char_count} (fallback)"
 
-        triggered = ratio > compress_ratio
+        triggered = ratio > compress_threshold
         logger.info(
-            "post-turn compress eval: %s ratio=%.3f R=%.2f triggered=%s",
+            "post-turn compress eval: %s ratio=%.3f threshold=%.2f triggered=%s",
             metric,
             ratio,
-            compress_ratio,
+            compress_threshold,
             triggered,
         )
 
@@ -183,9 +183,9 @@ class TurnRunner:
             return
         if session.agent.compressor is None:
             logger.warning(
-                "compress would trigger (ratio=%.3f > R=%.2f) but no compressor configured",
+                "compress would trigger (ratio=%.3f > threshold=%.2f) but no compressor configured",
                 ratio,
-                compress_ratio,
+                compress_threshold,
             )
             return
         session.compress_task = asyncio.create_task(self._run_post_turn_compress())

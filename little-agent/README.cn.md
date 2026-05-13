@@ -80,7 +80,7 @@ frontend:
   type: cli                          # cli | web | acp
 
 agent:
-  R: 0.75                            # 上下文占用率超过该值时触发压缩（默认 0.75）
+  compress_threshold: 0.75           # 上下文占用率超过该值时触发压缩（默认 0.75）
 
 compressor:
   keep_turns: 3                      # 保留最近若干轮完整历史（默认 3）

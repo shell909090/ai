@@ -61,7 +61,7 @@ tools:
       max_timeout: 1800
     little_agent.tools.task.TaskToolProvider: {}
 agent:
-  R: 0.75
+  compress_threshold: 0.75
   max_tool_result_chars: 50000
 compressor:
   keep_turns: 3
@@ -133,12 +133,25 @@ async def _async_main(
                 logger.exception("Failed to stop MCP provider")
 
 
+def _redirect_acp_logging(config: dict[str, Any]) -> None:
+    """For ACP mode: redirect stdout log handlers to stderr (ACP uses stdout for JSON-RPC)."""
+    for _h in config.get("logging", {}).get("handlers", {}).values():
+        if isinstance(_h, dict) and _h.get("stream") in (None, "ext://sys.stdout"):
+            _h["stream"] = "ext://sys.stderr"
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Little Agent CLI")
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument(
         "--loglevel", default=None, help="Override log level (DEBUG/INFO/WARNING/ERROR)"
+    )
+    parser.add_argument(
+        "--mode",
+        default=None,
+        choices=["cli", "web", "acp"],
+        help="Override frontend.type from config (cli/web/acp)",
     )
     parser.add_argument(
         "--prompt", default=None, help="Send an initial prompt automatically on startup (CLI only)"
@@ -148,11 +161,11 @@ def main() -> None:
     config = load_config(args.config)
     config = _deep_merge(_DEFAULT_CONFIG, config)
 
-    # ACP uses stdout as the JSON-RPC channel; redirect log output to stderr
+    if args.mode is not None:
+        config.setdefault("frontend", {})["type"] = args.mode
+
     if str((config.get("frontend") or {}).get("type", "cli")) == "acp":
-        for _h in config.get("logging", {}).get("handlers", {}).values():
-            if isinstance(_h, dict) and _h.get("stream") in (None, "ext://sys.stdout"):
-                _h["stream"] = "ext://sys.stderr"
+        _redirect_acp_logging(config)
 
     setup_logging(config["logging"], args.loglevel)
 
@@ -176,9 +189,11 @@ def main() -> None:
     client, frontend_type = build_client(config, session_store)
     permissions = build_permissions(config, client)
 
-    compress_ratio = float(config["agent"]["R"])
-    if not (0 < compress_ratio <= 1):
-        raise ValueError(f"agent.R must be in range (0, 1], got {compress_ratio}")
+    compress_threshold = float(config["agent"]["compress_threshold"])
+    if not (0 < compress_threshold <= 1):
+        raise ValueError(
+            f"agent.compress_threshold must be in range (0, 1], got {compress_threshold}"
+        )
 
     max_tool_result_chars = int(config["agent"]["max_tool_result_chars"])
     if max_tool_result_chars <= 0:
@@ -191,7 +206,7 @@ def main() -> None:
         compressor=compressor,
         permissions=permissions,
         hooks=hooks,
-        compress_ratio=compress_ratio,
+        compress_threshold=compress_threshold,
         context_window=backend.context_window,
         max_tool_result_chars=max_tool_result_chars,
     )

@@ -598,7 +598,7 @@ async def test_post_turn_compress_triggered_by_token_ratio() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_TrackingCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=128000,
     )
     session = await agent.new()
@@ -634,7 +634,7 @@ async def test_post_turn_compress_not_triggered_below_threshold() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_TrackingCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=128000,
     )
     session = await agent.new()
@@ -669,7 +669,7 @@ async def test_post_turn_compress_char_fallback_when_usage_none() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_TrackingCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=100,  # very small: char/4 easily > 50
     )
     session = await agent.new()
@@ -703,7 +703,7 @@ async def test_post_turn_compress_char_fallback_when_usage_zero() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_TrackingCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=100,
     )
     session = await agent.new()
@@ -738,7 +738,7 @@ async def test_post_turn_compress_r_boundary_not_triggered() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_TrackingCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=128000,
     )
     session = await agent.new()
@@ -775,7 +775,7 @@ async def test_compress_task_holds_pending_queue() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_SlowCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=128000,
     )
     session = await agent.new()
@@ -829,7 +829,7 @@ async def test_in_turn_overflow_retry_success() -> None:
         backend=backend,  # type: ignore[arg-type]
         tools=MockToolProvider(),
         compressor=_MinimalCompressor(),
-        compress_ratio=0.99,
+        compress_threshold=0.99,
         context_window=128000,
     )
     session = await agent.new()
@@ -860,7 +860,7 @@ async def test_in_turn_overflow_second_raises() -> None:
         backend=_AlwaysOverflow(),  # type: ignore[arg-type]
         tools=MockToolProvider(),
         compressor=_NoopCompressor(),
-        compress_ratio=0.99,
+        compress_threshold=0.99,
         context_window=128000,
     )
     session = await agent.new()
@@ -950,7 +950,7 @@ async def test_cancel_interrupts_compress_task() -> None:
         backend=backend,
         tools=MockToolProvider(),
         compressor=_SlowCompressor(),
-        compress_ratio=0.5,
+        compress_threshold=0.5,
         context_window=128000,
     )
     session = await agent.new()

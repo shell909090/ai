@@ -34,7 +34,7 @@ async def test_auto_compression(ci_config: dict[str, Any]) -> None:
         compressor=compressor,
         permissions=YesManChecker(),
         # 1e-6 << any realistic token/char ratio, so every turn triggers auto-compress.
-        compress_ratio=1e-6,
+        compress_threshold=1e-6,
     )
     session: Any = await agent.new()
 

@@ -43,7 +43,7 @@ class AgentCore(Agent):
         compressor: Compressor | None = None,
         permissions: PermissionChecker | None = None,
         hooks: list[Hook] | None = None,
-        compress_ratio: float = 0.75,
+        compress_threshold: float = 0.75,
         context_window: int = 128000,
         max_tool_result_chars: int = 50000,
     ) -> None:
@@ -55,7 +55,7 @@ class AgentCore(Agent):
             permissions if permissions is not None else cast(PermissionChecker, client)
         )
         self.hooks: list[Hook] = hooks if hooks is not None else []
-        self.compress_ratio = compress_ratio
+        self.compress_threshold = compress_threshold
         self.context_window = context_window
         self.max_tool_result_chars = max_tool_result_chars
 
