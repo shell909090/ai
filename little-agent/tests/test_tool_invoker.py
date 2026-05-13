@@ -1,11 +1,11 @@
-"""Integration tests for _invoke_tools behavior in ToolInvoker."""
+"""Integration tests for the per-turn tool invocation pipeline."""
 
 from __future__ import annotations
 
 import pytest
 
 from little_agent.agent.permissions import YesManChecker
-from little_agent.agent.tool_invoker import _truncate_tool_result
+from little_agent.agent.tool_manager import _truncate_tool_result
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
@@ -140,20 +140,20 @@ async def test_cancel_before_gather_marks_tools_cancelled_and_skips_execution() 
 
     # Directly manipulate _cancel_requested after the session is created
     # but before the tool is invoked. We do this by intercepting _run_tool_gather.
-    from little_agent.agent.tool_invoker import ToolInvoker
+    from little_agent.agent import tool_manager
 
-    original_gather = ToolInvoker._run_tool_gather
+    original_gather = tool_manager._run_tool_gather
 
-    async def _cancel_then_gather(self, allowed_calls, tool_result_node):  # type: ignore[override]
+    async def _cancel_then_gather(sess, allowed_calls, tool_result_node):
         # Set cancel flag immediately before delegating so that the guard fires.
-        self._session._cancel_requested = True
-        return await original_gather(self, allowed_calls, tool_result_node)
+        sess._cancel_requested = True
+        return await original_gather(sess, allowed_calls, tool_result_node)
 
-    ToolInvoker._run_tool_gather = _cancel_then_gather  # type: ignore[method-assign]
+    tool_manager._run_tool_gather = _cancel_then_gather  # type: ignore[assignment]
     try:
         await session.prompt("hello")
     finally:
-        ToolInvoker._run_tool_gather = original_gather  # type: ignore[method-assign]
+        tool_manager._run_tool_gather = original_gather  # type: ignore[assignment]
 
     # The actual tool function must not have been called.
     assert "echo_called" not in call_log, (

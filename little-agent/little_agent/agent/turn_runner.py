@@ -145,10 +145,10 @@ class TurnRunner:
         return ("end_turn", result.output_text)
 
     async def _handle_tool_call(self, result: BackendTurnResult, did_stream: bool) -> str:
-        """Delegate tool-call handling to ToolInvoker."""
-        from .tool_invoker import ToolInvoker
+        """Delegate tool-call handling to the tool_manager pipeline."""
+        from .tool_manager import invoke_turn_tools
 
-        return await ToolInvoker(self._session).invoke(result, self._partial_output, did_stream)
+        return await invoke_turn_tools(self._session, result, self._partial_output, did_stream)
 
     def _schedule_compress_if_needed(self) -> None:
         """Evaluate §2.6.2 trigger criteria; schedule post-turn compress if triggered."""
