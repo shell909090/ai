@@ -1,10 +1,9 @@
-"""Shared types: JSON primitives and cross-package Protocols.
+"""Shared types: JSON primitives and cross-package contracts.
 
 This module is intentionally a leaf at runtime: nothing in this file
 imports any other little_agent module at runtime. TYPE_CHECKING-only
-imports of Hook (agent-internal, references Node subclasses) and the
-shared tools.protocol types are used so we don't drag concrete Node
-hierarchy into this file.
+imports of tools.protocol types are used so ToolRegistry's method
+signatures stay precise without dragging the tools layer into runtime.
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
-    from little_agent.agent.hooks import Hook
     from little_agent.tools.protocol import AsyncToolFn, ToolMap, ToolProvider
 
 
@@ -97,6 +95,37 @@ class Session(Protocol):
     async def compress(self) -> None: ...
 
     def save(self) -> JSONValue: ...
+
+
+class Hook:
+    """Lifecycle hook base class. Override only the events you care about.
+
+    Hook callbacks deliberately do NOT receive a node parameter: when each
+    callback fires, ``session.tail`` points at the just-frozen node the
+    callback would have been told about. Implementations that need the node
+    read ``session.tail`` (and ``session.tail.prev`` if they want neighbours).
+    """
+
+    async def on_turn_start(self, session: Session) -> None:
+        """Called before UserPromptNode is appended."""
+
+    async def on_turn_end(self, session: Session) -> None:
+        """Called in finally after turn completes, is cancelled, or raises."""
+
+    async def on_tool_call(self, session: Session) -> None:
+        """Called after ToolCallNode is appended and frozen; session.tail is that node."""
+
+    async def on_tool_result(self, session: Session) -> None:
+        """Called after ToolResultNode is frozen; session.tail is that node."""
+
+    async def on_compress(self, session: Session) -> None:
+        """Called after compress task completes."""
+
+    async def on_fork(self, source: Session, forked: Session) -> None:
+        """Called after fork() creates a new session."""
+
+    async def on_cancel(self, session: Session) -> None:
+        """Called after turn is cancelled and unfinalised nodes are frozen."""
 
 
 class Agent(Protocol):

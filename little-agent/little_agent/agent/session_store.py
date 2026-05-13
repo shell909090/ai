@@ -10,9 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef
-from little_agent.types import JSONValue
-
-from .hooks import Hook
+from little_agent.types import Hook, JSONValue
 
 if TYPE_CHECKING:
     from little_agent.types import Session

@@ -7,8 +7,7 @@ from typing import Any
 import pytest
 
 from little_agent.agent.agent import AgentCore
-from little_agent.agent.hooks import Hook
-from little_agent.agent.nodes import ToolCallNode, ToolResultNode
+from little_agent.types import Hook
 from little_agent.agent.permissions import YesManChecker
 from little_agent.types import Session
 from little_agent.tools.bash import BashToolProvider
@@ -32,10 +31,10 @@ class _RecordingHook(Hook):
     async def on_turn_end(self, session: Session) -> None:
         self.events.append("on_turn_end")
 
-    async def on_tool_call(self, session: Session, node: ToolCallNode) -> None:
+    async def on_tool_call(self, session: Session) -> None:
         self.events.append("on_tool_call")
 
-    async def on_tool_result(self, session: Session, node: ToolResultNode) -> None:
+    async def on_tool_result(self, session: Session) -> None:
         self.events.append("on_tool_result")
 
 

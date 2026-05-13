@@ -150,12 +150,14 @@ class SummaryNode(Node):
    3. `finish_reason == "tool_call"`：
       - `result.output_text` 非空时存入 `ToolCallNode.output_text`；`result.thinking_text` 非空时存入 `ToolCallNode.thinking`。
       - 追加 `ToolCallNode`（冻结），通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
+      - 触发 `Hook.on_tool_call(session)`（此时 `session.tail` 指向刚冻结的 `ToolCallNode`）。
       - 追加 `ToolResultNode`（可变）。
       - 检查每个 tool name 是否在 `allowed_tools` 内；不在则记 `failed`，不调用。
       - 通过 permission chain 检查；deny 则记 `failed`，不调用。
       - 并发执行允许的 tools（`asyncio.gather`），按 §2.3 写入。
       - 每个结果就位通过 `Client.update(tool_call_update)` 通知。
       - 全部结果到位或 turn 取消后，`ToolResultNode` 冻结。
+      - 触发 `Hook.on_tool_result(session)`（此时 `session.tail` 指向刚冻结的 `ToolResultNode`）。
 4. 超过 `MAX_TURN_ITERATIONS` 抛异常。
 5. 收到 cancel：等当前 backend 调用结束，未完成 tool call 标 `cancelled`，节点冻结，返回 `("cancelled", partial_output)`。
 6. 真正失败（backend 异常等）直接抛异常，不返回 `failed`。
@@ -258,7 +260,7 @@ allowed = await session.agent.permissions.request_permission(
 
 会话生命周期 hook 系统，挂载到 session 的多个时点。Hook 与 `session.save()` 的区别：save 是内存镜像（历史可被压缩或丢弃），hook 是事件级旁路通道，订阅者各自决定如何持久化或反应。原 SessionLogger 是 hook 系统的特例（只关心 turn 结束），现统一为基类 + 默认空实现的形式，便于未来扩展更多挂载点（如 search、metrics、external observability）。
 
-接口（基类 + 默认空实现，订阅者继承后只 override 关心的方法）：
+接口（基类 + 默认空实现，订阅者继承后只 override 关心的方法）。`Hook` 类位于 `little_agent/types.py`，所有方法只接收 `session`——不向 hook 注入额外 `Node` 参数，因为每个 callback 触发时 `session.tail` 已经指向当下相关的那个 node；需要原 node 数据的 hook 直接读 `session.tail`（必要时回溯 `tail.prev`）。这样 Hook 基类不引用任何 `Node` 子类，保持在 types.py 中无 agent 反向耦合。
 
 ```python
 class Hook:
@@ -266,8 +268,8 @@ class Hook:
 
     async def on_turn_start(self, session: Session) -> None: pass
     async def on_turn_end(self, session: Session) -> None: pass
-    async def on_tool_call(self, session: Session, node: ToolCallNode) -> None: pass
-    async def on_tool_result(self, session: Session, node: ToolResultNode) -> None: pass
+    async def on_tool_call(self, session: Session) -> None: pass
+    async def on_tool_result(self, session: Session) -> None: pass
     async def on_compress(self, session: Session) -> None: pass
     async def on_fork(self, source: Session, forked: Session) -> None: pass
     async def on_cancel(self, session: Session) -> None: pass
@@ -278,15 +280,15 @@ class Hook:
 1. `Agent.hooks: list[Hook]`，由启动脚本按配置构造；可同时注入多个；遍历顺序即配置顺序。
 2. 调用时机：
 
-   | Hook 方法 | 触发时机 |
-   |---|---|
-   | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） |
-   | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 |
-   | `on_tool_call(session, node)` | §2.5 步骤 3.3 中 `ToolCallNode` 冻结后 |
-   | `on_tool_result(session, node)` | §2.5 步骤 3.3 中 `ToolResultNode` 全部结果到位并冻结后 |
-   | `on_compress(session)` | compress 任务（post-turn 异步或 in-turn retry）完成后，`session.tail` 已更新为新链头 |
-   | `on_fork(source, forked)` | `Session.fork()` 成功创建新 session 后 |
-   | `on_cancel(session)` | turn 被取消、未完成节点已冻结后；随后 `on_turn_end` 仍会在 finally 中触发 |
+   | Hook 方法 | 触发时机 | 此时 `session.tail` |
+   |---|---|---|
+   | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） | 上一轮链尾 |
+   | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 | 本轮链尾 |
+   | `on_tool_call(session)` | §2.5 步骤 3.3 中 `ToolCallNode` 冻结后，且在创建 `ToolResultNode` 之前 | 刚冻结的 `ToolCallNode` |
+   | `on_tool_result(session)` | §2.5 步骤 3.3 中 `ToolResultNode` 全部结果到位并冻结后 | 刚冻结的 `ToolResultNode` |
+   | `on_compress(session)` | compress 任务（post-turn 异步或 in-turn retry）完成后，`session.tail` 已更新为新链头 | 新链头 |
+   | `on_fork(source, forked)` | `Session.fork()` 成功创建新 session 后 | 不变 |
+   | `on_cancel(session)` | turn 被取消、未完成节点已冻结后；随后 `on_turn_end` 仍会在 finally 中触发 | 已冻结的尾 |
 
 3. 异常隔离：单个 hook 抛异常不阻断主流程；编排层对每次 hook 调用 `try/except`，异常以 ERROR 级别记入日志（含 hook 类名、`session_id`、`turn_id`），继续下一个 hook。
 4. 多 hook 顺序：按配置顺序串行调用；不并发，避免对 `session.tail` 等共享状态产生竞争。

@@ -3,6 +3,7 @@
 from little_agent.types import (
     Agent,
     Client,
+    Hook,
     PermissionChecker,
     PromptReturn,
     Session,
@@ -31,6 +32,7 @@ from .turn_runner import MAX_TURN_ITERATIONS
 __all__ = [
     "Agent",
     "Client",
+    "Hook",
     "Session",
     "SessionUpdate",
     "StopReason",
