@@ -26,8 +26,8 @@ little-agent (script) → frontends → agent → {tools, backends}
 
 1. `agent` 不依赖具体 frontend / backend / tool 实现。
 2. 启动脚本把具体实现注入到协议接口上。
-3. `frontends ↔ agent` 稳定边界是 `Client`（§4）。`Client` Protocol 由消费方（agent）定义，位于 `little_agent/agent/protocol.py`，与 `Agent` / `Session` 等并列；frontends 实现它，无反向依赖。
-4. `tools ↔ agent` 稳定边界是 `ToolProvider`（§3.2）：tools 模块（含外部插件）实现 `ToolProvider`，agent 通过它消费 tools。`ToolRegistry`（§3.3）是 agent 内部对"一组 provider"的访问抽象，由 agent 自己定义并实现（`ToolManager`），不属于跨模块契约。
+3. `frontends ↔ agent` 稳定边界是 `Client`（§4）。`Client` Protocol 与 `Agent` / `Session` / `PermissionChecker` / `Hook` / `SessionUpdate` / `StopReason` / `PromptReturn` 等跨包契约一起住在 `little_agent/types.py`；frontends 实现 `Client`，agent 持有 `Client` 引用，无反向依赖。
+4. `tools ↔ agent` 稳定边界是 `ToolProvider`（§3.2）：tools 模块（含外部插件）实现 `ToolProvider`，agent 通过它消费 tools。`ToolRegistry`（§3.3）也住在 `types.py`（其方法签名引用 `ToolProvider`），agent 提供默认实现 `ToolManager`；该 Protocol 是 agent 与外部 provider 之间的访问抽象。
 5. `backends ↔ agent` 走项目内部接口（§5）。
 
 ## 2. Agent
@@ -351,7 +351,7 @@ class SessionJSONLStore(Hook, ToolProvider):
 
 agent 不关心 tool 来源（内置 / 配置加载 / 未来 MCP provider），统一为列出 / 调用两种能力。
 
-**模块归属**：跨模块契约 `ToolProvider`、共享类型（`ToolDef` / `ToolMap` / `AsyncToolFn` / `ToolArgDef`）与具体 tool 实现位于 `little_agent/tools/`。agent 内部用来访问一组 provider 的 `ToolRegistry` 协议与 `Agent` / `Session` / `Compressor` / `PermissionChecker` 一并定义在 `little_agent/agent/protocol.py`；其默认实现 `ToolManager` 位于 `little_agent/agent/tool_manager.py`；从配置装配 `ToolManager` 与 MCP providers 的工厂函数（`build_tools` / `parse_mcp_configs` / `start_mcp_providers`）位于 `little_agent/agent/tool_setup.py`。这些 agent 侧成分不对 tools 模块暴露。
+**模块归属**：`ToolProvider`、共享类型（`ToolDef` / `ToolMap` / `AsyncToolFn` / `ToolArgDef`）与具体 tool 实现位于 `little_agent/tools/`。`ToolRegistry` 协议本身住在 `little_agent/types.py`（与其它跨包契约同处），其默认实现 `ToolManager` 与 per-turn 调用流水线函数 `invoke_turn_tools()`、装配工厂 `build_tools` / `parse_mcp_configs` / `start_mcp_providers` 位于 `little_agent/agent/tool_manager.py` 与 `little_agent/agent/tool_setup.py`。这些 agent 侧实现不对 tools 模块暴露。
 
 ### 3.1 共享类型
 
@@ -539,9 +539,17 @@ frontend 实现 `Client`；`Agent` 持有 `Client` / `Backend` / `ToolRegistry` 
 
 ### 4.1 共享类型
 
-`JSONScalar` / `JSONValue` / `ContentBlock` 等纯 JSON 标量类型位于 `little_agent/types.py`，跨所有模块共享。
+`little_agent/types.py` 是项目的"契约层"——所有跨包契约都住在这里。运行时它是 leaf（不 import 任何项目内模块）；`ToolRegistry` 因为方法签名引用 `tools.protocol` 的类型，通过 TYPE_CHECKING 拿到这些符号，运行期无依赖。
 
-`StopReason` / `PromptReturn` / `SessionUpdate` 由 agent 定义，位于 `little_agent/agent/protocol.py`，与 `Agent` / `Session` / `Client` / `Compressor` / `ToolRegistry` / `PermissionChecker` 等 Protocol 同处一个文件；frontends 与 backends 都向 agent 单向依赖这些类型。`Client` Protocol（§4.2）是 agent 对 frontend 的契约——由消费方（agent）定义，由 frontend 实现；frontends 包内不再保留 `protocol.py`。
+types.py 提供：
+
+- **JSON 原语**：`JSONScalar` / `JSONValue` / `ContentBlock`
+- **运行时事件**：`SessionUpdate`
+- **运行时约定**：`StopReason` / `PromptReturn`
+- **跨包 Protocol**：`Agent` / `Session` / `Client` / `PermissionChecker` / `ToolRegistry`
+- **lifecycle 基类**：`Hook`（基类 + 空实现，不是 Protocol）
+
+唯一不在 types.py 的项目内 Protocol 是 `Compressor`——它的方法签名引用 `Node`（agent 内部数据结构），因此它和实现 `LLMCompressor` 同住 `little_agent/agent/compressor.py`。
 
 ```python
 # little_agent/types.py
@@ -549,7 +557,6 @@ JSONScalar = str | int | float | bool | None
 JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 ContentBlock = dict[str, JSONValue]
 
-# little_agent/agent/protocol.py
 StopReason = Literal["end_turn", "cancelled"]
 PromptReturn = tuple[StopReason, str]
 
@@ -564,11 +571,11 @@ class SessionUpdate:
 
 1. `agent_message_chunk` 是模型最终输出；`thinking_chunk` 是模型思考。CLI 中两者分离输出，输出前 `strip()`。
 2. `prompt()` 失败时直接抛异常，不返回 `failed`。
-3. `SessionUpdate` 是 frontend ↔ agent 与 backend ↔ agent 共用的事件载体：backends 在 `generate()` 中 yield；agent 的 turn 编排（`turn_runner` / `tool_invoker`）也直接构造并通过 `Client.update()` 转发给 frontend。由 agent 定义、双侧消费，因此归属 agent 模块。
+3. `SessionUpdate` 是 frontend ↔ agent 与 backend ↔ agent 共用的事件载体：backends 在 `generate()` 中 yield；agent 的 turn 编排（`turn_runner` 与 `tool_manager.invoke_turn_tools`）也直接构造并通过 `Client.update()` 转发给 frontend。由 types.py 定义、双侧消费。
 
 ### 4.2 Client
 
-`Client` Protocol 定义在 `little_agent/agent/protocol.py`（与 `Session` / `Agent` 等并列），由 agent 持有引用、由 frontend 实现。frontends 包不再保留独立的 `protocol.py`。
+`Client` Protocol 定义在 `little_agent/types.py`（与 `Session` / `Agent` 等并列），由 agent 持有引用、由 frontend 实现。frontends 包不保留独立的 `protocol.py`。
 
 ```python
 class Client(Protocol):

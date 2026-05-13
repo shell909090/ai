@@ -238,19 +238,23 @@ make fmt lint build test   # run everything
 
 ```
 little_agent/
+  types.py        # cross-package contracts: Agent / Session / Client / Hook /
+                  # PermissionChecker / ToolRegistry / SessionUpdate + JSON primitives
   agent/          # AgentCore, SessionCore, node chain, compression, permissions,
-                  # ToolRegistry (protocol), ToolManager (registry), tool_setup (assembly)
+                  # ToolManager (ToolRegistry impl), invoke_turn_tools, tool_setup (assembly)
   backends/       # OpenAI and Anthropic streaming backends
   frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
   tools/          # Pure tool implementations: BashTool, TaskTool, HttpTool, EditFileTool, MCP
   main.py         # config loading and entry point
 ```
 
-Dependency direction: `main.py → frontends → agent → {tools, backends}`
+Dependency direction: `main.py → frontends → agent → {tools, backends}`. All packages
+import `types.py` for shared contracts; nothing in `types.py` imports a package at runtime.
 
-`tools/` has no dependency on `agent/` — it only defines tool implementations and the
-`ToolProvider` protocol.  `agent/` owns the registry machinery (`ToolRegistry`, `ToolManager`)
-and assembly logic (`tool_setup`), keeping the framework and its plugins cleanly separated.
+`tools/` defines tool implementations and the `ToolProvider` protocol; it has no runtime
+dependency on `agent/` (TaskTool is the lone exception — it spawns sub-agent sessions and
+therefore touches agent internals). `agent/` owns the registry implementation (`ToolManager`),
+the per-turn tool invocation pipeline, and the config-driven assembly logic (`tool_setup`).
 
 ## Security Notes
 
