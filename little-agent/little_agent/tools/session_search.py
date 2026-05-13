@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
 
+from little_agent._utils import read_jsonl_lines
 from little_agent.types import AsyncToolFn, JSONValue, Session
 
 from .protocol import ToolArgDef, ToolDef
@@ -31,26 +32,6 @@ _SEARCH_TOOLDEF = ToolDef(
         ),
     ],
 )
-
-
-def _read_jsonl_lines(path: Path) -> list[dict[str, Any]]:
-    """Read JSONL file; skip empty lines and malformed records."""
-    records: list[dict[str, Any]] = []
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                    if isinstance(rec, dict):
-                        records.append(rec)
-                except json.JSONDecodeError:
-                    pass
-    except OSError:
-        logger.exception("Failed to read JSONL file %s", path)
-    return records
 
 
 def _extract_text(record: dict[str, Any]) -> str:
@@ -204,7 +185,7 @@ class SessionSearchProvider:
         path = self._resolve_path(session_id)
         if not path.exists():
             return []
-        all_records = await asyncio.to_thread(_read_jsonl_lines, path)
+        all_records = await asyncio.to_thread(read_jsonl_lines, path)
         # Filter to this session only (needed for fixed-filename multi-session files).
         records = [r for r in all_records if str(r.get("session_id", "")) == session_id]
         return cast(JSONValue, _filter_records(records, query=query, kind=kind, limit=limit))

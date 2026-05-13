@@ -320,15 +320,16 @@ def test_read_preview_no_sessions_dir() -> None:
 
 
 # ---------------------------------------------------------------------------
-# SessionJSONLStore._read_jsonl_lines: OSError, empty lines, invalid JSON
+# read_jsonl_lines: OSError, empty lines, invalid JSON
 # ---------------------------------------------------------------------------
 
 
 def test_read_jsonl_lines_oserror_returns_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """_read_jsonl_lines returns [] when open raises OSError."""
-    store = _make_jsonl_store(tmp_path)
+    """read_jsonl_lines returns [] when open raises OSError."""
+    from little_agent._utils import read_jsonl_lines
+
     path = tmp_path / "test.jsonl"
     path.write_text("content", encoding="utf-8")
 
@@ -336,18 +337,19 @@ def test_read_jsonl_lines_oserror_returns_empty(
         raise OSError("forced")
 
     monkeypatch.setattr("builtins.open", bad_open)
-    assert store._read_jsonl_lines(path) == []
+    assert read_jsonl_lines(path) == []
 
 
 def test_read_jsonl_lines_skips_empty_and_invalid(tmp_path: Path) -> None:
-    """_read_jsonl_lines skips empty lines and invalid JSON, returns valid records."""
-    store = _make_jsonl_store(tmp_path)
+    """read_jsonl_lines skips empty lines and invalid JSON, returns valid records."""
+    from little_agent._utils import read_jsonl_lines
+
     path = tmp_path / "mixed.jsonl"
     path.write_text(
         "\n" + "not-valid-json\n" + json.dumps({"kind": "summary", "id": "n1"}) + "\n",
         encoding="utf-8",
     )
-    records = store._read_jsonl_lines(path)
+    records = read_jsonl_lines(path)
     assert len(records) == 1
     assert records[0]["kind"] == "summary"
 

@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from little_agent._utils import read_jsonl_lines
 from little_agent.types import Hook, JSONValue, Session
 
 logger = logging.getLogger(__name__)
@@ -149,30 +150,10 @@ class SessionJSONLStore(Hook):
         self._rebuilt.discard(str(path))
         await asyncio.to_thread(path.unlink, missing_ok=True)
 
-    @staticmethod
-    def _read_jsonl_lines(path: Path) -> list[dict[str, Any]]:
-        """Read JSONL file; skip empty lines and malformed records."""
-        records: list[dict[str, Any]] = []
-        try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                        if isinstance(rec, dict):
-                            records.append(rec)
-                    except json.JSONDecodeError:
-                        pass
-        except OSError:
-            logger.exception("Failed to read JSONL file %s", path)
-        return records
-
     def _sync_read_history(self, path: Path) -> list[dict[str, JSONValue]]:
         """Read and parse JSONL history; strip session_id key from each record."""
         records: list[dict[str, JSONValue]] = []
-        for rec in self._read_jsonl_lines(path):
+        for rec in read_jsonl_lines(path):
             rec.pop("session_id", None)
             records.append(rec)
         return records
