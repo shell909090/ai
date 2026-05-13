@@ -39,13 +39,8 @@ def build_agent(config: dict[str, Any]) -> tuple[AgentCore, MockClient]:
 
 
 def walk_chain(session: Any) -> list[Any]:
-    """Return all nodes in the chain from tail back to head."""
-    nodes = []
-    node = session.tail
-    while node is not None:
-        nodes.append(node)
-        node = node.prev
-    return nodes
+    """Return all nodes in the session in chronological order."""
+    return list(session.messages)
 
 
 def make_ws_mock() -> MagicMock:

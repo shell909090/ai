@@ -8,24 +8,23 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
-from little_agent.agent.nodes import SummaryNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.tools.bash import BashToolProvider
 from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
-from .helpers import make_backend, walk_chain
+from .helpers import make_backend
 
 pytestmark = [pytest.mark.ci, pytest.mark.timeout(120)]
 
 
 @pytest.mark.asyncio
 async def test_auto_compression(ci_config: dict[str, Any]) -> None:
-    """With compress_ratio=1e-6, verify SummaryNode appears after 2 turns."""
+    """With compress_ratio=1e-6, verify summaries are non-empty after 2 turns."""
     backend = make_backend(ci_config)
     tools = ToolManager()
     tools.register(BashToolProvider())
-    compressor = LLMCompressor(backend, keep_turns=1, compressed_window_tokens=0)
+    compressor = LLMCompressor(backend, keep_turns=1)
     client: MockClient = MockClient()
     agent = AgentCore(
         client=client,
@@ -46,7 +45,6 @@ async def test_auto_compression(ci_config: dict[str, Any]) -> None:
     assert reason2 == "end_turn"
     await session.wait_compress()
 
-    chain = walk_chain(session)
-    assert any(isinstance(n, SummaryNode) for n in chain), (
-        "With compress_ratio=1e-6 and 2 turns, a SummaryNode should appear after auto-compress"
+    assert session.summaries, (
+        "With compress_ratio=1e-6 and 2 turns, session.summaries should be non-empty after auto-compress"
     )

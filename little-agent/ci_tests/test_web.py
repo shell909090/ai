@@ -9,7 +9,6 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
-from little_agent.agent.nodes import SummaryNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.frontends.web.client import WebClient
 from little_agent.frontends.web.handlers import (
@@ -20,7 +19,7 @@ from little_agent.frontends.web.handlers import (
 from little_agent.tools.bash import BashToolProvider
 from little_agent.agent.tool_manager import ToolManager
 
-from .helpers import make_backend, make_ws_mock, walk_chain
+from .helpers import make_backend, make_ws_mock
 
 pytestmark = [pytest.mark.ci, pytest.mark.timeout(120)]
 
@@ -60,11 +59,11 @@ async def test_web_session_prompt(ci_config: dict[str, Any], tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_web_compact(ci_config: dict[str, Any], tmp_path: Path) -> None:
-    """Do 3 turns via web handlers then session/compact; verify ok=True and SummaryNode."""
+    """Do 3 turns via web handlers then session/compact; verify ok=True and summaries set."""
     backend = make_backend(ci_config)
     tools = ToolManager()
     tools.register(BashToolProvider())
-    compressor = LLMCompressor(backend, keep_turns=1, compressed_window_tokens=0)
+    compressor = LLMCompressor(backend, keep_turns=1)
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()
     web_client = WebClient(sessions_dir=sessions_dir)
@@ -99,7 +98,4 @@ async def test_web_compact(ci_config: dict[str, Any], tmp_path: Path) -> None:
 
     sess = web_client.store.get_session(session_id)
     assert sess is not None
-    chain = walk_chain(sess)
-    assert any(isinstance(n, SummaryNode) for n in chain), (
-        "After web compact, chain must contain a SummaryNode"
-    )
+    assert sess.summaries, "After web compact, session.summaries must be non-empty"

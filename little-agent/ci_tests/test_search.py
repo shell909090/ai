@@ -9,7 +9,7 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
-from little_agent.agent.nodes import SummaryNode, ToolResultNode
+from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.agent.session_store import SessionJSONLStore
 from little_agent.tools.bash import BashToolProvider
@@ -34,7 +34,7 @@ async def test_compact_search_session(ci_config: dict[str, Any], tmp_path: Path)
     tools.register(BashToolProvider())
     tools.register(store)
 
-    compressor = LLMCompressor(backend, keep_turns=1, compressed_window_tokens=0)
+    compressor = LLMCompressor(backend, keep_turns=1)
     client: MockClient = MockClient()
     agent = AgentCore(
         client=client,
@@ -57,10 +57,7 @@ async def test_compact_search_session(ci_config: dict[str, Any], tmp_path: Path)
     assert reason3 == "end_turn"
 
     await session.compress()
-    chain = walk_chain(session)
-    assert any(isinstance(n, SummaryNode) for n in chain), (
-        "Chain should contain SummaryNode after compress"
-    )
+    assert session.summaries, "session.summaries should be non-empty after compress"
 
     reason4, _text4 = await session.prompt(
         f"Use the search_session tool to search for '{keyword}'. Report what you find."

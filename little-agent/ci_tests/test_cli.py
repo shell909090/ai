@@ -9,7 +9,6 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
-from little_agent.agent.nodes import SummaryNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.frontends.cli import CliClient
 from little_agent.tools.bash import BashToolProvider
@@ -64,7 +63,7 @@ async def test_fork_command(ci_config: dict[str, Any]) -> None:
 
 @pytest.mark.asyncio
 async def test_save_load(ci_config: dict[str, Any], tmp_path: Path) -> None:
-    """Save session to a file, load it, verify tail node id matches."""
+    """Save session to a file, load it, verify last message id matches."""
     backend = make_backend(ci_config)
     tools = ToolManager()
     tools.register(BashToolProvider())
@@ -74,7 +73,7 @@ async def test_save_load(ci_config: dict[str, Any], tmp_path: Path) -> None:
 
     reason, _ = await session.prompt("Say just: hello")
     assert reason == "end_turn"
-    original_tail_id = session.tail.id if session.tail else None
+    original_tail_id = session.messages[-1].id if session.messages else None
 
     save_path = tmp_path / "session_b3.json"
     await cli_client._do_save(session, save_path)
@@ -84,17 +83,17 @@ async def test_save_load(ci_config: dict[str, Any], tmp_path: Path) -> None:
     loaded_session, ok = await cli_client._do_load(agent, session, save_path)
     assert ok is True, "Session load should succeed"
 
-    loaded_tail_id = loaded_session.tail.id if loaded_session.tail else None
-    assert loaded_tail_id == original_tail_id, "Loaded session tail should match original"
+    loaded_tail_id = loaded_session.messages[-1].id if loaded_session.messages else None
+    assert loaded_tail_id == original_tail_id, "Loaded session last message should match original"
 
 
 @pytest.mark.asyncio
 async def test_compact_cli(ci_config: dict[str, Any]) -> None:
-    """Inject compressor, do 3 turns, call /compact, verify SummaryNode in chain."""
+    """Inject compressor, do 3 turns, call /compact, verify summaries are non-empty."""
     backend = make_backend(ci_config)
     tools = ToolManager()
     tools.register(BashToolProvider())
-    compressor = LLMCompressor(backend, keep_turns=1, compressed_window_tokens=0)
+    compressor = LLMCompressor(backend, keep_turns=1)
     cli_client = CliClient()
     agent = AgentCore(
         client=cli_client,
@@ -111,7 +110,6 @@ async def test_compact_cli(ci_config: dict[str, Any]) -> None:
 
     await cli_client._do_compact(session)
 
-    chain = walk_chain(session)
-    assert any(isinstance(n, SummaryNode) for n in chain), (
-        "After /compact with keep_turns=1 and 3 turns, a SummaryNode must appear"
+    assert session.summaries, (
+        "After /compact with keep_turns=1 and 3 turns, session.summaries must be non-empty"
     )

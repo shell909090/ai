@@ -45,7 +45,7 @@ async def test_acp_session_prompt(ci_config: dict[str, Any]) -> None:
 
 @pytest.mark.asyncio
 async def test_acp_save_load(ci_config: dict[str, Any]) -> None:
-    """Run a turn, save the session, load it back, verify tail id is preserved."""
+    """Run a turn, save the session, load it back, verify last message id is preserved."""
     backend = make_backend(ci_config)
     tools = ToolManager()
     tools.register(BashToolProvider())
@@ -65,7 +65,7 @@ async def test_acp_save_load(ci_config: dict[str, Any]) -> None:
     assert isinstance(save_result, dict), "session/save should return a dict"
 
     original_session = acp_client._sessions[session_id]
-    original_tail_id = original_session.tail.id if original_session.tail else None
+    original_tail_id = original_session.messages[-1].id if original_session.messages else None
 
     load_result = await acp_client._dispatch(agent, "session/load", {"data": save_result})
     assert isinstance(load_result, dict)
@@ -73,5 +73,5 @@ async def test_acp_save_load(ci_config: dict[str, Any]) -> None:
     assert isinstance(loaded_id, str) and loaded_id
 
     loaded_session = acp_client._sessions[loaded_id]
-    loaded_tail_id = loaded_session.tail.id if loaded_session.tail else None
-    assert loaded_tail_id == original_tail_id, "Loaded session tail should match original"
+    loaded_tail_id = loaded_session.messages[-1].id if loaded_session.messages else None
+    assert loaded_tail_id == original_tail_id, "Loaded session last message should match original"
