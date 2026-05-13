@@ -15,7 +15,7 @@ from little_agent.types import JSONValue
 from .hooks import Hook
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Session
+    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 

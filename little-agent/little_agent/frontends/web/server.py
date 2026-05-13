@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from aiohttp import WSMsgType, web
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Agent
+    from little_agent.types import Agent
 
     from .client import WebClient
 

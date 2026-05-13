@@ -11,7 +11,7 @@ from little_agent.frontends.cli import CliClient
 from little_agent.frontends.web import WebClient
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Agent, PermissionChecker
+    from little_agent.types import Agent, PermissionChecker
 
 logger = logging.getLogger(__name__)
 

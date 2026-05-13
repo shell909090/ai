@@ -9,10 +9,9 @@ import uuid
 from typing import TYPE_CHECKING
 
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, SessionUpdate
 
 from .nodes import ToolCallNode, ToolResultNode
-from .protocol import SessionUpdate
 
 if TYPE_CHECKING:
     from .session import SessionCore

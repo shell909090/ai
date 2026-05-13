@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from little_agent.agent.protocol import SessionUpdate
 from little_agent.frontends.acp import AcpClient
+from little_agent.types import SessionUpdate
 from tests.mocks import MockAgent
 
 

@@ -13,12 +13,11 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from little_agent.agent.protocol import Client, SessionUpdate
 from little_agent.backends.exceptions import BackendTimeoutError
-from little_agent.types import JSONValue
+from little_agent.types import Client, JSONValue, SessionUpdate
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Agent, Session
+    from little_agent.types import Agent, Session
 
 logger = logging.getLogger(__name__)
 

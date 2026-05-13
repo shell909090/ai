@@ -24,12 +24,12 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
-from little_agent.agent.protocol import SessionUpdate
 from little_agent.agent.session import SessionCore
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.exceptions import BackendError, ContextOverflowError
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.tools.protocol import ToolArgDef, ToolDef
+from little_agent.types import SessionUpdate
 from tests.mocks import MockClient
 
 _ANTHROPIC_BACKEND_MODULE = "little_agent.backends.anthropic"

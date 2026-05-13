@@ -5,11 +5,18 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any, cast
 
-from little_agent.types import JSONValue
+from little_agent.types import (
+    Agent,
+    Client,
+    JSONValue,
+    PermissionChecker,
+    Session,
+    ToolRegistry,
+)
 
 from .hooks import Hook
 from .nodes import validate_node_dict
-from .protocol import Agent, Client, Compressor, PermissionChecker, Session, ToolRegistry
+from .protocol import Compressor
 from .session import SessionCore
 
 if TYPE_CHECKING:

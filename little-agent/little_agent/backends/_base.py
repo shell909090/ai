@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
 from little_agent.agent.nodes import Node
-from little_agent.agent.protocol import SessionUpdate
+from little_agent.types import SessionUpdate
 
 from ._utils import _is_context_overflow
 from .exceptions import (

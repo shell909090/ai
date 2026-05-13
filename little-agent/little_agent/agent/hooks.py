@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from little_agent.agent.nodes import ToolCallNode, ToolResultNode
-    from little_agent.agent.protocol import Session
+    from little_agent.types import Session
 
 
 class Hook:

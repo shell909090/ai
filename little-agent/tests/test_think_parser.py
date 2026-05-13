@@ -1,7 +1,7 @@
 """Tests for ThinkTagParser streaming parser."""
 
-from little_agent.agent.protocol import SessionUpdate
 from little_agent.backends.openai import ThinkTagParser
+from little_agent.types import SessionUpdate
 
 
 def collect_updates(parser: ThinkTagParser, chunks: list[str]) -> list[SessionUpdate]:

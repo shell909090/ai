@@ -6,8 +6,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import MagicMock
 
-from little_agent.agent.protocol import SessionUpdate
 from little_agent.backends.protocol import BackendTurnResult
+from little_agent.types import SessionUpdate
 
 
 async def _collect(

@@ -14,8 +14,8 @@ from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
     from little_agent.agent.agent import AgentCore
-    from little_agent.agent.protocol import Session
     from little_agent.agent.session import SessionCore
+    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 

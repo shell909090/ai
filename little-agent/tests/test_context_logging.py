@@ -39,8 +39,8 @@ async def test_session_id_set_during_turn() -> None:
 
     from little_agent.agent.agent import AgentCore
     from little_agent.agent.context import current_session_id as _csid
-    from little_agent.agent.protocol import SessionUpdate
     from little_agent.backends.protocol import Backend, BackendTurnResult
+    from little_agent.types import SessionUpdate
 
     captured: list[str] = []
 

@@ -7,10 +7,10 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.hooks import Hook
 from little_agent.agent.nodes import ToolCallNode, ToolResultNode
-from little_agent.agent.protocol import Session
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.tools.protocol import ToolArgDef, ToolDef
+from little_agent.types import Session
 from tests.mocks import MockBackend, MockClient, MockToolProvider
 
 # ---------------------------------------------------------------------------
@@ -228,7 +228,7 @@ async def test_on_cancel_fires() -> None:
     import asyncio
     from collections.abc import AsyncGenerator
 
-    from little_agent.agent.protocol import SessionUpdate
+    from little_agent.types import SessionUpdate
 
     record: list[str] = []
     hook = RecordingHook("h", record)

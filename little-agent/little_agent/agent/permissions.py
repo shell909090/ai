@@ -6,12 +6,10 @@ import fnmatch
 import logging
 from typing import TYPE_CHECKING
 
-from little_agent.types import JSONValue
+from little_agent.types import JSONValue, PermissionChecker
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Session
-
-from little_agent.agent.protocol import PermissionChecker
+    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 

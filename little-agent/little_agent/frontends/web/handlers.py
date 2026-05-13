@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from little_agent.agent.protocol import Agent, Session
+    from little_agent.types import Agent, Session
 
     from .client import WebClient
 
