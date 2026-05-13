@@ -1,4 +1,4 @@
-"""Tests for shared backend utilities: chain→messages, format_tool_result."""
+"""Tests for shared backend utilities: chain→messages, tool result formatting."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from little_agent.agent.nodes import (
     ToolResultNode,
     UserPromptNode,
 )
-from little_agent.backends._utils import _format_tool_result
 from little_agent.backends.openai import (
     _chain_to_messages,
     _tool_map_to_openai_functions,
@@ -79,16 +78,23 @@ def test_chain_to_messages_with_tool_result() -> None:
 
 def test_format_tool_result_plain_string() -> None:
     """String values are written as-is without JSON escaping."""
-    result = {"status": "completed", "content": "line1\nline2\npath: /foo/bar"}
-    text = _format_tool_result(result)
-    assert text == "status: completed\ncontent: line1\nline2\npath: /foo/bar"
+    node = ToolResultNode(
+        id="t1",
+        results={"c1": {"status": "completed", "content": "line1\nline2\npath: /foo/bar"}},
+    )
+    msgs = node.to_anthropic()
+    expected = "status: completed\ncontent: line1\nline2\npath: /foo/bar"
+    assert msgs[0]["content"][0]["content"] == expected
 
 
 def test_format_tool_result_non_string_value() -> None:
     """Non-string values fall back to json.dumps."""
-    result = {"status": "completed", "content": {"key": "val"}}
-    text = _format_tool_result(result)
-    assert text == 'status: completed\ncontent: {"key": "val"}'
+    node = ToolResultNode(
+        id="t1",
+        results={"c1": {"status": "completed", "content": {"key": "val"}}},
+    )
+    msgs = node.to_anthropic()
+    assert msgs[0]["content"][0]["content"] == 'status: completed\ncontent: {"key": "val"}'
 
 
 def test_chain_to_messages_parallel_tool_calls() -> None:

@@ -213,10 +213,9 @@ async def invoke_turn_tools(
 ) -> str:
     """Handle a tool_call BackendTurnResult and return the updated partial_output.
 
-    Appends AssistantNode (frozen) and ToolResultNode (mutable) to the session,
-    fires on_tool_call hook with session.messages[-1] == the AssistantNode, executes
-    tools concurrently with permission + allowlist checks, freezes
-    ToolResultNode, fires on_tool_result hook.
+    Appends AssistantNode and ToolResultNode to the session, fires on_tool_call
+    hook, executes tools concurrently with permission + allowlist checks, then
+    fires on_tool_result hook.
     """
     partial_output = result.output_text or partial_output
     if result.output_text and not did_stream:

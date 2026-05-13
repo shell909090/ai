@@ -54,13 +54,11 @@ class UserPromptNode:
 
     def to_anthropic(self) -> list[dict[str, Any]]:
         """Convert to Anthropic user message."""
-        content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
-        return [{"role": "user", "content": content}]
+        return [{"role": "user", "content": self.prompt}]
 
     def to_openai(self) -> list[dict[str, Any]]:
         """Convert to OpenAI user message."""
-        content = self.prompt if isinstance(self.prompt, str) else json.dumps(self.prompt)
-        return [{"role": "user", "content": content}]
+        return [{"role": "user", "content": self.prompt}]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UserPromptNode:

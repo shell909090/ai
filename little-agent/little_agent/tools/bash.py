@@ -14,19 +14,8 @@ from .protocol import AsyncToolFn, ToolArgDef, ToolDef
 
 logger = logging.getLogger(__name__)
 
-_DANGEROUS_ENV_VARS = frozenset(
-    {
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "LD_AUDIT",
-        "LD_DEBUG",
-        "DYLD_INSERT_LIBRARIES",
-        "DYLD_LIBRARY_PATH",
-        "PATH",
-        "PYTHONPATH",
-        "PYTHONSTARTUP",
-    }
-)
+_DANGEROUS_ENV_VARS = frozenset({"PATH"})
+_DANGEROUS_ENV_PREFIXES = ("LD_", "DYLD_", "PYTHON")
 
 
 class BashToolProvider:
@@ -94,7 +83,9 @@ class BashToolProvider:
             env = {**os.environ}
             for k, v in env_val.items():
                 key = str(k)
-                if key in _DANGEROUS_ENV_VARS:
+                if key in _DANGEROUS_ENV_VARS or any(
+                    key.startswith(p) for p in _DANGEROUS_ENV_PREFIXES
+                ):
                     logger.warning("Blocked dangerous env var override: %r", key)
                 else:
                     env[key] = str(v)

@@ -80,20 +80,6 @@ def _log_streaming_response(
     )
 
 
-def _format_tool_result(result: dict[str, Any]) -> str:
-    """Format a tool result dict as multi-line k: v text."""
-    lines = []
-    for k, v in result.items():
-        if isinstance(v, str):
-            lines.append(f"{k}: {v}")
-        else:
-            try:
-                lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
-            except (TypeError, ValueError):
-                lines.append(f"{k}: {v!s}")
-    return "\n".join(lines)
-
-
 def _tool_def_to_json_schema(tooldef: ToolDef) -> dict[str, Any]:
     """Convert a ToolDef to a JSON Schema object (the inner schema body)."""
     properties: dict[str, Any] = {}

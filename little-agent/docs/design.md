@@ -54,28 +54,20 @@ class AssistantNode(Node):
     text: str = ""                      # 助手回复文本；tool call 时为调用前说明
     thinking: str = ""                  # 模型思考文本（reasoning/thinking），可为空
     tool_calls: dict[str, dict[str, Any]] = field(default_factory=dict)  # call_id -> {tool_name, arguments}；空表示无 tool call
-    frozen: bool = False
 
 
 @dataclass(slots=True)
 class ToolResultNode(Node):
     kind: ClassVar[str] = "tool_result"
     results: dict[str, dict[str, Any]] = field(default_factory=dict)  # call_id -> {status, content}
-    frozen: bool = False
 ```
 
 规则：
 
 1. `id` 用于 save/load、日志、调试、Hook 状态跟踪。节点无 `prev` 字段；顺序由 `SessionCore.messages` list 维护。
-2. 节点整体逻辑 append-only。
-3. `frozen` 字段只出现在写入过程中可变的节点：`AssistantNode`、`ToolResultNode`。其他节点创建即不可变。
-4. 可变节点在任意时刻只能被一个 session 作为活跃尾节点持有。
-5. 触发冻结的时机（由 session 管理）：
-   - 追加新节点时旧尾若可变，立刻冻结。
-   - session 被 fork 时当前尾若可变，立刻冻结。
-   - 当前 turn 结束或被取消时，尾节点立刻冻结。
-6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填。空字符串时序列化跳过该字段，节省体积。
-7. 每个 Node 子类实现 `to_anthropic() -> list[dict[str, Any]]` 和 `to_openai() -> list[dict[str, Any]]`，把节点转换为对应 provider 的消息列表（空列表表示该节点不产生消息）。
+2. 节点整体逻辑 append-only；无显式冻结操作。`UserPromptNode` 和 `AssistantNode` 追加后内容不再变化。`ToolResultNode` 例外：追加时 `results` 为空，tools 并发执行期间原地回填，全部结果到位后才稳定。
+3. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填。空字符串时序列化跳过该字段，节省体积。
+4. 每个 Node 子类实现 `to_anthropic() -> list[dict[str, Any]]` 和 `to_openai() -> list[dict[str, Any]]`，把节点转换为对应 provider 的消息列表（空列表表示该节点不产生消息）。
 
 ### 2.2 Session 状态
 
@@ -113,41 +105,39 @@ class ToolResultNode(Node):
 
 规则：
 
-1. `AssistantNode`（tool call 时）由 backend 一次写入后立刻冻结。
+1. `AssistantNode`（tool call 时）由 backend 一次性写入后追加进 messages。
 2. `ToolResultNode` 跟随其后创建，按 `call_id` 逐步回填。
 3. 结果与状态依靠 `call_id` 对应，不依靠顺序。
 4. tool 执行抛出的异常由编排层 `except Exception` 捕获，写入 `status="failed"`，`content` 为异常信息。**异常不冒出 prompt turn**。
-5. 取消时未完成的 call 标记 `cancelled`，节点冻结，迟到结果丢弃。
+5. 取消时未完成的 call 标记 `cancelled`，迟到结果丢弃。
 
 ### 2.4 fork 规则
 
 1. `session.fork()` 基于当前 session 状态创建新 session。
-2. fork 前若当前尾（`messages[-1]`）可变，必须先冻结。
-3. 存在活跃 turn 时调用 fork 直接抛异常。
-4. fork 实现：浅拷贝 `messages` list（`list(self.messages)`）、浅拷贝 `summaries` list、复制 `system_prompt`。节点本身已冻结不可变，浅拷贝安全。
+2. 存在活跃 turn 时调用 fork 直接抛异常。
+3. fork 实现：浅拷贝 `messages` list（`list(self.messages)`）、浅拷贝 `summaries` list、复制 `system_prompt`。节点不可变，浅拷贝安全。
 
 ### 2.5 编排流程
 
 `Session.prompt()` 流程：
 
 1. 已有活跃 turn：进入 pending 队列，满则抛 `SessionBusyError`；否则占据。
-2. 追加 `UserPromptNode`，旧尾若可变先冻结。
+2. 追加 `UserPromptNode`。
 3. 主循环（上限 `MAX_TURN_ITERATIONS=20`）：
    1. 调用 `Backend.generate(session)` 得到 async iterator。遍历产出：`SessionUpdate` 通过 `client.update()` 转发；`BackendTurnResult` 保存为 `result` 退出遍历；context-overflow 错误进入 §2.6.4 in-turn retry。遍历过程中记录 `did_stream`：若至少 yield 过一次 `agent_message_chunk`，则 frontend 已收到流式可见文本。
-   2. `finish_reason == "completed"`：追加 `AssistantNode`（含 `text=output_text`、`thinking=thinking_text`、`tool_calls={}`，冻结）。仅在 `did_stream=False` 时补发一条全量 `agent_message_chunk`，避免与流式重复。返回 `("end_turn", output_text)`。
+   2. `finish_reason == "completed"`：追加 `AssistantNode`（含 `text=output_text`、`thinking=thinking_text`、`tool_calls={}`）。仅在 `did_stream=False` 时补发一条全量 `agent_message_chunk`，避免与流式重复。返回 `("end_turn", output_text)`。
    3. `finish_reason == "tool_call"`：
       - `result.output_text` 非空时存入 `AssistantNode.text`；`result.thinking_text` 非空时存入 `AssistantNode.thinking`；`result.tool_calls` 存入 `AssistantNode.tool_calls`。
-      - 追加 `AssistantNode`（冻结），通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
-      - 触发 `Hook.on_tool_call(session)`（此时 `session.tail` 指向刚冻结的 `AssistantNode`）。
-      - 追加 `ToolResultNode`（可变）。
+      - 追加 `AssistantNode`，通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
+      - 触发 `Hook.on_tool_call(session)`（此时 `session.messages[-1]` 为刚追加的 `AssistantNode`）。
+      - 追加 `ToolResultNode`（results 初始为空，逐步回填）。
       - 检查每个 tool name 是否在 `allowed_tools` 内；不在则记 `failed`，不调用。
       - 通过 permission chain 检查；deny 则记 `failed`，不调用。
       - 并发执行允许的 tools（`asyncio.gather`），按 §2.3 写入。
       - 每个结果就位通过 `Client.update(tool_call_update)` 通知。
-      - 全部结果到位或 turn 取消后，`ToolResultNode` 冻结。
-      - 触发 `Hook.on_tool_result(session)`（此时 `session.tail` 指向刚冻结的 `ToolResultNode`）。
+      - 触发 `Hook.on_tool_result(session)`（此时 `session.messages[-1]` 为已回填完成的 `ToolResultNode`）。
 4. 超过 `MAX_TURN_ITERATIONS` 抛异常。
-5. 收到 cancel：等当前 backend 调用结束，未完成 tool call 标 `cancelled`，节点冻结，返回 `("cancelled", partial_output)`。
+5. 收到 cancel：等当前 backend 调用结束，未完成 tool call 标 `cancelled`，返回 `("cancelled", partial_output)`。
 6. 真正失败（backend 异常等）直接抛异常，不返回 `failed`。
 7. finally 阶段：
    1. 若已注入 `hooks`，依次调用 `hook.on_turn_end(session)`（含成功、取消、异常路径；详见 §2.8）。
@@ -247,7 +237,7 @@ allowed = await session.agent.permissions.request_permission(
 
 会话生命周期 hook 系统，挂载到 session 的多个时点。Hook 与 `session.save()` 的区别：save 是内存镜像（历史可被压缩或丢弃），hook 是事件级旁路通道，订阅者各自决定如何持久化或反应。原 SessionLogger 是 hook 系统的特例（只关心 turn 结束），现统一为基类 + 默认空实现的形式，便于未来扩展更多挂载点（如 search、metrics、external observability）。
 
-接口（基类 + 默认空实现，订阅者继承后只 override 关心的方法）。`Hook` 类位于 `little_agent/types.py`，所有方法只接收 `session`——不向 hook 注入额外 `Node` 参数，因为每个 callback 触发时 `session.tail` 已经指向当下相关的那个 node；需要原 node 数据的 hook 直接读 `session.tail`（必要时回溯 `tail.prev`）。这样 Hook 基类不引用任何 `Node` 子类，保持在 types.py 中无 agent 反向耦合。
+接口（基类 + 默认空实现，订阅者继承后只 override 关心的方法）。`Hook` 类位于 `little_agent/types.py`，所有方法只接收 `session`——不向 hook 注入额外 `Node` 参数；需要节点数据的 hook 通过 `session.messages[-1]` 读取当前尾节点。Hook 基类不引用任何 `Node` 子类，保持在 types.py 中无 agent 反向耦合。
 
 ```python
 class Hook:
@@ -267,19 +257,19 @@ class Hook:
 1. `Agent.hooks: list[Hook]`，由启动脚本按配置构造；可同时注入多个；遍历顺序即配置顺序。
 2. 调用时机：
 
-   | Hook 方法 | 触发时机 | 此时 `session.tail` |
+   | Hook 方法 | 触发时机 | 此时 `session.messages[-1]` |
    |---|---|---|
-   | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） | 上一轮链尾 |
-   | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 | 本轮链尾 |
-   | `on_tool_call(session)` | §2.5 步骤 3.3 中 `AssistantNode` 冻结后，且在创建 `ToolResultNode` 之前 | 刚冻结的 `AssistantNode` |
-   | `on_tool_result(session)` | §2.5 步骤 3.3 中 `ToolResultNode` 全部结果到位并冻结后 | 刚冻结的 `ToolResultNode` |
-   | `on_compress(session)` | compress 任务（post-turn 异步或 in-turn retry）完成后，`session.tail` 已更新为新链头 | 新链头 |
+   | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） | 上一轮最后一个节点（或 messages 为空） |
+   | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 | 本轮最后一个节点 |
+   | `on_tool_call(session)` | §2.5 步骤 3.3 中 `AssistantNode` 追加后，且在创建 `ToolResultNode` 之前 | 刚追加的 `AssistantNode` |
+   | `on_tool_result(session)` | §2.5 步骤 3.3 中 `ToolResultNode` 全部结果回填后 | 已回填完成的 `ToolResultNode` |
+   | `on_compress(session)` | compress 任务（post-turn 异步或 in-turn retry）完成后 | 保留区首个节点（`UserPromptNode`） |
    | `on_fork(source, forked)` | `Session.fork()` 成功创建新 session 后 | 不变 |
-   | `on_cancel(session)` | turn 被取消、未完成节点已冻结后；随后 `on_turn_end` 仍会在 finally 中触发 | 已冻结的尾 |
+   | `on_cancel(session)` | turn 被取消后；随后 `on_turn_end` 仍会在 finally 中触发 | 最后一个节点 |
 
 3. 异常隔离：单个 hook 抛异常不阻断主流程；编排层对每次 hook 调用 `try/except`，异常以 ERROR 级别记入日志（含 hook 类名、`session_id`、`turn_id`），继续下一个 hook。
-4. 多 hook 顺序：按配置顺序串行调用；不并发，避免对 `session.tail` 等共享状态产生竞争。
-5. `SummaryNode` 不参与 hook 的"原始节点记录"语义——它是对事实的摘要，不是事实本身。需要记录原始节点的 hook（如 FileLogger）应跳过 `SummaryNode`；关心压缩事件的 hook 改用 `on_compress` 而不是从节点链里识别 `SummaryNode`。
+4. 多 hook 顺序：按配置顺序串行调用；不并发，避免共享状态竞争。
+5. 压缩结果以字符串形式存入 `session.summaries`，不作为节点追加进 `messages`；关心压缩事件的 hook 使用 `on_compress`，不需要从节点链识别压缩行为。
 
 #### SessionJSONLStore（plugin：同时实现 Hook + ToolProvider）
 
@@ -321,9 +311,9 @@ class SessionJSONLStore(Hook, ToolProvider):
 **Hook 侧行为**（与原 FileLogger 一致）：
 
 1. 仅 override `on_turn_end`；其他 hook 方法走 `Hook` 基类默认 no-op。
-2. 内部状态 `last_tail_ids: dict[str, str]`：session_id → 上次成功记录时的 `session.tail.id`。
-3. 遍历算法：`on_turn_end` 触发时从 `session.tail` 向前回溯；遇 `id == last_tail_ids[session_id]` 停止（首次调用无 stop point，遍历整条链）；跳过 `SummaryNode`；按正序持久化；完成后更新 `last_tail_ids`。
-4. Stop point 可达性：`on_turn_end` 在 compress 之前触发（§2.5 步骤 7.1），compress 至少保留 `keep_turns ≥ 1` 轮，所以上次 tail 始终在 preserve zone 内。
+2. 内部状态 `last_tail_ids: dict[str, str]`：session_id → 上次成功记录时的尾节点 id。
+3. 遍历算法：`on_turn_end` 触发时从 `session.messages[-1]` 向前遍历；遇 `id == last_tail_ids[session_id]` 停止（首次调用无 stop point，遍历整条链）；按正序持久化；完成后更新 `last_tail_ids`。
+4. Stop point 可达性：`on_turn_end` 在 compress 之前触发（§2.5 步骤 7.1），compress 至少保留 `keep_turns ≥ 1` 轮，所以上次记录的尾节点 id 始终在 preserve zone 内。
 5. `filename_template.format(session_id=session.id)` 解析路径，相对路径基于 `sessions_dir`；`~` 自动展开。
 6. 文件存在时启动重建：逐行解析 JSON，按 `session_id` 分组取最后一条记录的 `id` 写入 `last_tail_ids`。
 7. 每节点一行 JSON 追加：`{"session_id": ..., **node.to_dict()}`，复用现有节点序列化。
@@ -436,7 +426,7 @@ class ToolRegistry(Protocol):
 
 - desc: `Create a sub-task with its own session and execute it`
 - 参数：`prompt`(string, req)、`id`(int)、`depends`(array of int)、`tools`(array of string)、`inheritance`(bool, default false)
-- 实现：子任务独立 `Session` 与主隔离；结果含 `output_text` / `stop_reason`；异常被捕获作 failed 返回；`inheritance=true` 时倒推到第一个非 frozen 节点 fork；每个 task 300s 超时；子任务 tool 集合排除 `task`。
+- 实现：子任务独立 `Session` 与主隔离；结果含 `output_text` / `stop_reason`；异常被捕获作 failed 返回；`inheritance=true` 时去掉当前正在回填的 `ToolResultNode`（`messages[:-1]`）后 fork，再补一个占位 `ToolResultNode` 满足 API 对 tool_use/tool_result 配对的要求；每个 task 300s 超时；子任务 tool 集合排除 `task`。
 
 #### http
 
@@ -474,7 +464,7 @@ class ToolRegistry(Protocol):
 
 #### search_session
 
-由 §2.8 `SessionJSONLStore` plugin 的 `ToolProvider` 侧暴露，仅在顶层配置 `session_store:` 存在（或 web frontend 自动启用）时注册。配合「`SummaryNode` 作索引、`search_session` 作正文检索」分工：compressor 把旧 turn 压成 `SummaryNode` 后，AI 通过本工具按需取回原始内容。
+由 §2.8 `SessionJSONLStore` plugin 的 `ToolProvider` 侧暴露，仅在顶层配置 `session_store:` 存在（或 web frontend 自动启用）时注册。配合「`session.summaries` 作历史摘要、`search_session` 作 JSONL 正文检索」分工：compressor 把旧 turn 压缩为摘要字符串存入 `session.summaries` 后，AI 通过本工具按需从 JSONL 文件检索原始内容。
 
 - desc: `Search this session's history (including turns evicted from active context) by keyword`
 - 参数：
@@ -720,7 +710,7 @@ class Backend(Protocol):
 约束：
 
 1. `generate()` 先 yield 零到多个 `SessionUpdate`，最后 yield 一个 `BackendTurnResult`。
-2. backend 接收 `BackendSession`，遍历 `tail` 链式历史，对每个节点调用 `node.to_anthropic()` / `node.to_openai()` 取得 provider 特定消息列表，并按需做整合（如 SummaryNode 链首提升、assistant/user 序列拼装）；同时把 `session.get_turn_tool_map()` 转换为后端工具定义。
+2. backend 接收 `BackendSession`，遍历 `session.messages`，对每个节点调用 `node.to_anthropic()` / `node.to_openai()` 取得 provider 特定消息列表，并按需做整合（summaries 注入 system 参数、assistant/user 序列拼装）；同时把 `session.get_turn_tool_map()` 转换为后端工具定义。
 3. `Backend.generate()` 的形参类型是 `BackendSession`（最小化输入契约），不是完整的 `Session`。这样 compressor 等无需活跃 turn / pending queue / fork 状态 / agent 引用的调用方可以直接提供轻量 `BackendSession` 实现，不必伪造 agent 上下文。`SessionCore` 天然满足 `BackendSession`。
 4. 流式 backend 用 streaming API，逐 chunk yield；流结束后 yield 最终 result。
 5. 性能计数：`BackendTurnResult` yield 前 INFO 日志含 input/output token、cached_tokens、耗时。
@@ -737,7 +727,9 @@ class Backend(Protocol):
 
 #### 节点链 → Anthropic messages
 
-下表的逐节点转换在 `Node.to_anthropic()` 上实现（§2.1 规则 7）；本节定义 backend 层负责的整合规则：SummaryNode 链首提升、消息序列拼装、assistant/user 交替约束。
+下表的逐节点转换在 `Node.to_anthropic()` 上实现（§2.1 规则 4）；本节定义 backend 层负责的整合规则：summaries 注入、消息序列拼装、assistant/user 交替约束。
+
+压缩摘要（`session.summaries`）不作为节点存在于 `messages` 中；backend 在 `_chain_to_messages()` 里将 `session.system_prompt` 与 `session.summaries` 拼接为 `effective_system`，作为 API 的 `system` 参数传入。
 
 | 节点 | 转换 |
 |------|------|
@@ -745,10 +737,8 @@ class Backend(Protocol):
 | `AssistantNode`（`tool_calls` 为空）| `{role: assistant, content: [{type: text, text}]}` |
 | `AssistantNode`（`tool_calls` 非空）| `{role: assistant, content: text(可选) + tool_use 块}` |
 | `ToolResultNode` | `{role: user, content: [{type: tool_result, tool_use_id, content}, ...]}` |
-| `SummaryNode`（链首）| 提升为 `system` 参数，不进 messages（backend 层处理，节点方法默认返回 user 消息）|
-| `SummaryNode`（链中）| `{role: user, content: summary_text}` |
 
-约束：assistant 与 user message 严格交替；`ToolResultNode` 紧接 `ToolCallNode` 所在 assistant message 后。`AssistantResponseNode.thinking` 与 `ToolCallNode.thinking` 不参与 messages 回填，仅供前端 reload history 时还原 thinking bubble。
+约束：assistant 与 user message 严格交替；`ToolResultNode` 紧接前一个 `AssistantNode` 之后。`AssistantNode.thinking` 不参与 messages 回填，仅供前端 reload history 时还原 thinking bubble。
 
 #### 工具定义
 

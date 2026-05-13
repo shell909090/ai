@@ -30,22 +30,22 @@ def test_user_prompt_str_to_openai() -> None:
 
 
 def test_user_prompt_content_block_to_anthropic() -> None:
-    """List prompt is JSON-serialized into content string."""
+    """List prompt is passed through directly as content list."""
     prompt = [{"type": "text", "text": "hi"}]
     n = UserPromptNode(id="1", prompt=prompt)
     msgs = n.to_anthropic()
     assert len(msgs) == 1
     assert msgs[0]["role"] == "user"
-    assert msgs[0]["content"] == json.dumps(prompt)
+    assert msgs[0]["content"] == prompt
 
 
 def test_user_prompt_content_block_to_openai() -> None:
-    """List prompt is JSON-serialized into content string."""
+    """List prompt is passed through directly as content list."""
     prompt = [{"type": "text", "text": "hi"}]
     n = UserPromptNode(id="1", prompt=prompt)
     msgs = n.to_openai()
     assert len(msgs) == 1
-    assert msgs[0]["content"] == json.dumps(prompt)
+    assert msgs[0]["content"] == prompt
 
 
 # ---------------------------------------------------------------------------

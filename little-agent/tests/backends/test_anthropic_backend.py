@@ -497,27 +497,32 @@ class TestChainToMessages:
 
 
 # ---------------------------------------------------------------------------
-# Tests: _format_tool_result (now in _utils)
+# Tests: tool result formatting via ToolResultNode
 # ---------------------------------------------------------------------------
 
 
 class TestFormatToolResultContent:
-    """Tests for _format_tool_result via _utils."""
+    """Tests for tool result formatting via ToolResultNode.to_anthropic()."""
 
     def test_string_passthrough(self) -> None:
-        from little_agent.backends._utils import _format_tool_result
+        from little_agent.agent.nodes import ToolResultNode
 
-        result = {"status": "completed", "content": "some text"}
-        text = _format_tool_result(result)
-        assert "some text" in text
+        node = ToolResultNode(
+            id="t1", results={"c1": {"status": "completed", "content": "some text"}}
+        )
+        msgs = node.to_anthropic()
+        assert "some text" in msgs[0]["content"][0]["content"]
 
     def test_non_string_json_dumps(self) -> None:
-        from little_agent.backends._utils import _format_tool_result
+        from little_agent.agent.nodes import ToolResultNode
 
-        result = {"status": "completed", "content": {"key": "value"}}
-        text = _format_tool_result(result)
-        assert '"key"' in text
-        assert '"value"' in text
+        node = ToolResultNode(
+            id="t1", results={"c1": {"status": "completed", "content": {"key": "value"}}}
+        )
+        msgs = node.to_anthropic()
+        content = msgs[0]["content"][0]["content"]
+        assert '"key"' in content
+        assert '"value"' in content
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ async def _save_after_compress(
     try:
         await task
     except Exception:
-        pass
+        logger.exception("post-turn compress task failed for session %s", session.id)
     await client.store.auto_save(session)
 
 
