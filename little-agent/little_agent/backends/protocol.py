@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from little_agent.types import SessionUpdate
+from little_agent.agent.protocol import SessionUpdate
 
 if TYPE_CHECKING:
     from little_agent.agent.nodes import Node

@@ -7,8 +7,8 @@ import asyncio
 import pytest
 
 from little_agent.agent.context import current_session_id, current_turn_id
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.tools.manager import ToolManager
 from tests.mocks import MockBackend, MockClient
 
 
@@ -39,8 +39,8 @@ async def test_session_id_set_during_turn() -> None:
 
     from little_agent.agent.agent import AgentCore
     from little_agent.agent.context import current_session_id as _csid
+    from little_agent.agent.protocol import SessionUpdate
     from little_agent.backends.protocol import Backend, BackendTurnResult
-    from little_agent.types import SessionUpdate
 
     captured: list[str] = []
 
@@ -56,7 +56,7 @@ async def test_session_id_set_during_turn() -> None:
 
     client = MockClient()
     backend = _CapturingBackend()
-    from little_agent.tools.manager import ToolManager
+    from little_agent.agent.tool_manager import ToolManager
 
     agent = AgentCore(client=client, backend=backend, tools=ToolManager())
     session = await agent.new()

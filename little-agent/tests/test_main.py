@@ -108,7 +108,9 @@ def test_main_unsupported_backend_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
+                mock_parse.return_value = MagicMock(
+                    config=Path("config.yaml"), loglevel=None, mode=None
+                )  # noqa: E501
                 with pytest.raises(ValueError, match="Unsupported backend type"):
                     main()
 
@@ -123,7 +125,9 @@ def test_main_missing_backends_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
+                mock_parse.return_value = MagicMock(
+                    config=Path("config.yaml"), loglevel=None, mode=None
+                )  # noqa: E501
                 with pytest.raises(ValueError, match="Config must contain a 'backends' section"):
                     main()
 
@@ -139,7 +143,9 @@ def test_main_missing_primary_raises() -> None:
     with patch("little_agent.main.load_config", return_value=mock_config):
         with patch("little_agent.main.setup_logging"):
             with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
+                mock_parse.return_value = MagicMock(
+                    config=Path("config.yaml"), loglevel=None, mode=None
+                )  # noqa: E501
                 with pytest.raises(ValueError, match="'primary'"):
                     main()
 
@@ -152,7 +158,9 @@ def test_main_missing_api_key_raises() -> None:
         with patch("little_agent.main.setup_logging"):
             with patch("os.environ.get", return_value=None):
                 with patch("argparse.ArgumentParser.parse_args") as mock_parse:
-                    mock_parse.return_value = MagicMock(config=Path("config.yaml"), loglevel=None, mode=None)  # noqa: E501
+                    mock_parse.return_value = MagicMock(
+                        config=Path("config.yaml"), loglevel=None, mode=None
+                    )  # noqa: E501
                     with pytest.raises(ValueError, match="No API key for backend 'primary'"):
                         main()
 

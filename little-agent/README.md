@@ -147,7 +147,8 @@ At least one of `api_key` or `api_key_env` must resolve to a non-empty value.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `R` | `0.75` | Compression trigger ratio: compress when `total_tokens / context_window > R` |
+| `compress_threshold` | `0.75` | Compression trigger ratio: compress when `total_tokens / context_window` exceeds this value |
+| `max_tool_result_chars` | `50000` | Tool result size cap (serialised JSON characters); larger results are truncated |
 
 #### `compressor`
 
@@ -237,12 +238,19 @@ make fmt lint build test   # run everything
 
 ```
 little_agent/
-  agent/          # AgentCore, SessionCore, node chain, compression, permissions
+  agent/          # AgentCore, SessionCore, node chain, compression, permissions,
+                  # ToolRegistry (protocol), ToolManager (registry), tool_setup (assembly)
   backends/       # OpenAI and Anthropic streaming backends
   frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
-  tools/          # BashTool, TaskTool, HttpTool, EditFileTool
+  tools/          # Pure tool implementations: BashTool, TaskTool, HttpTool, EditFileTool, MCP
   main.py         # config loading and entry point
 ```
+
+Dependency direction: `main.py → frontends → agent → {tools, backends}`
+
+`tools/` has no dependency on `agent/` — it only defines tool implementations and the
+`ToolProvider` protocol.  `agent/` owns the registry machinery (`ToolRegistry`, `ToolManager`)
+and assembly logic (`tool_setup`), keeping the framework and its plugins cleanly separated.
 
 ## Security Notes
 

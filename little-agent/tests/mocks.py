@@ -6,12 +6,11 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from typing import Any
 
 from little_agent.agent.agent import AgentCore
-from little_agent.agent.protocol import Session
+from little_agent.agent.protocol import Client, Session, SessionUpdate
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import Backend, BackendTurnResult
-from little_agent.frontends.protocol import Client
-from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import AsyncToolFn, ToolArgDef, ToolDef, ToolProvider
-from little_agent.types import JSONValue, SessionUpdate
+from little_agent.types import JSONValue
 
 # Type alias for a custom generate function
 GenerateFn = Callable[[object], AsyncIterator[SessionUpdate | BackendTurnResult]]

@@ -10,7 +10,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import BlackWhiteListChecker, YesManChecker
 from little_agent.tools.bash import BashToolProvider
-from little_agent.tools.manager import ToolManager
+from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
 from .helpers import make_backend, walk_chain

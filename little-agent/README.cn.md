@@ -147,7 +147,8 @@ logging:
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
-| `R` | `0.75` | 压缩触发比例：`total_tokens / context_window > R` 时触发压缩 |
+| `compress_threshold` | `0.75` | 压缩触发比例：`total_tokens / context_window` 超过该值时触发压缩 |
+| `max_tool_result_chars` | `50000` | 工具返回结果的大小上限（JSON 序列化字符数），超出时截断并标注 |
 
 #### `compressor`
 
@@ -233,12 +234,19 @@ make fmt lint build test   # 一键全部执行
 
 ```
 little_agent/
-  agent/          # AgentCore、SessionCore、节点链、压缩、权限系统
+  agent/          # AgentCore、SessionCore、节点链、压缩、权限系统、
+                  # ToolRegistry（协议）、ToolManager（注册表）、tool_setup（装配）
   backends/       # OpenAI 和 Anthropic 流式后端
   frontends/      # CLI、Web（HTTP+WebSocket）、ACP（WebSocket）
-  tools/          # BashTool、TaskTool、HttpTool、EditFileTool
+  tools/          # 纯工具实现：BashTool、TaskTool、HttpTool、EditFileTool、MCP
   main.py         # 配置加载与入口
 ```
+
+依赖方向：`main.py → frontends → agent → {tools, backends}`
+
+`tools/` 不依赖 `agent/`，只定义工具实现和 `ToolProvider` 协议。
+`agent/` 持有注册机制（`ToolRegistry`、`ToolManager`）和装配逻辑（`tool_setup`），
+框架与插件之间依赖方向清晰，不存在反向依赖。
 
 ## 安全注意
 

@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from prompt_toolkit import PromptSession
 
+from little_agent.agent.protocol import SessionUpdate
 from little_agent.backends.exceptions import BackendTimeoutError
 from little_agent.frontends.cli import CliClient
-from little_agent.types import SessionUpdate
 
 # ---------------------------------------------------------------------------
 # Helpers

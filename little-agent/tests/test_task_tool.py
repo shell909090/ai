@@ -10,8 +10,8 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import AssistantResponseNode, UserPromptNode
 from little_agent.agent.session import SessionCore
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolArgDef, ToolDef
 from little_agent.tools.task import TASK_TIMEOUT, TaskToolProvider
 from tests.mocks import MockBackend, MockClient, MockToolProvider

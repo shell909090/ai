@@ -10,7 +10,7 @@ from little_agent.agent.permissions import YesManChecker
 from little_agent.backends.build import _DEFAULT_BACKEND_CONFIG, _build_backend
 from little_agent.main import _deep_merge
 from little_agent.tools.bash import BashToolProvider
-from little_agent.tools.manager import ToolManager
+from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
 

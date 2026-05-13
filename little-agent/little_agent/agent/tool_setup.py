@@ -6,7 +6,7 @@ import importlib
 import logging
 from typing import Any
 
-from little_agent.tools.manager import ToolManager
+from little_agent.agent.tool_manager import ToolManager
 
 logger = logging.getLogger(__name__)
 

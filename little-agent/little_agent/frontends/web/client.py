@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
-from little_agent.types import JSONValue, SessionUpdate
+from little_agent.agent.protocol import Client, SessionUpdate
+from little_agent.types import JSONValue
 
-from ..protocol import Client
 from .store import SessionStore
 
 if TYPE_CHECKING:

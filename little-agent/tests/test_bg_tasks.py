@@ -7,8 +7,8 @@ import gc
 
 import pytest
 
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.tools.manager import ToolManager
 from tests.mocks import MockBackend, MockClient
 
 

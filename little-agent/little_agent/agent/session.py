@@ -9,11 +9,11 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from little_agent.tools.protocol import ToolMap
-from little_agent.types import ContentBlock, JSONValue, PromptReturn
+from little_agent.types import ContentBlock, JSONValue
 
 from .exceptions import SessionBusyError
 from .nodes import Node, _rebuild_chain
-from .protocol import Session
+from .protocol import PromptReturn, Session
 
 if TYPE_CHECKING:
     from .agent import AgentCore

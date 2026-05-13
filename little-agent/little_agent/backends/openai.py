@@ -8,8 +8,8 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
 
+from little_agent.agent.protocol import SessionUpdate
 from little_agent.tools.protocol import ToolMap
-from little_agent.types import SessionUpdate
 
 from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
 from ._utils import (

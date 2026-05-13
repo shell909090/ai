@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 
 from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.types import ContentBlock, PromptReturn, SessionUpdate
+from little_agent.types import ContentBlock
 
 from .nodes import AssistantResponseNode, UserPromptNode
+from .protocol import PromptReturn, SessionUpdate
 
 if TYPE_CHECKING:
     from .session import SessionCore

@@ -6,8 +6,8 @@ import logging
 
 import pytest
 
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.bash import BashToolProvider
-from little_agent.tools.manager import ToolManager
 
 
 def _make_manager() -> ToolManager:

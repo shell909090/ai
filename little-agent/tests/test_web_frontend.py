@@ -10,9 +10,9 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from little_agent.agent.agent import AgentCore
+from little_agent.agent.protocol import SessionUpdate
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.frontends.web import WebClient
-from little_agent.types import SessionUpdate
 from tests.mocks import MockBackend, MockToolProvider
 
 

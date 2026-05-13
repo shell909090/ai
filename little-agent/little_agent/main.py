@@ -16,10 +16,10 @@ import yaml
 
 from little_agent._utils import _deep_merge
 from little_agent.agent.agent import AgentCore
+from little_agent.agent.tool_manager import ToolManager
+from little_agent.agent.tool_setup import build_tools, parse_mcp_configs, start_mcp_providers
 from little_agent.backends.build import build_backend, build_compressor
 from little_agent.frontends.build import build_client, build_hooks, build_permissions, run_frontend
-from little_agent.tools.build import build_tools, parse_mcp_configs, start_mcp_providers
-from little_agent.tools.manager import ToolManager
 from little_agent.tools.task import TaskToolProvider
 
 logger = logging.getLogger(__name__)

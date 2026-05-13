@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.http import HttpToolProvider
-from little_agent.tools.manager import ToolManager
 
 
 def _make_manager() -> ToolManager:

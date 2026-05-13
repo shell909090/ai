@@ -8,8 +8,8 @@ import pytest
 
 from little_agent.agent.agent import AgentCore, _validate_chain
 from little_agent.agent.nodes import validate_node_dict
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
-from little_agent.tools.manager import ToolManager
 from tests.mocks import MockBackend, MockClient
 
 

@@ -2,15 +2,62 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, Protocol
 
-from little_agent.types import ContentBlock, JSONValue, PromptReturn
+from little_agent.tools.protocol import AsyncToolFn, ToolMap, ToolProvider
+from little_agent.types import ContentBlock, JSONValue
 
 if TYPE_CHECKING:
-    from little_agent.tools.protocol import ToolRegistry
-
     from .hooks import Hook
     from .nodes import Node
+
+
+StopReason = Literal["end_turn", "cancelled"]
+PromptReturn = tuple[StopReason, str]
+
+
+@dataclass
+class SessionUpdate:
+    """Event from agent (and producing backends) to client."""
+
+    type: Literal[
+        "agent_message_chunk",
+        "thinking_chunk",
+        "tool_call",
+        "tool_call_update",
+    ]
+    data: dict[str, JSONValue]
+
+
+class ToolRegistry(Protocol):
+    """Agent-facing interface: register providers, describe tools, get callables."""
+
+    def register(self, provider: ToolProvider) -> None: ...
+
+    def desc_tool(
+        self,
+        names: set[str] | None = None,
+        *,
+        exclude: set[str] | None = None,
+    ) -> ToolMap: ...
+
+    def __getitem__(self, name: str) -> AsyncToolFn:
+        """Return callable for a named tool; raise KeyError if not found."""
+        ...
+
+
+class Client(Protocol):
+    """Frontend-facing contract: receives session updates and answers permission prompts."""
+
+    async def update(self, session: Session, update: SessionUpdate) -> None: ...
+
+    async def request_permission(
+        self,
+        session: Session,
+        kind: str,
+        payload: dict[str, JSONValue],
+    ) -> bool: ...
 
 
 class PermissionChecker(Protocol):

@@ -2,8 +2,8 @@
 
 import pytest
 
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
-from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolMap
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
 
@@ -133,9 +133,9 @@ async def test_allowed_tools_filters_tool_map() -> None:
 
     from collections.abc import AsyncIterator
 
+    from little_agent.agent.protocol import SessionUpdate
     from little_agent.agent.session import SessionCore
     from little_agent.backends.protocol import Backend
-    from little_agent.types import SessionUpdate
 
     class _CapturingBackend(Backend):
         """Backend that captures get_turn_tool_map() then returns a completed result."""

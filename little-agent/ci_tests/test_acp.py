@@ -10,7 +10,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.permissions import YesManChecker
 from little_agent.frontends.acp import AcpClient
 from little_agent.tools.bash import BashToolProvider
-from little_agent.tools.manager import ToolManager
+from little_agent.agent.tool_manager import ToolManager
 
 from .helpers import make_backend
 

@@ -13,6 +13,7 @@ import openai
 import pytest
 
 from little_agent.agent.agent import AgentCore
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends._base import _StreamAccumulator
 from little_agent.backends.exceptions import BackendTimeoutError, ContextOverflowError
 from little_agent.backends.openai import (
@@ -20,7 +21,6 @@ from little_agent.backends.openai import (
     _build_tool_calls,
     _postprocess_orphaned_think,
 )
-from little_agent.tools.manager import ToolManager
 from little_agent.tools.protocol import ToolArgDef, ToolDef
 from tests.backends.conftest import _collect, _FakeStream, _make_finish_chunk
 from tests.mocks import MockClient, MockToolProvider

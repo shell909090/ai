@@ -1,8 +1,8 @@
-"""Tool manager implementation."""
+"""ToolManager: default ToolRegistry implementation."""
 
 from __future__ import annotations
 
-from .protocol import AsyncToolFn, ToolDef, ToolMap, ToolProvider
+from little_agent.tools.protocol import AsyncToolFn, ToolDef, ToolMap, ToolProvider
 
 
 class ToolManager:

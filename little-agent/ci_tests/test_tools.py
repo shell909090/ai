@@ -13,7 +13,7 @@ from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.tools.file import EditFileToolProvider
 from little_agent.tools.http import HttpToolProvider
-from little_agent.tools.manager import ToolManager
+from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.mcp import MCPStdioProvider
 from tests.mocks import MockClient
 

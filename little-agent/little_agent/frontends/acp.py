@@ -8,9 +8,8 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-from little_agent.types import JSONValue, SessionUpdate
-
-from .protocol import Client
+from little_agent.agent.protocol import Client, SessionUpdate
+from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
     from little_agent.agent.protocol import Agent, Session

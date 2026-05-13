@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from little_agent.agent.tool_setup import load_providers_from_config
 from little_agent.main import _DEFAULT_CONFIG, _deep_merge
 from little_agent.tools.bash import BashToolProvider
-from little_agent.tools.build import load_providers_from_config
 
 
 def test_empty_providers_dict_returns_no_providers() -> None:

@@ -9,13 +9,11 @@ from little_agent.types import JSONValue
 
 from .hooks import Hook
 from .nodes import validate_node_dict
-from .protocol import Agent, Compressor, PermissionChecker, Session
+from .protocol import Agent, Client, Compressor, PermissionChecker, Session, ToolRegistry
 from .session import SessionCore
 
 if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
-    from little_agent.frontends.protocol import Client
-    from little_agent.tools.protocol import ToolRegistry
 
 
 def _validate_chain(chain: list[Any]) -> None:
