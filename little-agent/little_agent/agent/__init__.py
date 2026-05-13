@@ -13,7 +13,7 @@ from little_agent.types import (
 )
 
 from .agent import AgentCore
-from .compressor import LLMCompressor
+from .compressor import Compressor, LLMCompressor
 from .exceptions import SessionBusyError
 from .nodes import (
     AssistantResponseNode,
@@ -24,7 +24,6 @@ from .nodes import (
     UserPromptNode,
 )
 from .permissions import BlackWhiteListChecker, YesManChecker, build_permission_chain
-from .protocol import Compressor
 from .session import SessionCore
 from .tool_manager import ToolManager
 from .turn_runner import MAX_TURN_ITERATIONS

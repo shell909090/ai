@@ -15,8 +15,8 @@ from little_agent.types import (
     ToolRegistry,
 )
 
+from .compressor import Compressor
 from .nodes import validate_node_dict
-from .protocol import Compressor
 from .session import SessionCore
 
 if TYPE_CHECKING:

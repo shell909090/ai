@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from little_agent.agent.nodes import (
     AssistantResponseNode,
@@ -25,6 +25,12 @@ if TYPE_CHECKING:
     from little_agent.backends.protocol import Backend
 
 logger = logging.getLogger(__name__)
+
+
+class Compressor(Protocol):
+    """Compressor protocol; LLMCompressor below is the sole built-in impl."""
+
+    async def compress(self, head: Node | None) -> Node | None: ...
 
 
 def _nodes_to_text(nodes: list[Node]) -> str:
