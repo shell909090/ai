@@ -23,23 +23,14 @@ export function renderHistory(nodes: SessionHistoryNode[]): void {
                     appendMessage("user", node.prompt, { label: undefined });
                 }
                 break;
-            case "assistant_response":
+            case "assistant": {
                 if (node.thinking?.trim()) {
                     appendMessage("thinking", node.thinking, { label: "Thinking" });
                 }
-                if (node.text && node.text.trim()) {
+                if (node.text?.trim()) {
                     appendMessage("agent", node.text, { label: "Agent" });
                 }
-                break;
-            case "tool_call": {
-                if (node.thinking?.trim()) {
-                    appendMessage("thinking", node.thinking, { label: "Thinking" });
-                }
-                // output_text is pre-call reasoning; render as agent message if present.
-                if (node.output_text?.trim()) {
-                    appendMessage("agent", node.output_text, { label: "Agent" });
-                }
-                const calls = (node.calls ?? {}) as Record<string, CallData>;
+                const calls = (node.tool_calls ?? {}) as Record<string, CallData>;
                 for (const [callId, callData] of Object.entries(calls)) {
                     hideEmptyState();
                     const bubble = createToolCallBubble(callId, callData as CallData);

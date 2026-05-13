@@ -31,46 +31,44 @@ describe("renderHistory", () => {
         expect(chatContainer.querySelectorAll(".message.user")).toHaveLength(0);
     });
 
-    it("renders assistant_response text", () => {
-        renderHistory([node("assistant_response", { text: "  hello  ", thinking: "" })]);
+    it("renders assistant text", () => {
+        renderHistory([node("assistant", { text: "  hello  ", thinking: "" })]);
         expect(chatContainer.querySelector(".message.agent")).not.toBeNull();
     });
 
-    it("skips assistant_response with blank text", () => {
-        renderHistory([node("assistant_response", { text: "   ", thinking: "" })]);
+    it("skips assistant with blank text and no tool_calls", () => {
+        renderHistory([node("assistant", { text: "   ", thinking: "" })]);
         expect(chatContainer.querySelector(".message.agent")).toBeNull();
     });
 
-    it("renders assistant_response thinking bubble when thinking is non-empty", () => {
-        renderHistory([
-            node("assistant_response", { text: "answer", thinking: "  deep thoughts  " }),
-        ]);
+    it("renders assistant thinking bubble when thinking is non-empty", () => {
+        renderHistory([node("assistant", { text: "answer", thinking: "  deep thoughts  " })]);
         expect(chatContainer.querySelector(".message.thinking")).not.toBeNull();
     });
 
-    it("renders tool_call node as tool-call bubble", () => {
+    it("renders assistant with tool_calls as tool-call bubbles", () => {
         renderHistory([
-            node("tool_call", {
-                calls: { "c-1": { tool_name: "bash", arguments: { command: "echo hi" } } },
+            node("assistant", {
+                tool_calls: { "c-1": { tool_name: "bash", arguments: { command: "echo hi" } } },
             }),
         ]);
         expect(chatContainer.querySelector(".tool-call")).not.toBeNull();
     });
 
-    it("renders tool_call thinking bubble", () => {
-        renderHistory([node("tool_call", { thinking: "thinking...", calls: {} })]);
+    it("renders assistant thinking bubble alongside tool_calls", () => {
+        renderHistory([node("assistant", { thinking: "thinking...", tool_calls: {} })]);
         expect(chatContainer.querySelector(".message.thinking")).not.toBeNull();
     });
 
-    it("renders tool_call output_text as agent message", () => {
-        renderHistory([node("tool_call", { output_text: "before calling", calls: {} })]);
+    it("renders assistant pre-call text as agent message", () => {
+        renderHistory([node("assistant", { text: "before calling", tool_calls: {} })]);
         expect(chatContainer.querySelector(".message.agent")).not.toBeNull();
     });
 
     it("renders tool_result and updates tool-call bubble", () => {
         renderHistory([
-            node("tool_call", {
-                calls: { "c-1": { tool_name: "bash", arguments: {} } },
+            node("assistant", {
+                tool_calls: { "c-1": { tool_name: "bash", arguments: {} } },
             }),
             node("tool_result", {
                 results: { "c-1": { status: "completed", content: "output" } },

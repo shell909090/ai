@@ -77,8 +77,7 @@ export interface SessionHistoryNode {
     prompt?: string;
     text?: string;
     thinking?: string;
-    output_text?: string;
-    calls?: Record<string, unknown>;
+    tool_calls?: Record<string, unknown>;
     results?: Record<string, unknown>;
 }
 
