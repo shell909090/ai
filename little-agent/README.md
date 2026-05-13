@@ -241,16 +241,20 @@ make fmt lint build test   # run everything
 little_agent/
   types.py        # cross-package contracts: Agent / Session / Client / Hook /
                   # PermissionChecker / ToolRegistry / SessionUpdate + JSON primitives
+  _utils.py       # shared helpers (read_jsonl_lines, _deep_merge)
   agent/          # AgentCore, SessionCore, node chain, compression, permissions,
                   # ToolManager (ToolRegistry impl), invoke_turn_tools, tool_setup (assembly)
+                  # session_store.py: SessionJSONLStore Hook (JSONL persistence)
   backends/       # OpenAI and Anthropic streaming backends
   frontends/      # CLI, Web (HTTP+WebSocket), ACP (WebSocket)
-  tools/          # Pure tool implementations: BashTool, TaskTool, HttpTool, EditFileTool, MCP
+  tools/          # Tool implementations: BashTool, TaskTool, HttpTool, EditFileTool, MCP
+                  # session_search.py: SessionSearchProvider (search_session tool)
   main.py         # config loading and entry point
 ```
 
 Dependency direction: `main.py → frontends → agent → {tools, backends}`. All packages
 import `types.py` for shared contracts; nothing in `types.py` imports a package at runtime.
+`_utils.py` is a leaf shared by all layers.
 
 `tools/` defines tool implementations and the `ToolProvider` protocol; it has no runtime
 dependency on `agent/` (TaskTool is the lone exception — it spawns sub-agent sessions and

@@ -237,16 +237,19 @@ make fmt lint build test   # 一键全部执行
 little_agent/
   types.py        # 跨包契约：Agent / Session / Client / Hook /
                   # PermissionChecker / ToolRegistry / SessionUpdate 及 JSON 原语
+  _utils.py       # 共享辅助函数（read_jsonl_lines、_deep_merge）
   agent/          # AgentCore、SessionCore、节点链、压缩、权限系统、
                   # ToolManager（ToolRegistry 实现）、invoke_turn_tools、tool_setup（装配）
+                  # session_store.py：SessionJSONLStore Hook（JSONL 持久化）
   backends/       # OpenAI 和 Anthropic 流式后端
   frontends/      # CLI、Web（HTTP+WebSocket）、ACP（WebSocket）
-  tools/          # 纯工具实现：BashTool、TaskTool、HttpTool、EditFileTool、MCP
+  tools/          # 工具实现：BashTool、TaskTool、HttpTool、EditFileTool、MCP
+                  # session_search.py：SessionSearchProvider（search_session 工具）
   main.py         # 配置加载与入口
 ```
 
 依赖方向：`main.py → frontends → agent → {tools, backends}`。所有包都从 `types.py`
-拿共享契约；`types.py` 自身在运行时不依赖任何项目内模块。
+拿共享契约；`types.py` 自身在运行时不依赖任何项目内模块。`_utils.py` 是各层均可引用的叶子模块。
 
 `tools/` 定义工具实现和 `ToolProvider` 协议，运行时不依赖 `agent/`（TaskTool 是唯一例外——
 它会派生子 agent session，因此引用 agent 内部类型）。`agent/` 持有 `ToolRegistry`
