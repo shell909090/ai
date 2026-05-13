@@ -32,7 +32,7 @@ _SEARCH_TOOLDEF = ToolDef(
         ToolArgDef(
             name="kind",
             type="string",
-            desc="Filter: turn, any, user_prompt, tool_call, tool_result, assistant_response",
+            desc="Filter: turn, any, user_prompt, assistant, tool_result",
         ),
     ],
 )
@@ -219,17 +219,15 @@ class SessionJSONLStore(Hook):
                     for block in prompt
                 )
             return str(prompt)
-        if node_kind == "assistant_response":
-            return str(record.get("text", ""))
-        if node_kind == "tool_call":
-            parts: list[str] = []
-            out = record.get("output_text", "")
-            if out:
-                parts.append(str(out))
-            calls = record.get("calls", {})
-            if calls:
-                parts.append(json.dumps(calls, ensure_ascii=False))
-            return " ".join(parts)
+        if node_kind == "assistant":
+            text_parts: list[str] = []
+            text = str(record.get("text", ""))
+            if text:
+                text_parts.append(text)
+            tool_calls = record.get("tool_calls", {})
+            if tool_calls:
+                text_parts.append(json.dumps(tool_calls, ensure_ascii=False))
+            return " ".join(text_parts)
         if node_kind == "tool_result":
             results = record.get("results", {})
             return json.dumps(results, ensure_ascii=False) if results else ""

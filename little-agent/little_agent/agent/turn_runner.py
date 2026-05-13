@@ -11,7 +11,7 @@ from little_agent.backends.exceptions import ContextOverflowError
 from little_agent.backends.protocol import BackendTurnResult
 from little_agent.types import ContentBlock, PromptReturn, SessionUpdate
 
-from .nodes import AssistantResponseNode, UserPromptNode
+from .nodes import AssistantNode, UserPromptNode
 
 if TYPE_CHECKING:
     from .session import SessionCore
@@ -126,7 +126,7 @@ class TurnRunner:
         i.e. the backend did not already forward incremental chunks to the client.
         """
         session = self._session
-        assistant_node = AssistantResponseNode(
+        assistant_node = AssistantNode(
             id=str(uuid.uuid4()),
             prev=session.tail,
             text=result.output_text,

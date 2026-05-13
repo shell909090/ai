@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
-    ToolCallNode,
+    AssistantNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -30,7 +29,7 @@ def test_tool_map_to_openai_functions() -> None:
 def test_chain_to_messages() -> None:
     """Test chain to messages conversion."""
     node1 = UserPromptNode(id="1", prev=None, prompt="hello")
-    node2 = AssistantResponseNode(id="2", prev=node1, text="hi")
+    node2 = AssistantNode(id="2", prev=node1, text="hi")
     messages = _chain_to_messages(node2)
     assert len(messages) == 2
     assert messages[0]["role"] == "user"
@@ -46,10 +45,10 @@ def test_chain_to_messages_with_content_block() -> None:
 
 
 def test_chain_to_messages_with_tool_result() -> None:
-    """Test chain to messages with ToolCallNode and ToolResultNode."""
+    """Test chain to messages with AssistantNode (tool_calls) and ToolResultNode."""
     node1 = UserPromptNode(id="1", prev=None, prompt="hello")
-    node2 = ToolCallNode(
-        id="2", prev=node1, calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}}
+    node2 = AssistantNode(
+        id="2", prev=node1, tool_calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}}
     )
     node3 = ToolResultNode(
         id="3", prev=node2, results={"c1": {"status": "completed", "content": "hi"}}
@@ -79,10 +78,10 @@ def test_format_tool_result_non_string_value() -> None:
 def test_chain_to_messages_parallel_tool_calls() -> None:
     """Test parallel tool calls merged into single assistant message."""
     node1 = UserPromptNode(id="1", prev=None, prompt="hello")
-    node2 = ToolCallNode(
+    node2 = AssistantNode(
         id="2",
         prev=node1,
-        calls={
+        tool_calls={
             "c1": {"tool_name": "echo", "arguments": {"text": "a"}},
             "c2": {"tool_name": "add", "arguments": {"a": 1, "b": 2}},
         },
@@ -94,13 +93,13 @@ def test_chain_to_messages_parallel_tool_calls() -> None:
     assert len(messages[1]["tool_calls"]) == 2
 
 
-def test_tool_call_node_output_text_in_messages_openai() -> None:
-    """to_openai includes content when output_text is non-empty."""
-    n = ToolCallNode(
+def test_assistant_node_text_in_messages_openai() -> None:
+    """to_openai includes content when text is non-empty."""
+    n = AssistantNode(
         id="n1",
         prev=None,
-        output_text="I will use bash",
-        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        text="I will use bash",
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
     msgs = n.to_openai()
     assert len(msgs) == 1
@@ -112,13 +111,13 @@ def test_tool_call_node_output_text_in_messages_openai() -> None:
     assert msg["tool_calls"][0]["function"]["name"] == "bash"
 
 
-def test_tool_call_node_empty_output_text_in_messages_openai() -> None:
-    """to_openai omits content key when output_text is empty."""
-    n = ToolCallNode(
+def test_assistant_node_empty_text_in_messages_openai() -> None:
+    """to_openai omits content key when text is empty."""
+    n = AssistantNode(
         id="n2",
         prev=None,
-        output_text="",
-        calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
+        text="",
+        tool_calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
     )
     msgs = n.to_openai()
     assert len(msgs) == 1

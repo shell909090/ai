@@ -46,9 +46,9 @@ def test_validate_node_dict_unknown_kind() -> None:
 
 
 def test_validate_node_dict_wrong_type_calls() -> None:
-    """validate_node_dict raises when 'calls' is not a dict for tool_call."""
-    with pytest.raises(ValueError, match="calls"):
-        validate_node_dict({"id": "n1", "kind": "tool_call", "calls": "bad"})
+    """validate_node_dict raises when 'tool_calls' is not a dict for assistant."""
+    with pytest.raises(ValueError, match="tool_calls"):
+        validate_node_dict({"id": "n1", "kind": "assistant", "tool_calls": "bad"})
 
 
 def test_validate_node_dict_wrong_type_results() -> None:
@@ -63,8 +63,8 @@ def test_validate_node_dict_valid_user_prompt() -> None:
 
 
 def test_validate_node_dict_valid_tool_call() -> None:
-    """validate_node_dict accepts a valid tool_call node."""
-    validate_node_dict({"id": "n1", "kind": "tool_call", "calls": {}})
+    """validate_node_dict accepts a valid assistant node."""
+    validate_node_dict({"id": "n1", "kind": "assistant"})
 
 
 def test_validate_node_dict_not_a_dict() -> None:
@@ -98,7 +98,7 @@ def test_validate_chain_valid_chain() -> None:
     """_validate_chain passes for a well-formed chain."""
     chain = [
         {"id": "n1", "kind": "user_prompt", "prompt": "hello"},
-        {"id": "n2", "kind": "assistant_response", "text": "hi"},
+        {"id": "n2", "kind": "assistant", "text": "hi"},
     ]
     _validate_chain(chain)  # must not raise
 
@@ -117,7 +117,7 @@ async def test_agent_load_valid_round_trip() -> None:
         "cwd": None,
         "chain": [
             {"id": "n1", "kind": "user_prompt", "prompt": "hello"},
-            {"id": "n2", "kind": "assistant_response", "text": "hi"},
+            {"id": "n2", "kind": "assistant", "text": "hi"},
         ],
     }
     session = await agent.load(data)
@@ -165,13 +165,13 @@ async def test_agent_load_duplicate_ids_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_load_bad_calls_type_raises() -> None:
-    """agent.load() raises ValueError when tool_call.calls is not a dict."""
+    """agent.load() raises ValueError when assistant.tool_calls is not a dict."""
     agent = _make_agent()
     data = {
         "id": "s1",
         "cwd": None,
         "chain": [
-            {"id": "n1", "kind": "tool_call", "calls": "not-a-dict"},
+            {"id": "n1", "kind": "assistant", "tool_calls": "not-a-dict"},
         ],
     }
     with pytest.raises(ValueError):

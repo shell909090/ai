@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     SummaryNode,
     UserPromptNode,
 )
@@ -28,8 +28,8 @@ def _make_user_node(node_id: str | None = None, prompt: str = "hello") -> UserPr
     return UserPromptNode(id=node_id or str(uuid.uuid4()), prompt=prompt)
 
 
-def _make_assistant_node(node_id: str | None = None, text: str = "world") -> AssistantResponseNode:
-    return AssistantResponseNode(id=node_id or str(uuid.uuid4()), text=text)
+def _make_assistant_node(node_id: str | None = None, text: str = "world") -> AssistantNode:
+    return AssistantNode(id=node_id or str(uuid.uuid4()), text=text)
 
 
 def _make_summary_node(node_id: str | None = None, summary: str = "summary") -> SummaryNode:
@@ -97,7 +97,7 @@ async def test_on_turn_end_skips_summary_node(tmp_path: Path) -> None:
 
     kinds = [json.loads(line)["kind"] for line in lines]
     assert "summary" not in kinds
-    assert kinds == ["user_prompt", "assistant_response"]
+    assert kinds == ["user_prompt", "assistant"]
 
 
 @pytest.mark.asyncio

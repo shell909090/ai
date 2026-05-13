@@ -18,9 +18,8 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     SummaryNode,
-    ToolCallNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -358,10 +357,10 @@ class TestChainToMessages:
         assert msgs[0]["role"] == "user"
         assert msgs[0]["content"] == "hello world"
 
-    def test_assistant_response_node(self) -> None:
+    def test_assistant_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="hi")
-        n2 = AssistantResponseNode(id="2", prev=n1, text="hello back")
+        n2 = AssistantNode(id="2", prev=n1, text="hello back")
         session = _make_session_with_tail(n2)
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
@@ -371,13 +370,13 @@ class TestChainToMessages:
         assert content[0]["type"] == "text"
         assert content[0]["text"] == "hello back"
 
-    def test_tool_call_node(self) -> None:
+    def test_assistant_node_tool_call(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="go")
-        n2 = ToolCallNode(
+        n2 = AssistantNode(
             id="2",
             prev=n1,
-            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
         session = _make_session_with_tail(n2)
         msgs, _ = mod._chain_to_messages(session)
@@ -392,15 +391,15 @@ class TestChainToMessages:
         assert block["name"] == "bash"
         assert block["input"] == {"cmd": "ls"}
 
-    def test_tool_call_node_with_output_text(self) -> None:
-        """ToolCallNode with output_text produces text block before tool_use block."""
+    def test_assistant_node_with_text_and_tool_call(self) -> None:
+        """AssistantNode with text produces text block before tool_use block."""
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="go")
-        n2 = ToolCallNode(
+        n2 = AssistantNode(
             id="2",
             prev=n1,
-            output_text="I will use bash",
-            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+            text="I will use bash",
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
         session = _make_session_with_tail(n2)
         msgs, _ = mod._chain_to_messages(session)
@@ -417,15 +416,15 @@ class TestChainToMessages:
         assert content[1]["id"] == "c1"
         assert content[1]["name"] == "bash"
 
-    def test_tool_call_node_empty_output_text(self) -> None:
-        """ToolCallNode with empty output_text produces only tool_use block."""
+    def test_assistant_node_empty_text_tool_call(self) -> None:
+        """AssistantNode with empty text produces only tool_use block."""
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="go")
-        n2 = ToolCallNode(
+        n2 = AssistantNode(
             id="2",
             prev=n1,
-            output_text="",
-            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+            text="",
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
         session = _make_session_with_tail(n2)
         msgs, _ = mod._chain_to_messages(session)
@@ -439,10 +438,10 @@ class TestChainToMessages:
     def test_tool_result_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="go")
-        n2 = ToolCallNode(
+        n2 = AssistantNode(
             id="2",
             prev=n1,
-            calls={"c1": {"tool_name": "bash", "arguments": {}}},
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
         )
         n3 = ToolResultNode(
             id="3",
@@ -473,10 +472,10 @@ class TestChainToMessages:
     def test_parallel_tool_calls(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
         n1 = UserPromptNode(id="1", prev=None, prompt="do stuff")
-        n2 = ToolCallNode(
+        n2 = AssistantNode(
             id="2",
             prev=n1,
-            calls={
+            tool_calls={
                 "c1": {"tool_name": "echo", "arguments": {"text": "a"}},
                 "c2": {"tool_name": "add", "arguments": {"a": 1, "b": 2}},
             },

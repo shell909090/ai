@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from little_agent.agent.agent import AgentCore
-from little_agent.agent.nodes import AssistantResponseNode, UserPromptNode
+from little_agent.agent.nodes import AssistantNode, UserPromptNode
 from little_agent.agent.session import SessionCore
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
@@ -186,8 +186,8 @@ async def test_fork_for_inheritance_skips_frozen_nodes(simple_agent: AgentCore) 
 
     # Create a chain: tail(frozen=True) -> prev(frozen=True) -> head(no frozen)
     head = UserPromptNode(id="head", prev=None, prompt="hi")
-    mid = AssistantResponseNode(id="mid", prev=head, text="mid", frozen=True)
-    tail = AssistantResponseNode(id="tail", prev=mid, text="tail", frozen=True)
+    mid = AssistantNode(id="mid", prev=head, text="mid", frozen=True)
+    tail = AssistantNode(id="tail", prev=mid, text="tail", frozen=True)
     session.tail = tail
 
     sub = await provider._fork_for_inheritance(session)
@@ -202,9 +202,9 @@ async def test_fork_for_inheritance_partial_frozen(simple_agent: AgentCore) -> N
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
     # Chain: tail(frozen=True) -> prev(no frozen) -> older(frozen=True)
-    older = AssistantResponseNode(id="older", prev=None, text="older", frozen=True)
+    older = AssistantNode(id="older", prev=None, text="older", frozen=True)
     prev = UserPromptNode(id="prev", prev=older, prompt="hi")
-    tail = AssistantResponseNode(id="tail", prev=prev, text="tail", frozen=True)
+    tail = AssistantNode(id="tail", prev=prev, text="tail", frozen=True)
     session.tail = tail
 
     sub = await provider._fork_for_inheritance(session)
@@ -218,8 +218,8 @@ async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
-    n1 = AssistantResponseNode(id="n1", prev=None, text="n1", frozen=True)
-    n2 = AssistantResponseNode(id="n2", prev=n1, text="n2", frozen=True)
+    n1 = AssistantNode(id="n1", prev=None, text="n1", frozen=True)
+    n2 = AssistantNode(id="n2", prev=n1, text="n2", frozen=True)
     session.tail = n2
 
     sub = await provider._fork_for_inheritance(session)
@@ -228,7 +228,7 @@ async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
 
 
 # ---------------------------------------------------------------------------
-# T66: _fork_for_inheritance stops at frozen=False AssistantResponseNode
+# T66: _fork_for_inheritance stops at frozen=False AssistantNode
 # ---------------------------------------------------------------------------
 
 
@@ -246,9 +246,9 @@ async def test_fork_for_inheritance_stops_at_frozen_false(simple_agent: AgentCor
     # Chain: tail(frozen=True) -> middle(frozen=False) -> head(frozen=True)
     # Walk from tail: frozen=True → continue; middle: frozen=False → stop.
     # Expected fork-tail == middle (the node where traversal stopped).
-    head = AssistantResponseNode(id="head", prev=None, text="head", frozen=True)
-    middle = AssistantResponseNode(id="middle", prev=head, text="middle", frozen=False)
-    tail = AssistantResponseNode(id="tail", prev=middle, text="tail", frozen=True)
+    head = AssistantNode(id="head", prev=None, text="head", frozen=True)
+    middle = AssistantNode(id="middle", prev=head, text="middle", frozen=False)
+    tail = AssistantNode(id="tail", prev=middle, text="tail", frozen=True)
     session.tail = tail
 
     sub = await provider._fork_for_inheritance(session)

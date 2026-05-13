@@ -1,7 +1,7 @@
 """Tool registry and per-turn tool invocation pipeline.
 
 ToolManager: long-lived registry mapping tool name -> (ToolDef, callable).
-invoke_turn_tools(): per-turn pipeline that creates ToolCallNode /
+invoke_turn_tools(): per-turn pipeline that creates AssistantNode /
 ToolResultNode, runs permission checks, gathers tool execution, and emits
 tool_call / tool_call_update events. It takes the session as a parameter
 rather than holding it as state because nothing about the pipeline
@@ -20,7 +20,7 @@ from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
 from little_agent.tools.protocol import AsyncToolFn, ToolDef, ToolMap, ToolProvider
 from little_agent.types import JSONValue, SessionUpdate
 
-from .nodes import ToolCallNode, ToolResultNode
+from .nodes import AssistantNode, ToolResultNode
 
 if TYPE_CHECKING:
     from .session import SessionCore
@@ -82,14 +82,14 @@ def _truncate_tool_result(content: JSONValue, max_chars: int) -> JSONValue:
     )
 
 
-def _create_tool_call_node(session: SessionCore, result: BackendTurnResult) -> ToolCallNode:
-    """Create and append a ToolCallNode."""
-    node = ToolCallNode(
+def _create_assistant_node(session: SessionCore, result: BackendTurnResult) -> AssistantNode:
+    """Create and append an AssistantNode for a tool call result."""
+    node = AssistantNode(
         id=str(uuid.uuid4()),
         prev=session.tail,
-        output_text=result.output_text or "",
+        text=result.output_text or "",
         thinking=result.thinking_text or "",
-        calls={
+        tool_calls={
             tc.call_id: {"tool_name": tc.tool_name, "arguments": tc.arguments}
             for tc in result.tool_calls
         },
@@ -174,9 +174,7 @@ async def _invoke_tools(
                 "content": "Permission denied",
             }
 
-    allowed_calls, tool_results = await _run_tool_gather(
-        session, allowed_calls, tool_result_node
-    )
+    allowed_calls, tool_results = await _run_tool_gather(session, allowed_calls, tool_result_node)
 
     for tc, res in zip(allowed_calls, tool_results, strict=True):
         if session.is_cancel_requested:
@@ -217,8 +215,8 @@ async def invoke_turn_tools(
 ) -> str:
     """Handle a tool_call BackendTurnResult and return the updated partial_output.
 
-    Appends ToolCallNode (frozen) and ToolResultNode (mutable) to the session,
-    fires on_tool_call hook with session.tail == the ToolCallNode, executes
+    Appends AssistantNode (frozen) and ToolResultNode (mutable) to the session,
+    fires on_tool_call hook with session.tail == the AssistantNode, executes
     tools concurrently with permission + allowlist checks, freezes
     ToolResultNode, fires on_tool_result hook.
     """
@@ -232,12 +230,12 @@ async def invoke_turn_tools(
             ),
         )
 
-    tool_call_node = _create_tool_call_node(session, result)
+    tool_call_node = _create_assistant_node(session, result)
     await session.agent.client.update(
         session,
         SessionUpdate(
             type="tool_call",
-            data={"calls": tool_call_node.calls},  # type: ignore[dict-item]
+            data={"calls": tool_call_node.tool_calls},  # type: ignore[dict-item]
         ),
     )
     await session.call_hooks("on_tool_call", session)

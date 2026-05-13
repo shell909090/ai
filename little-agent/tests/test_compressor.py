@@ -15,10 +15,9 @@ from little_agent.agent.compressor import (
     _split_into_turns,
 )
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     Node,
     SummaryNode,
-    ToolCallNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -35,10 +34,10 @@ def _make_turn(
     prev: Node | None,
     prompt: str = "user msg",
     reply: str = "assistant reply",
-) -> AssistantResponseNode:
-    """Build a single (UserPromptNode, AssistantResponseNode) turn and return the tail."""
+) -> AssistantNode:
+    """Build a single (UserPromptNode, AssistantNode) turn and return the tail."""
     u = UserPromptNode(id=f"{turn_id}-u", prev=prev, prompt=prompt)
-    a = AssistantResponseNode(id=f"{turn_id}-a", prev=u, text=reply)
+    a = AssistantNode(id=f"{turn_id}-a", prev=u, text=reply)
     return a
 
 
@@ -222,12 +221,12 @@ async def test_compress_preserves_k_turns() -> None:
 def test_compress_splits_turns_correctly() -> None:
     """_split_into_turns groups nodes so each turn starts with a UserPromptNode."""
     u1 = UserPromptNode(id="1", prev=None, prompt="q1")
-    a1 = AssistantResponseNode(id="2", prev=u1, text="a1")
+    a1 = AssistantNode(id="2", prev=u1, text="a1")
     u2 = UserPromptNode(id="3", prev=a1, prompt="q2")
-    tc = ToolCallNode(id="4", prev=u2, calls={"c": {"tool_name": "t", "arguments": {}}})
+    tc = AssistantNode(id="4", prev=u2, tool_calls={"c": {"tool_name": "t", "arguments": {}}})
     tr = ToolResultNode(id="5", prev=tc, results={"c": {"status": "ok", "content": "r"}})
     u3 = UserPromptNode(id="6", prev=tr, prompt="q3")
-    a3 = AssistantResponseNode(id="7", prev=u3, text="a3")
+    a3 = AssistantNode(id="7", prev=u3, text="a3")
 
     nodes = [u1, a1, u2, tc, tr, u3, a3]
     turns = _split_into_turns(nodes)
@@ -465,10 +464,10 @@ def test_nodes_to_text_includes_tool_nodes() -> None:
     """_nodes_to_text formats tool call/result nodes correctly."""
     nodes: list[Node] = [
         UserPromptNode(id="1", prev=None, prompt="run tool"),
-        ToolCallNode(
+        AssistantNode(
             id="2",
             prev=None,
-            calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
+            tool_calls={"c1": {"tool_name": "echo", "arguments": {"text": "hi"}}},
         ),
         ToolResultNode(
             id="3",
@@ -483,19 +482,19 @@ def test_nodes_to_text_includes_tool_nodes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 15. _nodes_to_text includes ToolCallNode.output_text
+# 15. _nodes_to_text includes AssistantNode.text (pre-tool reasoning)
 # ---------------------------------------------------------------------------
 
 
 def test_nodes_to_text_includes_tool_call_output_text() -> None:
-    """_nodes_to_text prepends 'Assistant: <output_text>' before tool-call line when non-empty."""
+    """_nodes_to_text prepends 'Assistant: <text>' before tool-call line when non-empty."""
     nodes_with_text: list[Node] = [
         UserPromptNode(id="1", prev=None, prompt="run tool"),
-        ToolCallNode(
+        AssistantNode(
             id="2",
             prev=None,
-            output_text="I will use bash",
-            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+            text="I will use bash",
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         ),
     ]
     text = _nodes_to_text(nodes_with_text)
@@ -552,14 +551,13 @@ async def test_compressor_session_id_passed_to_backend() -> None:
 
 
 def test_nodes_to_text_tool_call_no_output_text() -> None:
-    """_nodes_to_text omits 'Assistant:' line when output_text is empty."""
+    """_nodes_to_text omits 'Assistant:' line when text is empty."""
     nodes_no_text: list[Node] = [
         UserPromptNode(id="1", prev=None, prompt="run tool"),
-        ToolCallNode(
+        AssistantNode(
             id="2",
             prev=None,
-            output_text="",
-            calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+            tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         ),
     ]
     text = _nodes_to_text(nodes_no_text)

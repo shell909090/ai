@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     SummaryNode,
-    ToolCallNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -51,29 +50,29 @@ def test_user_prompt_content_block_to_openai() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AssistantResponseNode
+# AssistantNode (no tool_calls)
 # ---------------------------------------------------------------------------
 
 
-def test_assistant_response_to_anthropic() -> None:
+def test_assistant_text_to_anthropic() -> None:
     """Produces assistant message with text content block."""
-    n = AssistantResponseNode(id="2", prev=None, text="reply")
+    n = AssistantNode(id="2", prev=None, text="reply")
     msgs = n.to_anthropic()
     assert len(msgs) == 1
     assert msgs[0]["role"] == "assistant"
     assert msgs[0]["content"] == [{"type": "text", "text": "reply"}]
 
 
-def test_assistant_response_to_openai() -> None:
+def test_assistant_text_to_openai() -> None:
     """Produces assistant message with plain string content."""
-    n = AssistantResponseNode(id="2", prev=None, text="reply")
+    n = AssistantNode(id="2", prev=None, text="reply")
     msgs = n.to_openai()
     assert msgs == [{"role": "assistant", "content": "reply"}]
 
 
-def test_assistant_response_thinking_not_in_messages() -> None:
+def test_assistant_text_thinking_not_in_messages() -> None:
     """Thinking field is excluded from both provider messages."""
-    n = AssistantResponseNode(id="2", prev=None, text="reply", thinking="secret thought")
+    n = AssistantNode(id="2", prev=None, text="reply", thinking="secret thought")
     anthropic_msgs = n.to_anthropic()
     openai_msgs = n.to_openai()
     # thinking must not appear in converted messages
@@ -81,24 +80,24 @@ def test_assistant_response_thinking_not_in_messages() -> None:
     assert "thinking" not in str(openai_msgs)
 
 
-def test_assistant_response_empty_text() -> None:
+def test_assistant_text_empty_text() -> None:
     """Empty text still produces valid messages."""
-    n = AssistantResponseNode(id="2", prev=None, text="")
+    n = AssistantNode(id="2", prev=None, text="")
     assert n.to_anthropic()[0]["content"] == [{"type": "text", "text": ""}]
     assert n.to_openai()[0]["content"] == ""
 
 
 # ---------------------------------------------------------------------------
-# ToolCallNode
+# AssistantNode (with tool_calls)
 # ---------------------------------------------------------------------------
 
 
-def test_tool_call_to_anthropic_basic() -> None:
+def test_assistant_tool_call_to_anthropic_basic() -> None:
     """Single tool call produces assistant message with tool_use block."""
-    n = ToolCallNode(
+    n = AssistantNode(
         id="3",
         prev=None,
-        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
     msgs = n.to_anthropic()
     assert len(msgs) == 1
@@ -112,13 +111,13 @@ def test_tool_call_to_anthropic_basic() -> None:
     assert content[0]["input"] == {"cmd": "ls"}
 
 
-def test_tool_call_to_anthropic_with_output_text() -> None:
-    """output_text prepended as text block before tool_use blocks."""
-    n = ToolCallNode(
+def test_assistant_tool_call_to_anthropic_with_text() -> None:
+    """Text prepended as text block before tool_use blocks."""
+    n = AssistantNode(
         id="3",
         prev=None,
-        output_text="I'll run bash",
-        calls={"c1": {"tool_name": "bash", "arguments": {}}},
+        text="I'll run bash",
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
     msgs = n.to_anthropic()
     content = msgs[0]["content"]
@@ -126,25 +125,24 @@ def test_tool_call_to_anthropic_with_output_text() -> None:
     assert content[1]["type"] == "tool_use"
 
 
-def test_tool_call_to_anthropic_no_output_text() -> None:
-    """Empty output_text omits text block."""
-    n = ToolCallNode(
+def test_assistant_tool_call_to_anthropic_no_text() -> None:
+    """Empty text omits text block."""
+    n = AssistantNode(
         id="3",
         prev=None,
-        output_text="",
-        calls={"c1": {"tool_name": "bash", "arguments": {}}},
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
     msgs = n.to_anthropic()
     content = msgs[0]["content"]
     assert all(b["type"] != "text" for b in content)
 
 
-def test_tool_call_to_openai_basic() -> None:
+def test_assistant_tool_call_to_openai_basic() -> None:
     """Single tool call produces assistant message with tool_calls list."""
-    n = ToolCallNode(
+    n = AssistantNode(
         id="3",
         prev=None,
-        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
     msgs = n.to_openai()
     assert len(msgs) == 1
@@ -159,24 +157,24 @@ def test_tool_call_to_openai_basic() -> None:
     assert json.loads(tc[0]["function"]["arguments"]) == {"cmd": "ls"}
 
 
-def test_tool_call_to_openai_with_output_text() -> None:
-    """output_text becomes content field."""
-    n = ToolCallNode(
+def test_assistant_tool_call_to_openai_with_text() -> None:
+    """Text becomes content field."""
+    n = AssistantNode(
         id="3",
         prev=None,
-        output_text="thinking aloud",
-        calls={"c1": {"tool_name": "bash", "arguments": {}}},
+        text="thinking aloud",
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
     msgs = n.to_openai()
     assert msgs[0].get("content") == "thinking aloud"
 
 
-def test_tool_call_parallel_anthropic() -> None:
+def test_assistant_tool_call_parallel_anthropic() -> None:
     """Multiple calls all appear as tool_use blocks in one message."""
-    n = ToolCallNode(
+    n = AssistantNode(
         id="3",
         prev=None,
-        calls={
+        tool_calls={
             "c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}},
             "c2": {"tool_name": "echo", "arguments": {"text": "hi"}},
         },
@@ -187,12 +185,12 @@ def test_tool_call_parallel_anthropic() -> None:
     assert len(tool_use_blocks) == 2
 
 
-def test_tool_call_parallel_openai() -> None:
+def test_assistant_tool_call_parallel_openai() -> None:
     """Multiple calls all appear in tool_calls list."""
-    n = ToolCallNode(
+    n = AssistantNode(
         id="3",
         prev=None,
-        calls={
+        tool_calls={
             "c1": {"tool_name": "bash", "arguments": {}},
             "c2": {"tool_name": "echo", "arguments": {}},
         },

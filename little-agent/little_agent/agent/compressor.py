@@ -11,10 +11,9 @@ import uuid
 from typing import TYPE_CHECKING, Protocol
 
 from little_agent.agent.nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     Node,
     SummaryNode,
-    ToolCallNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -40,13 +39,12 @@ def _nodes_to_text(nodes: list[Node]) -> str:
         if isinstance(n, UserPromptNode):
             prompt = n.prompt if isinstance(n.prompt, str) else json.dumps(n.prompt)
             parts.append(f"User: {prompt}")
-        elif isinstance(n, AssistantResponseNode):
-            parts.append(f"Assistant: {n.text}")
-        elif isinstance(n, ToolCallNode):
-            calls_str = json.dumps(n.calls, ensure_ascii=False)
-            if n.output_text:
-                parts.append(f"Assistant: {n.output_text}")
-            parts.append(f"[Tool calls: {calls_str}]")
+        elif isinstance(n, AssistantNode):
+            if n.text:
+                parts.append(f"Assistant: {n.text}")
+            if n.tool_calls:
+                calls_str = json.dumps(n.tool_calls, ensure_ascii=False)
+                parts.append(f"[Tool calls: {calls_str}]")
         elif isinstance(n, ToolResultNode):
             results_str = json.dumps(n.results, ensure_ascii=False)
             parts.append(f"[Tool results: {results_str}]")

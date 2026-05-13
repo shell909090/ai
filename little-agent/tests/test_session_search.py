@@ -42,7 +42,7 @@ _TURN1_USER = {
 _TURN1_ASSISTANT = {
     "session_id": SESSION_ID,
     "id": "t1-asst",
-    "kind": "assistant_response",
+    "kind": "assistant",
     "created_at": "2024-01-01T00:00:01+00:00",
     "text": "hi there",
 }
@@ -56,10 +56,10 @@ _TURN2_USER = {
 _TURN2_TOOL_CALL = {
     "session_id": SESSION_ID,
     "id": "t2-tc",
-    "kind": "tool_call",
+    "kind": "assistant",
     "created_at": "2024-01-01T00:01:01+00:00",
-    "output_text": "running bash command",
-    "calls": {"call-1": {"tool_name": "bash", "arguments": {"command": "ls /tmp"}}},
+    "text": "running bash command",
+    "tool_calls": {"call-1": {"tool_name": "bash", "arguments": {"command": "ls /tmp"}}},
 }
 _TURN2_TOOL_RESULT = {
     "session_id": SESSION_ID,
@@ -71,7 +71,7 @@ _TURN2_TOOL_RESULT = {
 _TURN2_ASSISTANT = {
     "session_id": SESSION_ID,
     "id": "t2-asst",
-    "kind": "assistant_response",
+    "kind": "assistant",
     "created_at": "2024-01-01T00:01:03+00:00",
     "text": "done",
 }
@@ -115,7 +115,7 @@ async def test_turn_query_matches_any_node(tmp_path: Path) -> None:
     assert len(nodes) == 2
     kinds = [n["kind"] for n in nodes]
     assert "user_prompt" in kinds
-    assert "assistant_response" in kinds
+    assert "assistant" in kinds
 
 
 @pytest.mark.asyncio
@@ -141,14 +141,14 @@ async def test_any_matches_all_kinds(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _write_fixture(store)
 
-    # "done" only appears in turn2 assistant_response
+    # "done" only appears in turn2 assistant node
     result = await store._search(SESSION_ID, query="done", kind="any", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     hit = result[0]
     assert isinstance(hit, dict)
     assert hit["node_id"] == "t2-asst"
-    assert hit["kind"] == "assistant_response"
+    assert hit["kind"] == "assistant"
     assert "turn_id" in hit
     assert "snippet" in hit
 
@@ -183,27 +183,30 @@ async def test_kind_user_prompt_filters_correctly(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_kind_assistant_response_filters_correctly(tmp_path: Path) -> None:
-    """kind=assistant_response returns only assistant_response nodes."""
+async def test_kind_assistant_filters_correctly(tmp_path: Path) -> None:
+    """kind=assistant returns only assistant nodes."""
     store = _store(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="assistant_response", limit=10)
+    result = await store._search(SESSION_ID, query="", kind="assistant", limit=10)
     assert isinstance(result, list)
-    assert len(result) == 2
-    assert all(h["kind"] == "assistant_response" for h in result)  # type: ignore[index]
+    assert len(result) == 3
+    assert all(h["kind"] == "assistant" for h in result)  # type: ignore[index]
 
 
 @pytest.mark.asyncio
-async def test_kind_tool_call_filters_correctly(tmp_path: Path) -> None:
-    """kind=tool_call returns only tool_call nodes."""
+async def test_kind_assistant_includes_tool_call_nodes(tmp_path: Path) -> None:
+    """kind=assistant returns assistant nodes including those with tool_calls."""
     store = _store(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="tool_call", limit=10)
+    result = await store._search(SESSION_ID, query="", kind="assistant", limit=10)
     assert isinstance(result, list)
-    assert len(result) == 1
-    assert result[0]["kind"] == "tool_call"  # type: ignore[index]
+    assert len(result) == 3
+    assert all(r["kind"] == "assistant" for r in result)  # type: ignore[index]
+    # Verify the node that formerly had tool_call kind is included
+    node_ids = [r["node_id"] for r in result]  # type: ignore[index]
+    assert "t2-tc" in node_ids
 
 
 @pytest.mark.asyncio

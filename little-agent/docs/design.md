@@ -49,19 +49,12 @@ class UserPromptNode(Node):
 
 
 @dataclass(slots=True)
-class AssistantResponseNode(Node):
-    kind: ClassVar[str] = "assistant_response"
-    text: str
+class AssistantNode(Node):
+    kind: ClassVar[str] = "assistant"
+    text: str = ""                      # 助手回复文本；tool call 时为调用前说明
     thinking: str = ""                  # 模型思考文本（reasoning/thinking），可为空
+    tool_calls: dict[str, dict[str, Any]] = field(default_factory=dict)  # call_id -> {tool_name, arguments}；空表示无 tool call
     frozen: bool = False
-
-
-@dataclass(slots=True)
-class ToolCallNode(Node):
-    kind: ClassVar[str] = "tool_call"
-    output_text: str                    # tool call 前的 reasoning/说明，可为空
-    thinking: str = ""                  # 模型思考文本（reasoning/thinking），可为空
-    calls: dict[str, dict[str, Any]]    # call_id -> {tool_name, arguments}
 
 
 @dataclass(slots=True)
@@ -81,7 +74,7 @@ class SummaryNode(Node):
 
 1. 运行时通过 `prev` 对象引用回溯。`id` 用于 save/load、日志、调试、fork 入口、Hook 状态跟踪。
 2. 节点整体逻辑 append-only。
-3. `frozen` 字段只出现在写入过程中可变的节点：`AssistantResponseNode`、`ToolResultNode`。其他节点创建即不可变。
+3. `frozen` 字段只出现在写入过程中可变的节点：`AssistantNode`、`ToolResultNode`。其他节点创建即不可变。
 4. 可变节点在任意时刻只能被一个 session 作为活跃尾节点持有。
 5. 触发冻结的时机（由 session 管理）：
    - 追加新节点时旧尾若可变，立刻冻结。
@@ -109,9 +102,9 @@ class SummaryNode(Node):
 
 ### 2.3 Tool Call 与 Tool Result 节点约束
 
-一组并行 tool calls 落为一个 `ToolCallNode`，紧接一个 `ToolResultNode` 承载结果。
+一组并行 tool calls 落为一个 `AssistantNode`（`tool_calls` 非空），紧接一个 `ToolResultNode` 承载结果。
 
-`ToolCallNode.calls`：
+`AssistantNode.tool_calls`：
 
 ```python
 {"call_xxx": {"tool_name": str, "arguments": dict[str, Any]}}
@@ -125,7 +118,7 @@ class SummaryNode(Node):
 
 规则：
 
-1. `ToolCallNode` 由 backend 一次写入后立刻冻结。
+1. `AssistantNode`（tool call 时）由 backend 一次写入后立刻冻结。
 2. `ToolResultNode` 跟随其后创建，按 `call_id` 逐步回填。
 3. 结果与状态依靠 `call_id` 对应，不依靠顺序。
 4. tool 执行抛出的异常由编排层 `except Exception` 捕获，写入 `status="failed"`，`content` 为异常信息。**异常不冒出 prompt turn**。
@@ -146,11 +139,11 @@ class SummaryNode(Node):
 2. 追加 `UserPromptNode`，旧尾若可变先冻结。
 3. 主循环（上限 `MAX_TURN_ITERATIONS=20`）：
    1. 调用 `Backend.generate(session)` 得到 async iterator。遍历产出：`SessionUpdate` 通过 `client.update()` 转发；`BackendTurnResult` 保存为 `result` 退出遍历；context-overflow 错误进入 §2.6.4 in-turn retry。遍历过程中记录 `did_stream`：若至少 yield 过一次 `agent_message_chunk`，则 frontend 已收到流式可见文本。
-   2. `finish_reason == "completed"`：追加 `AssistantResponseNode`（含 `text=output_text`、`thinking=thinking_text`，冻结）。仅在 `did_stream=False` 时补发一条全量 `agent_message_chunk`，避免与流式重复。返回 `("end_turn", output_text)`。
+   2. `finish_reason == "completed"`：追加 `AssistantNode`（含 `text=output_text`、`thinking=thinking_text`、`tool_calls={}`，冻结）。仅在 `did_stream=False` 时补发一条全量 `agent_message_chunk`，避免与流式重复。返回 `("end_turn", output_text)`。
    3. `finish_reason == "tool_call"`：
-      - `result.output_text` 非空时存入 `ToolCallNode.output_text`；`result.thinking_text` 非空时存入 `ToolCallNode.thinking`。
-      - 追加 `ToolCallNode`（冻结），通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
-      - 触发 `Hook.on_tool_call(session)`（此时 `session.tail` 指向刚冻结的 `ToolCallNode`）。
+      - `result.output_text` 非空时存入 `AssistantNode.text`；`result.thinking_text` 非空时存入 `AssistantNode.thinking`；`result.tool_calls` 存入 `AssistantNode.tool_calls`。
+      - 追加 `AssistantNode`（冻结），通过 `Client.update` 通知 frontend。仅在 `did_stream=False` 且 `output_text` 非空时补发一条全量 `agent_message_chunk`，避免与流式重复。
+      - 触发 `Hook.on_tool_call(session)`（此时 `session.tail` 指向刚冻结的 `AssistantNode`）。
       - 追加 `ToolResultNode`（可变）。
       - 检查每个 tool name 是否在 `allowed_tools` 内；不在则记 `failed`，不调用。
       - 通过 permission chain 检查；deny 则记 `failed`，不调用。
@@ -284,7 +277,7 @@ class Hook:
    |---|---|---|
    | `on_turn_start(session)` | §2.5 步骤 2 之前（追加 `UserPromptNode` 之前） | 上一轮链尾 |
    | `on_turn_end(session)` | §2.5 步骤 7.1（compress 判据评估之前），含成功 / 取消 / 异常路径 | 本轮链尾 |
-   | `on_tool_call(session)` | §2.5 步骤 3.3 中 `ToolCallNode` 冻结后，且在创建 `ToolResultNode` 之前 | 刚冻结的 `ToolCallNode` |
+   | `on_tool_call(session)` | §2.5 步骤 3.3 中 `AssistantNode` 冻结后，且在创建 `ToolResultNode` 之前 | 刚冻结的 `AssistantNode` |
    | `on_tool_result(session)` | §2.5 步骤 3.3 中 `ToolResultNode` 全部结果到位并冻结后 | 刚冻结的 `ToolResultNode` |
    | `on_compress(session)` | compress 任务（post-turn 异步或 in-turn retry）完成后，`session.tail` 已更新为新链头 | 新链头 |
    | `on_fork(source, forked)` | `Session.fork()` 成功创建新 session 后 | 不变 |
@@ -504,7 +497,7 @@ class ToolRegistry(Protocol):
   |---|---|---|
   | `turn`（默认） | query 对 turn 内所有节点文本拼接做子串匹配 | 整个 turn（含全部节点） |
   | `any` | query 对单节点文本做子串匹配，不限节点类型 | 命中的单个节点 |
-  | `user_prompt` / `tool_call` / `tool_result` / `assistant_response` | query 对该类型节点文本做子串匹配 | 命中的单个节点 |
+  | `user_prompt` / `assistant` / `tool_result` | query 对该类型节点文本做子串匹配 | 命中的单个节点 |
 
 - 返回结构：
 
@@ -751,9 +744,8 @@ class Backend(Protocol):
 | 节点 | 转换 |
 |------|------|
 | `UserPromptNode` | `{role: user, content: prompt}` |
-| `AssistantResponseNode`（无后续 tool call）| `{role: assistant, content: [{type: text, text}]}` |
-| `AssistantResponseNode` + `ToolCallNode`（相邻）| 合并为一条 assistant，content = text(可选) + tool_use 块 |
-| `ToolCallNode`（无前置 text）| `{role: assistant, content: [{type: tool_use, id, name, input}, ...]}` |
+| `AssistantNode`（`tool_calls` 为空）| `{role: assistant, content: [{type: text, text}]}` |
+| `AssistantNode`（`tool_calls` 非空）| `{role: assistant, content: text(可选) + tool_use 块}` |
 | `ToolResultNode` | `{role: user, content: [{type: tool_result, tool_use_id, content}, ...]}` |
 | `SummaryNode`（链首）| 提升为 `system` 参数，不进 messages（backend 层处理，节点方法默认返回 user 消息）|
 | `SummaryNode`（链中）| `{role: user, content: summary_text}` |

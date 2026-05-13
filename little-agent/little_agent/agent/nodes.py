@@ -100,16 +100,17 @@ class UserPromptNode(Node):
 
 
 @dataclass(slots=True)
-class AssistantResponseNode(Node):
-    """Assistant response node."""
+class AssistantNode(Node):
+    """Assistant message node (text reply or tool call)."""
 
-    kind: ClassVar[str] = "assistant_response"
+    kind: ClassVar[str] = "assistant"
     text: str = ""
     thinking: str = ""
+    tool_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
     frozen: bool = False
 
     def freeze(self) -> None:
-        """Mark this node as frozen, preventing further text appends."""
+        """Mark this node as frozen."""
         self.frozen = True
 
     def to_dict(self) -> dict[str, JSONValue]:
@@ -117,54 +118,17 @@ class AssistantResponseNode(Node):
         base["text"] = self.text
         if self.thinking:
             base["thinking"] = self.thinking
+        if self.tool_calls:
+            base["tool_calls"] = self.tool_calls  # type: ignore[assignment]
         return base
 
     def to_anthropic(self) -> list[dict[str, Any]]:
-        """Convert to Anthropic assistant message (text only; thinking not fed back)."""
-        return [{"role": "assistant", "content": [{"type": "text", "text": self.text}]}]
-
-    def to_openai(self) -> list[dict[str, Any]]:
-        """Convert to OpenAI assistant message (thinking not fed back)."""
-        return [{"role": "assistant", "content": self.text}]
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
-        text = data.get("text", "")
-        if not isinstance(text, str):
-            raise ValueError("AssistantResponseNode 'text' must be a string")
-        thinking = str(data.get("thinking") or "")
-        return cls(
-            id=data["id"],
-            prev=prev,
-            text=text,
-            thinking=thinking,
-            frozen=True,
-            created_at=_parse_created_at(data.get("created_at")),
-        )
-
-
-@dataclass(slots=True)
-class ToolCallNode(Node):
-    """Tool call node."""
-
-    kind: ClassVar[str] = "tool_call"
-    output_text: str = ""
-    thinking: str = ""
-    calls: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, JSONValue]:
-        base = Node.to_dict(self)
-        base["output_text"] = self.output_text
-        if self.thinking:
-            base["thinking"] = self.thinking
-        base["calls"] = self.calls  # type: ignore[assignment]
-        return base
-
-    def to_anthropic(self) -> list[dict[str, Any]]:
-        """Convert to Anthropic assistant message with tool_use blocks."""
+        """Convert to Anthropic assistant message."""
+        if not self.tool_calls:
+            return [{"role": "assistant", "content": [{"type": "text", "text": self.text}]}]
         content_blocks: list[dict[str, Any]] = []
-        if self.output_text:
-            content_blocks.append({"type": "text", "text": self.output_text})
+        if self.text:
+            content_blocks.append({"type": "text", "text": self.text})
         content_blocks.extend(
             {
                 "type": "tool_use",
@@ -172,12 +136,14 @@ class ToolCallNode(Node):
                 "name": call_data["tool_name"],
                 "input": call_data["arguments"],
             }
-            for call_id, call_data in self.calls.items()
+            for call_id, call_data in self.tool_calls.items()
         )
         return [{"role": "assistant", "content": content_blocks}]
 
     def to_openai(self) -> list[dict[str, Any]]:
-        """Convert to OpenAI assistant message with tool_calls."""
+        """Convert to OpenAI assistant message."""
+        if not self.tool_calls:
+            return [{"role": "assistant", "content": self.text}]
         tool_calls = [
             {
                 "id": call_id,
@@ -187,26 +153,27 @@ class ToolCallNode(Node):
                     "arguments": json.dumps(call_data["arguments"]),
                 },
             }
-            for call_id, call_data in self.calls.items()
+            for call_id, call_data in self.tool_calls.items()
         ]
         msg: dict[str, Any] = {"role": "assistant", "tool_calls": tool_calls}
-        if self.output_text:
-            msg["content"] = self.output_text
+        if self.text:
+            msg["content"] = self.text
         return [msg]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
-        output_text = str(data.get("output_text") or "")
+        text = str(data.get("text") or "")
         thinking = str(data.get("thinking") or "")
-        calls = data.get("calls", {})
-        if not isinstance(calls, dict):
-            raise ValueError("ToolCallNode 'calls' must be a dict")
+        tool_calls = data.get("tool_calls", {})
+        if not isinstance(tool_calls, dict):
+            raise ValueError("AssistantNode 'tool_calls' must be a dict")
         return cls(
             id=data["id"],
             prev=prev,
-            output_text=output_text,
+            text=text,
             thinking=thinking,
-            calls=calls,
+            tool_calls=tool_calls,
+            frozen=True,
             created_at=_parse_created_at(data.get("created_at")),
         )
 
@@ -301,16 +268,14 @@ class SummaryNode(Node):
 
 _NODE_REGISTRY: dict[str, type[Node]] = {
     UserPromptNode.kind: UserPromptNode,
-    AssistantResponseNode.kind: AssistantResponseNode,
-    ToolCallNode.kind: ToolCallNode,
+    AssistantNode.kind: AssistantNode,
     ToolResultNode.kind: ToolResultNode,
     SummaryNode.kind: SummaryNode,
 }
 
 _KIND_REQUIRED_FIELDS: dict[str, dict[str, type]] = {
     "user_prompt": {"id": str, "kind": str},
-    "assistant_response": {"id": str, "kind": str, "text": str},
-    "tool_call": {"id": str, "kind": str, "calls": dict},
+    "assistant": {"id": str, "kind": str, "tool_calls": dict},
     "tool_result": {"id": str, "kind": str, "results": dict},
     "summary": {"id": str, "kind": str, "summary": str},
 }

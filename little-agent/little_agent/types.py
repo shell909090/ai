@@ -113,7 +113,7 @@ class Hook:
         """Called in finally after turn completes, is cancelled, or raises."""
 
     async def on_tool_call(self, session: Session) -> None:
-        """Called after ToolCallNode is appended and frozen; session.tail is that node."""
+        """Called after AssistantNode is appended and frozen; session.tail is that node."""
 
     async def on_tool_result(self, session: Session) -> None:
         """Called after ToolResultNode is frozen; session.tail is that node."""

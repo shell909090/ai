@@ -10,7 +10,7 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
-from little_agent.agent.nodes import ToolCallNode, UserPromptNode
+from little_agent.agent.nodes import AssistantNode, UserPromptNode
 from little_agent.agent.session import SessionCore
 from little_agent.agent.turn_runner import MAX_TURN_ITERATIONS
 from little_agent.backends.exceptions import ContextOverflowError
@@ -499,14 +499,14 @@ async def test_agent_load_with_chain() -> None:
         "cwd": "/tmp",
         "chain": [
             {"kind": "user_prompt", "id": "n1", "prompt": "hello"},
-            {"kind": "assistant_response", "id": "n2", "text": "hi"},
+            {"kind": "assistant", "id": "n2", "text": "hi"},
         ],
     }
     session = await agent.load(data)
     session_core = cast(SessionCore, session)
     assert session_core.id == "test-id"
     assert session_core.tail is not None
-    assert session_core.tail.kind == "assistant_response"
+    assert session_core.tail.kind == "assistant"
     assert session_core.tail.text == "hi"
     assert session_core.tail.prev is not None
     assert session_core.tail.prev.kind == "user_prompt"
@@ -534,7 +534,7 @@ async def test_save_load_round_trip() -> None:
     assert loaded_core.id == original_core.id
     assert loaded_core.cwd == original_core.cwd
     assert loaded_core.tail is not None
-    assert loaded_core.tail.kind == "assistant_response"
+    assert loaded_core.tail.kind == "assistant"
     assert loaded_core.tail.text == "hello"
 
 
@@ -970,24 +970,24 @@ async def test_cancel_interrupts_compress_task() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ToolCallNode.output_text serialization round-trip
+# AssistantNode round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_tool_call_node_output_text_preserved_in_chain() -> None:
-    """ToolCallNode.output_text survives to_dict / from_dict round-trip."""
+    """AssistantNode text and tool_calls survive to_dict / from_dict round-trip."""
     prev = UserPromptNode(id="n0", prev=None, prompt="go")
-    node = ToolCallNode(
+    node = AssistantNode(
         id="n1",
         prev=prev,
-        output_text="I will use bash",
-        calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
+        text="I will use bash",
+        tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
 
     serialized = node.to_dict()
-    assert serialized.get("output_text") == "I will use bash"
+    assert serialized.get("text") == "I will use bash"
 
-    restored = ToolCallNode.from_dict(serialized, prev=prev)
-    assert isinstance(restored, ToolCallNode)
-    assert restored.output_text == "I will use bash"
-    assert restored.calls == node.calls
+    restored = AssistantNode.from_dict(serialized, prev=prev)
+    assert isinstance(restored, AssistantNode)
+    assert restored.text == "I will use bash"
+    assert restored.tool_calls == node.tool_calls

@@ -16,10 +16,9 @@ from .agent import AgentCore
 from .compressor import Compressor, LLMCompressor
 from .exceptions import SessionBusyError
 from .nodes import (
-    AssistantResponseNode,
+    AssistantNode,
     Node,
     SummaryNode,
-    ToolCallNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -42,8 +41,7 @@ __all__ = [
     "MAX_TURN_ITERATIONS",
     "Node",
     "UserPromptNode",
-    "AssistantResponseNode",
-    "ToolCallNode",
+    "AssistantNode",
     "ToolResultNode",
     "SummaryNode",
     "SessionBusyError",
