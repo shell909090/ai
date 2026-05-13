@@ -7,13 +7,10 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from little_agent.tools.protocol import ToolArgDef, ToolDef
 from little_agent.types import AsyncToolFn, Hook, JSONValue, Session
-
-if TYPE_CHECKING:
-    from little_agent.types import Session
 
 logger = logging.getLogger(__name__)
 

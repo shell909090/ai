@@ -186,6 +186,8 @@ class TurnRunner:
         """Background task: compress history then resume the pending queue."""
         session = self._session
         try:
+            # compressor is non-None: already checked in _schedule_compress_if_needed
+            # before this task was created
             summary, remaining = await session.agent.compressor.compress(session.messages)  # type: ignore[union-attr]
             session._apply_compress_result(summary, remaining)
             await session.call_hooks("on_compress", session)

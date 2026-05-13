@@ -124,8 +124,26 @@ async def _run_tool_gather(
     async def _call(name: str, args: dict[str, JSONValue]) -> JSONValue:
         return await session.agent.tools[name](args, session)
 
-    tasks = [_call(tc.tool_name, tc.arguments) for tc in allowed_calls]
-    results: list[JSONValue | BaseException] = await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [asyncio.create_task(_call(tc.tool_name, tc.arguments)) for tc in allowed_calls]
+
+    async def _cancel_watcher() -> None:
+        await session._cancel_event.wait()
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+
+    watcher = asyncio.create_task(_cancel_watcher())
+    try:
+        results: list[JSONValue | BaseException] = await asyncio.gather(
+            *tasks, return_exceptions=True
+        )
+    finally:
+        watcher.cancel()
+        try:
+            await watcher
+        except asyncio.CancelledError:
+            pass
+
     return allowed_calls, results
 
 
@@ -166,7 +184,7 @@ async def _invoke_tools(
     allowed_calls, tool_results = await _run_tool_gather(session, allowed_calls, tool_result_node)
 
     for tc, res in zip(allowed_calls, tool_results, strict=True):
-        if session.is_cancel_requested:
+        if session.is_cancel_requested or isinstance(res, asyncio.CancelledError):
             tool_result_node.results[tc.call_id] = {
                 "status": "cancelled",
                 "content": "",

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 import pytest
 
+from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
-from little_agent.agent.tool_manager import _truncate_tool_result
+from little_agent.agent.tool_manager import _run_tool_gather, _truncate_tool_result
 from little_agent.backends.protocol import BackendToolCall, BackendTurnResult
+from little_agent.tools.protocol import ToolDef
 from little_agent.types import JSONValue
 from tests.mocks import BuiltinToolProvider, MockAgent, MockBackend, MockClient
 
@@ -147,6 +152,7 @@ async def test_cancel_before_gather_marks_tools_cancelled_and_skips_execution() 
     async def _cancel_then_gather(sess, allowed_calls, tool_result_node):
         # Set cancel flag immediately before delegating so that the guard fires.
         sess._cancel_requested = True
+        sess._cancel_event.set()
         return await original_gather(sess, allowed_calls, tool_result_node)
 
     tool_manager._run_tool_gather = _cancel_then_gather  # type: ignore[assignment]
@@ -166,6 +172,53 @@ async def test_cancel_before_gather_marks_tools_cancelled_and_skips_execution() 
     ]
     assert tool_updates, "Expected a tool_call_update for 't1'"
     assert tool_updates[0].data["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_gather_interrupts_execution() -> None:
+    """cancel() during gather interrupts in-flight tools promptly."""
+    tool_started = asyncio.Event()
+
+    async def slow_tool(args: dict[str, JSONValue], session: Any) -> JSONValue:
+        tool_started.set()
+        await asyncio.sleep(10)  # would block forever without cancel
+        return "done"
+
+    agent = MockAgent(
+        backend=MockBackend(),
+        client=MockClient(),
+        permissions=YesManChecker(),
+    )
+    sess = await agent.new()
+    # Inject slow_tool directly into the ToolManager registry
+    from little_agent.agent.session import SessionCore
+
+    assert isinstance(sess, SessionCore)
+    sess.agent.tools._registry["slow"] = (ToolDef(desc="slow tool", args=[]), slow_tool)
+
+    tc = BackendToolCall(call_id="c1", tool_name="slow", arguments={})
+    tool_result_node = ToolResultNode(id="r1", results={})
+
+    async def _cancel_after_start() -> None:
+        await tool_started.wait()
+        # Directly trigger cancel internals; bypass _active_turn guard
+        # since we are calling _run_tool_gather directly (no active turn).
+        sess._cancel_requested = True
+        sess._cancel_event.set()
+
+    cancel_task = asyncio.create_task(_cancel_after_start())
+    start = asyncio.get_event_loop().time()
+    allowed, results = await _run_tool_gather(sess, [tc], tool_result_node)
+    elapsed = asyncio.get_event_loop().time() - start
+    cancel_task.cancel()
+    try:
+        await cancel_task
+    except asyncio.CancelledError:
+        pass
+
+    assert elapsed < 1.0, f"gather took {elapsed:.2f}s, expected <1s after cancel"
+    # result should be CancelledError (caught by return_exceptions=True)
+    assert any(isinstance(r, asyncio.CancelledError) for r in results)
 
 
 @pytest.mark.asyncio

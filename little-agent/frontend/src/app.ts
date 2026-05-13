@@ -62,7 +62,7 @@ export function sendPrompt(): void {
     });
 }
 
-document.addEventListener("DOMContentLoaded", (): void => {
+export function registerEventListeners(): void {
     sendBtn.addEventListener("click", sendPrompt);
     messageInput.addEventListener("keypress", (e: KeyboardEvent): void => {
         if (e.key === "Enter") sendPrompt();
@@ -74,7 +74,6 @@ document.addEventListener("DOMContentLoaded", (): void => {
             sendMessage({ type: "session/cancel", session_id: sessionId });
         }
     });
-
     messageInput.addEventListener("input", (): void => {
         if (messageInput.value.startsWith("/")) {
             messageInput.setAttribute("list", "slash-commands");
@@ -82,13 +81,15 @@ document.addEventListener("DOMContentLoaded", (): void => {
             messageInput.removeAttribute("list");
         }
     });
-
     chatContainer.addEventListener("scroll", (): void => {
         const distanceFromBottom =
             chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
         setAutoScroll(distanceFromBottom <= 50);
     });
+}
 
+document.addEventListener("DOMContentLoaded", (): void => {
+    registerEventListeners();
     initSessionButtons();
     connect();
 });

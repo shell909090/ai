@@ -21,6 +21,7 @@ import {
     setIsProcessing,
     setHistoryPending,
     setPendingUpdates,
+    setPendingPermId,
 } from "./state.js";
 import type { ServerMessage, SessionUpdatePayload } from "./types.js";
 
@@ -42,6 +43,7 @@ beforeEach(() => {
     setIsProcessing(false);
     setHistoryPending(false);
     setPendingUpdates([]);
+    setPendingPermId(null);
     permissionModal.classList.remove("active");
 });
 
@@ -440,5 +442,70 @@ describe("connect", () => {
         // Restore
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (globalThis as any).WebSocket = OrigWS;
+    });
+
+    it("ws.onerror sets error status", () => {
+        const OrigWS = globalThis.WebSocket;
+        let capturedInstance: { onerror: (() => void) | null } | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).WebSocket = class MockWS {
+            static OPEN = 1;
+            readyState = 1;
+            onopen: (() => void) | null = null;
+            onmessage: ((e: MessageEvent) => void) | null = null;
+            onclose: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            send = vi.fn();
+            close(): void {}
+            constructor() {
+                // eslint-disable-next-line @typescript-eslint/no-this-alias
+                capturedInstance = this;
+            }
+        };
+        connect();
+        capturedInstance!.onerror?.();
+        expect(statusEl.textContent).toBe("Connection error");
+        const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+        expect(sendBtn.disabled).toBe(false);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).WebSocket = OrigWS;
+    });
+});
+
+describe("permAllowBtn / permDenyBtn", () => {
+    it("permAllowBtn click with pendingPermId sends permission_response granted=true", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        setPendingPermId("perm-allow-1");
+        document.getElementById("perm-allow")!.click();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({
+                type: "session/permission_response",
+                id: "perm-allow-1",
+                granted: true,
+            }),
+        );
+    });
+
+    it("permAllowBtn click without pendingPermId does not call sendMessage", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        // pendingPermId is null (reset in beforeEach)
+        document.getElementById("perm-allow")!.click();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it("permDenyBtn click with pendingPermId sends permission_response granted=false", () => {
+        const send = vi.fn();
+        setWs({ readyState: WS_OPEN, send } as unknown as WebSocket);
+        setPendingPermId("perm-deny-1");
+        document.getElementById("perm-deny")!.click();
+        expect(send).toHaveBeenCalledWith(
+            JSON.stringify({
+                type: "session/permission_response",
+                id: "perm-deny-1",
+                granted: false,
+            }),
+        );
     });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleSlashCommand, sendPrompt } from "./app.js";
+import { handleSlashCommand, sendPrompt, registerEventListeners } from "./app.js";
 import { setSessionId, setIsProcessing } from "./state.js";
+import * as state from "./state.js";
 import {
     compactSession,
     cancelSession,
@@ -111,5 +112,55 @@ describe("sendPrompt", () => {
         messageInput.value = "test prompt";
         sendPrompt();
         expect(chatContainer.querySelector(".message.user")).not.toBeNull();
+    });
+});
+
+describe("registerEventListeners", () => {
+    // dom.ts caches element references at module load time; we must use the same
+    // elements that were captured then.  registerEventListeners() is called once
+    // here — subsequent tests rely on the handlers already being registered.
+    // vi.clearAllMocks() in the outer beforeEach resets call counts between tests.
+    registerEventListeners();
+
+    it("sendBtn click calls sendMessage when input has content", () => {
+        messageInput.value = "hello";
+        document.getElementById("send-btn")!.click();
+        expect(sendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: "session/prompt", prompt: "hello" }),
+        );
+    });
+
+    it("messageInput keypress Enter calls sendMessage", () => {
+        messageInput.value = "hello";
+        const event = new KeyboardEvent("keypress", { key: "Enter" });
+        messageInput.dispatchEvent(event);
+        expect(sendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: "session/prompt" }),
+        );
+    });
+
+    it("cancelBtn click sends session/cancel when sessionId is set", () => {
+        document.getElementById("cancelButton")!.click();
+        expect(sendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: "session/cancel", session_id: "test-session" }),
+        );
+    });
+
+    it("messageInput input with '/' prefix sets list attribute", () => {
+        messageInput.value = "/compact";
+        messageInput.dispatchEvent(new Event("input"));
+        expect(messageInput.getAttribute("list")).toBe("slash-commands");
+    });
+
+    it("chatContainer scroll near bottom calls setAutoScroll(true)", () => {
+        // Set autoScroll to false first so we can verify the handler changes it.
+        state.setAutoScroll(false);
+        // Simulate scrollHeight - scrollTop - clientHeight <= 50
+        Object.defineProperty(chatContainer, "scrollHeight", { configurable: true, value: 500 });
+        Object.defineProperty(chatContainer, "scrollTop", { configurable: true, get: () => 460 });
+        Object.defineProperty(chatContainer, "clientHeight", { configurable: true, value: 40 });
+        // distanceFromBottom = 500 - 460 - 40 = 0 <= 50 → setAutoScroll(true)
+        chatContainer.dispatchEvent(new Event("scroll"));
+        expect(state.autoScroll).toBe(true);
     });
 });

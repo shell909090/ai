@@ -37,6 +37,7 @@ class SessionCore(Session):
         self.turn_allowed_tools: list[str] | None = None
         self._active_turn: bool = False
         self._cancel_requested: bool = False
+        self._cancel_event: asyncio.Event = asyncio.Event()
         self._pending_queue: asyncio.Queue[_PendingItem] = asyncio.Queue(maxsize=3)
         self.compress_task: asyncio.Task[None] | None = None
         # Holds strong references to background tasks to prevent GC under Python 3.11+.
@@ -101,6 +102,7 @@ class SessionCore(Session):
             while not self._pending_queue.empty():
                 prompt, allowed_tools, future = self._pending_queue.get_nowait()
                 self._cancel_requested = False
+                self._cancel_event.clear()
                 try:
                     result = await self._run_turn(prompt, allowed_tools)
                     if not future.done():
@@ -168,6 +170,7 @@ class SessionCore(Session):
         if not self._active_turn:
             return
         self._cancel_requested = True
+        self._cancel_event.set()
         if self.compress_task is not None:
             self.compress_task.cancel()
 
