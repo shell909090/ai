@@ -118,9 +118,7 @@ class SessionJSONLStore(Hook):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     async def on_turn_end(self, session: "Session") -> None:
-        """Append new nodes from session.tail back to the last logged node."""
-        from little_agent.agent.nodes import SummaryNode
-
+        """Append new nodes from end of messages back to the last logged node."""
         session_id: str = session.id
         path = self.resolve_path(session_id)
         lock = self._get_lock(path)
@@ -138,15 +136,13 @@ class SessionJSONLStore(Hook):
 
         stop_id = self._last_tail_ids.get(session_id)
 
-        # Walk from tail backwards, collecting nodes until stop_id; skip SummaryNode.
+        # Walk from end of messages backwards, collecting nodes until stop_id.
+        messages = getattr(session, "messages", [])
         nodes: list[Any] = []
-        node: Any = session.tail
-        while node is not None:
+        for node in reversed(messages):
             if node.id == stop_id:
                 break
-            if not isinstance(node, SummaryNode):
-                nodes.append(node)
-            node = node.prev
+            nodes.append(node)
 
         if not nodes:
             return
@@ -156,10 +152,10 @@ class SessionJSONLStore(Hook):
         async with lock:
             await asyncio.to_thread(self._sync_append, path, nodes, session_id)
 
-        assert session.tail is not None
-        tail_id = getattr(session.tail, "id", None)
-        if isinstance(tail_id, str):
-            self._set_last_tail_id(session_id, tail_id)
+        if messages:
+            last_id = getattr(messages[-1], "id", None)
+            if isinstance(last_id, str):
+                self._set_last_tail_id(session_id, last_id)
 
     async def load_history(self, session_id: str) -> list[dict[str, JSONValue]]:
         """Read JSONL file for session_id and return list of records without session_id key."""

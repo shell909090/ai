@@ -1,4 +1,4 @@
-"""Tests for agent.load() schema validation (TASK-S2)."""
+"""Tests for agent.load() schema validation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from little_agent.agent.agent import AgentCore, _validate_chain
+from little_agent.agent.agent import AgentCore, _validate_messages
 from little_agent.agent.nodes import validate_node_dict
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.backends.protocol import BackendTurnResult
@@ -74,33 +74,33 @@ def test_validate_node_dict_not_a_dict() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _validate_chain tests
+# _validate_messages tests
 # ---------------------------------------------------------------------------
 
 
-def test_validate_chain_duplicate_ids() -> None:
-    """_validate_chain raises on duplicate node IDs."""
-    chain = [
+def test_validate_messages_duplicate_ids() -> None:
+    """_validate_messages raises on duplicate node IDs."""
+    messages = [
         {"id": "n1", "kind": "user_prompt", "prompt": "hello"},
         {"id": "n1", "kind": "user_prompt", "prompt": "again"},
     ]
     with pytest.raises(ValueError, match="duplicate node id"):
-        _validate_chain(chain)
+        _validate_messages(messages)
 
 
-def test_validate_chain_non_dict_item() -> None:
-    """_validate_chain raises when a chain item is not a dict."""
+def test_validate_messages_non_dict_item() -> None:
+    """_validate_messages raises when an item is not a dict."""
     with pytest.raises(ValueError, match="must be a dict"):
-        _validate_chain(["not a dict"])
+        _validate_messages(["not a dict"])
 
 
-def test_validate_chain_valid_chain() -> None:
-    """_validate_chain passes for a well-formed chain."""
-    chain = [
+def test_validate_messages_valid() -> None:
+    """_validate_messages passes for a well-formed messages list."""
+    messages = [
         {"id": "n1", "kind": "user_prompt", "prompt": "hello"},
         {"id": "n2", "kind": "assistant", "text": "hi"},
     ]
-    _validate_chain(chain)  # must not raise
+    _validate_messages(messages)  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -115,15 +115,17 @@ async def test_agent_load_valid_round_trip() -> None:
     data: dict = {
         "id": "test-session-id",
         "cwd": None,
-        "chain": [
+        "system_prompt": None,
+        "summaries": [],
+        "messages": [
             {"id": "n1", "kind": "user_prompt", "prompt": "hello"},
             {"id": "n2", "kind": "assistant", "text": "hi"},
         ],
     }
     session = await agent.load(data)
     assert session.id == "test-session-id"
-    assert session.tail is not None
-    assert session.tail.id == "n2"
+    assert len(session.messages) > 0
+    assert session.messages[-1].id == "n2"
 
 
 @pytest.mark.asyncio
@@ -131,7 +133,7 @@ async def test_agent_load_missing_id_raises() -> None:
     """agent.load() raises ValueError on missing session id."""
     agent = _make_agent()
     with pytest.raises(ValueError, match="id"):
-        await agent.load({"chain": []})
+        await agent.load({"messages": []})
 
 
 @pytest.mark.asyncio
@@ -141,7 +143,7 @@ async def test_agent_load_bad_node_kind_raises() -> None:
     data = {
         "id": "s1",
         "cwd": None,
-        "chain": [{"id": "n1", "kind": "unknown_kind"}],
+        "messages": [{"id": "n1", "kind": "unknown_kind"}],
     }
     with pytest.raises(ValueError, match="unknown node kind"):
         await agent.load(data)
@@ -154,7 +156,7 @@ async def test_agent_load_duplicate_ids_raises() -> None:
     data = {
         "id": "s1",
         "cwd": None,
-        "chain": [
+        "messages": [
             {"id": "n1", "kind": "user_prompt", "prompt": "a"},
             {"id": "n1", "kind": "user_prompt", "prompt": "b"},
         ],
@@ -170,7 +172,7 @@ async def test_agent_load_bad_calls_type_raises() -> None:
     data = {
         "id": "s1",
         "cwd": None,
-        "chain": [
+        "messages": [
             {"id": "n1", "kind": "assistant", "tool_calls": "not-a-dict"},
         ],
     }
@@ -179,12 +181,12 @@ async def test_agent_load_bad_calls_type_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_load_empty_chain() -> None:
-    """agent.load() accepts empty chain and returns session with tail=None."""
+async def test_agent_load_empty_messages() -> None:
+    """agent.load() accepts empty messages and returns session with no messages."""
     agent = _make_agent()
-    data = {"id": "s1", "cwd": None, "chain": []}
+    data = {"id": "s1", "cwd": None, "messages": []}
     session = await agent.load(data)
-    assert session.tail is None
+    assert len(session.messages) == 0
 
 
 @pytest.mark.asyncio
@@ -212,7 +214,7 @@ async def test_cli_load_catches_value_error(capsys: pytest.CaptureFixture[str]) 
     import tempfile
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump({"id": "s1", "cwd": None, "chain": [{"id": "n1", "kind": "bad_kind"}]}, f)
+        json.dump({"id": "s1", "cwd": None, "messages": [{"id": "n1", "kind": "bad_kind"}]}, f)
         tmp_path = f.name
 
     from pathlib import Path

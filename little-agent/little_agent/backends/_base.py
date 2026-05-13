@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
-from little_agent.agent.nodes import Node
 from little_agent.types import SessionUpdate
 
 from ._utils import _is_context_overflow
@@ -21,19 +20,6 @@ from .exceptions import (
 from .protocol import BackendSession, BackendTurnResult
 
 logger = logging.getLogger(__name__)
-
-
-def _iter_chain(session: BackendSession) -> list[Node]:
-    """Walk session node chain from head to tail."""
-    # Handle both session objects (have .tail) and raw Node starts.
-    tail = getattr(session, "tail", session)
-    node: Node | None = tail if isinstance(tail, Node) else None
-    chain: list[Node] = []
-    while node is not None:
-        chain.append(node)
-        node = node.prev
-    chain.reverse()
-    return chain
 
 
 @dataclass

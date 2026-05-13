@@ -174,7 +174,7 @@ def main() -> None:
 
     tools, task_enabled = build_tools(config)
     backend, backends_config = build_backend(config)
-    compressor = build_compressor(config, backend, backends_config)
+    compressor, compressed_window_tokens = build_compressor(config, backend, backends_config)
 
     frontend_cfg = config.get("frontend") or {}
     frontend_type = str(frontend_cfg.get("type", "cli"))
@@ -196,6 +196,7 @@ def main() -> None:
     if max_tool_result_chars <= 0:
         raise ValueError(f"agent.max_tool_result_chars must be > 0, got {max_tool_result_chars}")
 
+    primary_system_prompt = (config.get("backends") or {}).get("primary", {}).get("system") or None
     agent = AgentCore(
         client=client,
         backend=backend,
@@ -206,6 +207,8 @@ def main() -> None:
         compress_threshold=compress_threshold,
         context_window=backend.context_window,
         max_tool_result_chars=max_tool_result_chars,
+        system_prompt=primary_system_prompt,
+        compressed_window_tokens=compressed_window_tokens,
     )
 
     if session_store is not None:

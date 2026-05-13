@@ -18,7 +18,6 @@ from .exceptions import SessionBusyError
 from .nodes import (
     AssistantNode,
     Node,
-    SummaryNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -43,7 +42,6 @@ __all__ = [
     "UserPromptNode",
     "AssistantNode",
     "ToolResultNode",
-    "SummaryNode",
     "SessionBusyError",
     "LLMCompressor",
     "PermissionChecker",

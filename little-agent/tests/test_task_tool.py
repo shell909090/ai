@@ -152,14 +152,14 @@ def test_get_allowed_tools_filter_by_names(simple_agent: AgentCore) -> None:
 
 @pytest.mark.asyncio
 async def test_fork_for_inheritance_tail_none(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance with tail=None returns session with tail=None."""
+    """_fork_for_inheritance with empty messages returns session with no messages."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-    session.tail = None
+    session.messages = []
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.tail is None
+    assert sub.messages == []
     assert sub.id != session.id
     assert sub.cwd == session.cwd
     assert sub.agent is session.agent
@@ -167,15 +167,15 @@ async def test_fork_for_inheritance_tail_none(simple_agent: AgentCore) -> None:
 
 @pytest.mark.asyncio
 async def test_fork_for_inheritance_tail_no_frozen(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance with tail lacking frozen uses tail as fork point."""
+    """_fork_for_inheritance with node lacking frozen uses it as fork point."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
-    node = UserPromptNode(id="n1", prev=None, prompt="hi")
-    session.tail = node
+    node = UserPromptNode(id="n1", prompt="hi")
+    session.messages = [node]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.tail is node
+    assert sub.messages == [node]
 
 
 @pytest.mark.asyncio
@@ -184,15 +184,15 @@ async def test_fork_for_inheritance_skips_frozen_nodes(simple_agent: AgentCore) 
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
-    # Create a chain: tail(frozen=True) -> prev(frozen=True) -> head(no frozen)
-    head = UserPromptNode(id="head", prev=None, prompt="hi")
-    mid = AssistantNode(id="mid", prev=head, text="mid", frozen=True)
-    tail = AssistantNode(id="tail", prev=mid, text="tail", frozen=True)
-    session.tail = tail
+    # messages: [head(no frozen), mid(frozen=True), tail(frozen=True)]
+    head = UserPromptNode(id="head", prompt="hi")
+    mid = AssistantNode(id="mid", text="mid", frozen=True)
+    tail = AssistantNode(id="tail", text="tail", frozen=True)
+    session.messages = [head, mid, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.tail is head
+    assert sub.messages == [head]
 
 
 @pytest.mark.asyncio
@@ -201,30 +201,30 @@ async def test_fork_for_inheritance_partial_frozen(simple_agent: AgentCore) -> N
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
-    # Chain: tail(frozen=True) -> prev(no frozen) -> older(frozen=True)
-    older = AssistantNode(id="older", prev=None, text="older", frozen=True)
-    prev = UserPromptNode(id="prev", prev=older, prompt="hi")
-    tail = AssistantNode(id="tail", prev=prev, text="tail", frozen=True)
-    session.tail = tail
+    # messages: [older(frozen=True), prev(no frozen), tail(frozen=True)]
+    older = AssistantNode(id="older", text="older", frozen=True)
+    prev = UserPromptNode(id="prev", prompt="hi")
+    tail = AssistantNode(id="tail", text="tail", frozen=True)
+    session.messages = [older, prev, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.tail is prev
+    assert sub.messages == [older, prev]
 
 
 @pytest.mark.asyncio
 async def test_fork_for_inheritance_all_frozen(simple_agent: AgentCore) -> None:
-    """_fork_for_inheritance returns None when all nodes have frozen."""
+    """_fork_for_inheritance returns empty messages when all nodes have frozen."""
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
-    n1 = AssistantNode(id="n1", prev=None, text="n1", frozen=True)
-    n2 = AssistantNode(id="n2", prev=n1, text="n2", frozen=True)
-    session.tail = n2
+    n1 = AssistantNode(id="n1", text="n1", frozen=True)
+    n2 = AssistantNode(id="n2", text="n2", frozen=True)
+    session.messages = [n1, n2]
 
     sub = await provider._fork_for_inheritance(session)
 
-    assert sub.tail is None
+    assert sub.messages == []
 
 
 # ---------------------------------------------------------------------------
@@ -237,24 +237,24 @@ async def test_fork_for_inheritance_stops_at_frozen_false(simple_agent: AgentCor
     """_fork_for_inheritance stops traversal at the first frozen=False node.
 
     The loop walks backwards while frozen is True; a frozen=False node causes
-    the loop to stop immediately, and the fork-tail is set to that very node
-    (not to its predecessor).
+    the loop to stop immediately, and the fork-messages include that very node
+    (not just its predecessor).
     """
     provider = TaskToolProvider(simple_agent)
     session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
 
-    # Chain: tail(frozen=True) -> middle(frozen=False) -> head(frozen=True)
+    # messages: [head(frozen=True), middle(frozen=False), tail(frozen=True)]
     # Walk from tail: frozen=True → continue; middle: frozen=False → stop.
-    # Expected fork-tail == middle (the node where traversal stopped).
-    head = AssistantNode(id="head", prev=None, text="head", frozen=True)
-    middle = AssistantNode(id="middle", prev=head, text="middle", frozen=False)
-    tail = AssistantNode(id="tail", prev=middle, text="tail", frozen=True)
-    session.tail = tail
+    # Expected fork-messages include up to and including 'middle'.
+    head = AssistantNode(id="head", text="head", frozen=True)
+    middle = AssistantNode(id="middle", text="middle", frozen=False)
+    tail = AssistantNode(id="tail", text="tail", frozen=True)
+    session.messages = [head, middle, tail]
 
     sub = await provider._fork_for_inheritance(session)
 
-    # The walker stops at 'middle' (frozen=False) so fork-tail must be 'middle'.
-    assert sub.tail is middle
+    # The walker stops at 'middle' (frozen=False) so fork includes [head, middle].
+    assert sub.messages == [head, middle]
 
 
 # ---------------------------------------------------------------------------

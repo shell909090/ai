@@ -11,7 +11,7 @@ from typing import Any, Literal
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
+from ._base import _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _log_streaming_request,
     _log_streaming_response,
@@ -39,22 +39,19 @@ def _tool_map_to_openai_functions(tool_map: ToolMap) -> list[dict[str, Any]]:
 
 
 def _chain_to_messages(session: BackendSession) -> list[dict[str, Any]]:
-    """Convert chain of nodes to OpenAI messages, injecting memory if present."""
-    messages: list[dict[str, Any]] = []
-    chain = _iter_chain(session)
+    """Convert session messages to OpenAI API format.
 
-    system_injected = False
-    for n in chain:
-        for msg in n.to_openai():
-            if msg["role"] == "system":
-                if not system_injected:
-                    messages.insert(0, msg)
-                    system_injected = True
-                else:
-                    # Subsequent SummaryNodes degrade to user messages (mirrors Anthropic §5.4).
-                    messages.append({"role": "user", "content": msg["content"]})
-            else:
-                messages.append(msg)
+    Prepends a system message when system_prompt or summaries are set.
+    """
+    messages: list[dict[str, Any]] = []
+
+    parts = [p for p in [session.system_prompt] + list(session.summaries) if p]
+    if parts:
+        messages.append({"role": "system", "content": "\n\n".join(parts)})
+
+    for node in session.messages:
+        for msg in node.to_openai():
+            messages.append(msg)
 
     return messages
 

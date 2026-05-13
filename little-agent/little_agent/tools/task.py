@@ -14,6 +14,7 @@ from little_agent.types import JSONValue
 
 if TYPE_CHECKING:
     from little_agent.agent.agent import AgentCore
+    from little_agent.agent.nodes import Node
     from little_agent.agent.session import SessionCore
     from little_agent.types import Session
 
@@ -124,20 +125,28 @@ class TaskToolProvider:
         return list(self._agent.tools.desc_tool(names, exclude={"task"}).keys())
 
     async def _fork_for_inheritance(self, session: SessionCore) -> Session:
-        """Fork a new session from the current, sharing frozen history."""
+        """Fork a new session from the current, sharing history up to the first non-frozen node."""
         from little_agent.agent.session import SessionCore as SessionCoreImpl
 
-        node = session.tail
-        while node is not None and getattr(node, "frozen", False):
-            node = node.prev
-        fork_tail = node if node is not None else None
+        # Walk messages in reverse; stop at the first node that is not frozen.
+        # Mimics the old prev-chain walk: the fork point is that non-frozen node (inclusive).
+        # If all nodes are frozen (or messages is empty), the sub-session is empty.
+        fork_messages: list[Node] = []
+        for i in range(len(session.messages) - 1, -1, -1):
+            node = session.messages[i]
+            if not getattr(node, "frozen", False):
+                fork_messages = list(session.messages[: i + 1])
+                break
+        # If loop finishes without break: all frozen → fork_messages stays []
 
         sub_session = SessionCoreImpl(
             session_id=str(uuid.uuid4()),
             cwd=session.cwd,
             agent=self._agent,
         )
-        sub_session.tail = fork_tail
+        sub_session.system_prompt = session.system_prompt
+        sub_session.summaries = list(session.summaries)
+        sub_session.messages = fork_messages
         return sub_session
 
     async def task(self, **kwargs: JSONValue) -> JSONValue:

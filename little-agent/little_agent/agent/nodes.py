@@ -39,7 +39,6 @@ class Node:
     """Base chain node."""
 
     id: str
-    prev: Node | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     kind: ClassVar[str] = "node"
 
@@ -59,7 +58,7 @@ class Node:
         """Freeze this node (no-op for nodes without mutable state)."""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> Node:
         """Deserialize node from dict."""
         raise NotImplementedError
 
@@ -87,13 +86,12 @@ class UserPromptNode(Node):
         return [{"role": "user", "content": content}]
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> Node:
         prompt = data.get("prompt", "")
         if not isinstance(prompt, (str, list)):
             raise ValueError("UserPromptNode 'prompt' must be a string or list")
         return cls(
             id=data["id"],
-            prev=prev,
             prompt=prompt,
             created_at=_parse_created_at(data.get("created_at")),
         )
@@ -161,7 +159,7 @@ class AssistantNode(Node):
         return [msg]
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> Node:
         text = str(data.get("text") or "")
         thinking = str(data.get("thinking") or "")
         tool_calls = data.get("tool_calls", {})
@@ -169,7 +167,6 @@ class AssistantNode(Node):
             raise ValueError("AssistantNode 'tool_calls' must be a dict")
         return cls(
             id=data["id"],
-            prev=prev,
             text=text,
             thinking=thinking,
             tool_calls=tool_calls,
@@ -223,45 +220,14 @@ class ToolResultNode(Node):
         ]
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
+    def from_dict(cls, data: dict[str, Any]) -> Node:
         results = data.get("results", {})
         if not isinstance(results, dict):
             raise ValueError("ToolResultNode 'results' must be a dict")
         return cls(
             id=data["id"],
-            prev=prev,
             results=results,
             frozen=True,
-            created_at=_parse_created_at(data.get("created_at")),
-        )
-
-
-@dataclass(slots=True)
-class SummaryNode(Node):
-    """Summary node."""
-
-    kind: ClassVar[str] = "summary"
-    summary: str = ""
-
-    def to_dict(self) -> dict[str, JSONValue]:
-        base = Node.to_dict(self)
-        base["summary"] = self.summary
-        return base
-
-    def to_anthropic(self) -> list[dict[str, Any]]:
-        """Convert to Anthropic user message; backend hoists the first one to system."""
-        return [{"role": "user", "content": self.summary}]
-
-    def to_openai(self) -> list[dict[str, Any]]:
-        """Convert to OpenAI system message."""
-        return [{"role": "system", "content": self.summary}]
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], prev: Node | None = None) -> Node:
-        return cls(
-            id=data["id"],
-            prev=prev,
-            summary=str(data.get("summary") or ""),
             created_at=_parse_created_at(data.get("created_at")),
         )
 
@@ -270,14 +236,12 @@ _NODE_REGISTRY: dict[str, type[Node]] = {
     UserPromptNode.kind: UserPromptNode,
     AssistantNode.kind: AssistantNode,
     ToolResultNode.kind: ToolResultNode,
-    SummaryNode.kind: SummaryNode,
 }
 
 _KIND_REQUIRED_FIELDS: dict[str, dict[str, type]] = {
     "user_prompt": {"id": str, "kind": str},
     "assistant": {"id": str, "kind": str, "tool_calls": dict},
     "tool_result": {"id": str, "kind": str, "results": dict},
-    "summary": {"id": str, "kind": str, "summary": str},
 }
 
 
@@ -304,25 +268,15 @@ def validate_node_dict(d: dict[str, Any]) -> None:
             )
 
 
-def _rebuild_chain(chain: list[Any]) -> Node | None:
-    """Rebuild node chain from serialized data."""
-    if not chain:
-        return None
-    prev: Node | None = None
-    for item in chain:
-        prev = _rebuild_node(item, prev)
-    return prev
-
-
-def _rebuild_node(item: Any, prev: Node | None) -> Node:
-    """Rebuild a single node from serialized data."""
-    if not isinstance(item, dict):
-        raise ValueError("Chain item must be a dict")
-    kind = item.get("kind")
-    node_id = item.get("id")
-    if not isinstance(kind, str) or not isinstance(node_id, str):
-        raise ValueError("Chain item must have 'kind' and 'id' as strings")
-    node_cls = _NODE_REGISTRY.get(kind)
-    if node_cls is None:
-        raise ValueError(f"Unknown node kind: {kind}")
-    return node_cls.from_dict(item, prev)
+def _parse_messages(data_list: list[Any]) -> list[Node]:
+    """Parse a list of serialized node dicts into Node objects (chronological order)."""
+    nodes: list[Node] = []
+    for i, item in enumerate(data_list):
+        if not isinstance(item, dict):
+            raise ValueError(f"Message item {i} must be a dict")
+        kind = item.get("kind")
+        node_cls = _NODE_REGISTRY.get(kind)  # type: ignore[arg-type]
+        if node_cls is None:
+            raise ValueError(f"Unknown node kind: {kind!r}")
+        nodes.append(node_cls.from_dict(item))
+    return nodes

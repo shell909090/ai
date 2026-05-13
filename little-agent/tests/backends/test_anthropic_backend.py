@@ -1,7 +1,7 @@
 """Tests for AnthropicBackend request conversion and streaming.
 
 The actual implementation in little_agent/backends/anthropic.py:
-- _chain_to_messages(session) walks session.tail (a SessionCore), not a raw Node
+- _chain_to_messages(session) walks session.messages list (a SessionCore)
 - _open_stream calls self._client.messages.stream(**kwargs).__aenter__() via asyncio.wait_for
 - The returned stream object is iterated via stream.event_stream
 - stream.__aexit__() is called in a finally block
@@ -19,7 +19,6 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import (
     AssistantNode,
-    SummaryNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -54,10 +53,12 @@ async def _collect(
     return result, updates
 
 
-def _make_session_with_tail(tail_node: Any) -> MagicMock:
-    """Make a minimal SessionCore-like mock with a given tail node and empty tool map."""
+def _make_session_with_messages(nodes: list[Any]) -> MagicMock:
+    """Make a minimal SessionCore-like mock with given nodes as messages and empty tool map."""
     session = MagicMock(spec=SessionCore)
-    session.tail = tail_node
+    session.messages = list(nodes)
+    session.system_prompt = None
+    session.summaries = []
     session.get_turn_tool_map.return_value = {}
     return session
 
@@ -228,7 +229,6 @@ class _FakeRateLimitError(_FakeAPIError):
 
 def _make_backend(
     mod: Any,
-    system: str | None = None,
     context_window: int = 128000,
     max_concurrency: int = 1,
 ) -> tuple[Any, MagicMock]:
@@ -246,8 +246,6 @@ def _make_backend(
         "context_window": context_window,
         "max_concurrency": max_concurrency,
     }
-    if system is not None:
-        kwargs["system"] = system
 
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         backend = mod.AnthropicBackend(**kwargs)
@@ -341,7 +339,7 @@ class TestToolMapToAnthropicTools:
 
 
 # ---------------------------------------------------------------------------
-# Tests: _chain_to_messages — uses session.tail walk
+# Tests: _chain_to_messages — uses session.messages list
 # ---------------------------------------------------------------------------
 
 
@@ -350,8 +348,8 @@ class TestChainToMessages:
 
     def test_user_prompt_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        node = UserPromptNode(id="1", prev=None, prompt="hello world")
-        session = _make_session_with_tail(node)
+        node = UserPromptNode(id="1", prompt="hello world")
+        session = _make_session_with_messages([node])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "user"
@@ -359,9 +357,9 @@ class TestChainToMessages:
 
     def test_assistant_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="hi")
-        n2 = AssistantNode(id="2", prev=n1, text="hello back")
-        session = _make_session_with_tail(n2)
+        n1 = UserPromptNode(id="1", prompt="hi")
+        n2 = AssistantNode(id="2", text="hello back")
+        session = _make_session_with_messages([n1, n2])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assert msgs[1]["role"] == "assistant"
@@ -372,13 +370,12 @@ class TestChainToMessages:
 
     def test_assistant_node_tool_call(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n1 = UserPromptNode(id="1", prompt="go")
         n2 = AssistantNode(
             id="2",
-            prev=n1,
             tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
-        session = _make_session_with_tail(n2)
+        session = _make_session_with_messages([n1, n2])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assistant_msg = msgs[1]
@@ -394,14 +391,13 @@ class TestChainToMessages:
     def test_assistant_node_with_text_and_tool_call(self) -> None:
         """AssistantNode with text produces text block before tool_use block."""
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n1 = UserPromptNode(id="1", prompt="go")
         n2 = AssistantNode(
             id="2",
-            prev=n1,
             text="I will use bash",
             tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
-        session = _make_session_with_tail(n2)
+        session = _make_session_with_messages([n1, n2])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assistant_msg = msgs[1]
@@ -419,14 +415,13 @@ class TestChainToMessages:
     def test_assistant_node_empty_text_tool_call(self) -> None:
         """AssistantNode with empty text produces only tool_use block."""
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n1 = UserPromptNode(id="1", prompt="go")
         n2 = AssistantNode(
             id="2",
-            prev=n1,
             text="",
             tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
         )
-        session = _make_session_with_tail(n2)
+        session = _make_session_with_messages([n1, n2])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         content = msgs[1]["content"]
@@ -437,18 +432,16 @@ class TestChainToMessages:
 
     def test_tool_result_node(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="go")
+        n1 = UserPromptNode(id="1", prompt="go")
         n2 = AssistantNode(
             id="2",
-            prev=n1,
             tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
         )
         n3 = ToolResultNode(
             id="3",
-            prev=n2,
             results={"c1": {"status": "completed", "content": "output text"}},
         )
-        session = _make_session_with_tail(n3)
+        session = _make_session_with_messages([n1, n2, n3])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 3
         result_msg = msgs[2]
@@ -460,27 +453,38 @@ class TestChainToMessages:
         assert block["tool_use_id"] == "c1"
         assert "output text" in block["content"]
 
-    def test_summary_node(self) -> None:
+    def test_system_prompt_injected(self) -> None:
+        """system_prompt is passed to the backend as system parameter."""
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = SummaryNode(id="1", prev=None, summary="summary text")
-        session = _make_session_with_tail(n1)
-        msgs, system_injected = mod._chain_to_messages(session)
-        # First SummaryNode is lifted to system_injected, not kept in messages.
-        assert len(msgs) == 0
-        assert system_injected == "summary text"
+        n1 = UserPromptNode(id="1", prompt="hi")
+        session = _make_session_with_messages([n1])
+        session.system_prompt = "You are helpful"
+        msgs, effective_system = mod._chain_to_messages(session)
+        assert effective_system == "You are helpful"
+        assert len(msgs) == 1
+
+    def test_summaries_injected(self) -> None:
+        """Summaries are concatenated into system parameter."""
+        mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
+        n1 = UserPromptNode(id="1", prompt="hi")
+        session = _make_session_with_messages([n1])
+        session.summaries = ["Summary 1", "Summary 2"]
+        msgs, effective_system = mod._chain_to_messages(session)
+        assert "Summary 1" in effective_system
+        assert "Summary 2" in effective_system
+        assert len(msgs) == 1
 
     def test_parallel_tool_calls(self) -> None:
         mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-        n1 = UserPromptNode(id="1", prev=None, prompt="do stuff")
+        n1 = UserPromptNode(id="1", prompt="do stuff")
         n2 = AssistantNode(
             id="2",
-            prev=n1,
             tool_calls={
                 "c1": {"tool_name": "echo", "arguments": {"text": "a"}},
                 "c2": {"tool_name": "add", "arguments": {"a": 1, "b": 2}},
             },
         )
-        session = _make_session_with_tail(n2)
+        session = _make_session_with_messages([n1, n2])
         msgs, _ = mod._chain_to_messages(session)
         assert len(msgs) == 2
         assistant_msg = msgs[1]
@@ -650,9 +654,9 @@ async def test_anthropic_backend_max_tokens_equals_context_window() -> None:
 
 @pytest.mark.asyncio
 async def test_anthropic_backend_system_prompt_passed() -> None:
-    """System prompt is forwarded to the API as 'system' kwarg."""
+    """Session system_prompt is forwarded to the API as 'system' kwarg."""
     mod = pytest.importorskip(_ANTHROPIC_BACKEND_MODULE)
-    backend, _ = _make_backend(mod, system="You are a helpful assistant.")
+    backend, _ = _make_backend(mod)
 
     captured: dict[str, Any] = {}
 
@@ -671,7 +675,12 @@ async def test_anthropic_backend_system_prompt_passed() -> None:
     mock_anthropic.BadRequestError = _FakeBadRequestError
     tools = ToolManager()
     client_mock = MockClient()
-    agent = AgentCore(client=client_mock, backend=backend, tools=tools)
+    agent = AgentCore(
+        client=client_mock,
+        backend=backend,
+        tools=tools,
+        system_prompt="You are a helpful assistant.",
+    )
     session = await agent.new()
     with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
         await _collect(backend.generate(session))

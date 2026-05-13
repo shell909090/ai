@@ -52,7 +52,6 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
     context_window = int(cfg["context_window"])
 
     if backend_type == "anthropic":
-        system: str | None = cfg.get("system") or None
         max_tokens = int(cfg.get("max_tokens", 8192))
         return AnthropicBackend(
             model=str(model),
@@ -61,7 +60,6 @@ def _build_backend(cfg: dict[str, Any], name: str) -> OpenAIBackend | AnthropicB
             timeout=timeout,
             max_concurrency=max_concurrency,
             context_window=context_window,
-            system=system,
             max_tokens=max_tokens,
         )
 
@@ -95,13 +93,13 @@ def build_compressor(
     config: dict[str, Any],
     primary_backend: Any,
     backends_config: dict[str, Any],
-) -> Any:
-    """Build LLMCompressor from config; returns None when disabled."""
+) -> tuple[Any, int]:
+    """Build LLMCompressor from config; returns (compressor_or_None, compressed_window_tokens)."""
     from little_agent.agent.compressor import LLMCompressor
 
     compressor_section = config.get("compressor")
     if compressor_section is False:
-        return None
+        return None, 0
 
     if not isinstance(compressor_section, dict):
         compressor_section = _DEFAULT_COMPRESSOR_CONFIG
@@ -119,5 +117,4 @@ def build_compressor(
     return LLMCompressor(
         compressor_backend,
         keep_turns=keep_turns,
-        compressed_window_tokens=compressed_window_tokens,
-    )
+    ), compressed_window_tokens

@@ -47,7 +47,6 @@ class TurnRunner:
 
         user_node = UserPromptNode(
             id=str(uuid.uuid4()),
-            prev=session.tail,
             prompt=prompt,
         )
         session.append_node(user_node)
@@ -55,8 +54,8 @@ class TurnRunner:
         try:
             for _ in range(MAX_TURN_ITERATIONS):
                 if session.is_cancel_requested:
-                    assert session.tail is not None
-                    session.tail.freeze()
+                    if session.messages:
+                        session.messages[-1].freeze()
                     await session.call_hooks("on_cancel", session)
                     return ("cancelled", self._partial_output)
 
@@ -85,15 +84,14 @@ class TurnRunner:
             if self._overflow_retried or session.agent.compressor is None:
                 raise
             logger.info("in-turn context overflow: compressing and retrying")
-            old_tail = session.tail
-            new_tail = await session.agent.compressor.compress(session.tail)
-            if new_tail is None or new_tail is old_tail:
+            summary, remaining = await session.agent.compressor.compress(session.messages)
+            if not summary and remaining is session.messages:
                 logger.warning(
                     "in-turn compress was a no-op (too few turns to compress); "
                     "re-raising ContextOverflowError"
                 )
                 raise
-            session.tail = new_tail
+            session._apply_compress_result(summary, remaining)
             await session.call_hooks("on_compress", session)
             self._overflow_retried = True
             return await self._generate_backend_result()
@@ -128,7 +126,6 @@ class TurnRunner:
         session = self._session
         assistant_node = AssistantNode(
             id=str(uuid.uuid4()),
-            prev=session.tail,
             text=result.output_text,
             thinking=result.thinking_text or "",
         )
@@ -165,7 +162,7 @@ class TurnRunner:
             metric = f"tokens={total_tokens}"
         else:
             char_count = sum(
-                len(str(node.to_dict()).encode("utf-8")) for node in session.iter_nodes()
+                len(str(node.to_dict()).encode("utf-8")) for node in session.messages
             )
             ratio = (char_count / 3) / cw
             metric = f"chars={char_count} (fallback)"
@@ -194,10 +191,9 @@ class TurnRunner:
         """Background task: compress history then resume the pending queue."""
         session = self._session
         try:
-            new_tail = await session.agent.compressor.compress(session.tail)  # type: ignore[union-attr]
-            if new_tail is not None:
-                session.tail = new_tail
-                await session.call_hooks("on_compress", session)
+            summary, remaining = await session.agent.compressor.compress(session.messages)  # type: ignore[union-attr]
+            session._apply_compress_result(summary, remaining)
+            await session.call_hooks("on_compress", session)
         except Exception:
             logger.exception("Post-turn compress failed")
         finally:

@@ -12,7 +12,7 @@ from little_agent.tools.protocol import ToolMap
 from little_agent.types import ContentBlock, JSONValue, PromptReturn, Session
 
 from .exceptions import SessionBusyError
-from .nodes import Node, _rebuild_chain
+from .nodes import Node
 
 if TYPE_CHECKING:
     from .agent import AgentCore
@@ -32,7 +32,9 @@ class SessionCore(Session):
         self.id = session_id
         self.cwd = cwd
         self.agent = agent
-        self.tail: Node | None = None
+        self.system_prompt: str | None = None
+        self.summaries: list[str] = []
+        self.messages: list[Node] = []
         self.turn_allowed_tools: list[str] | None = None
         self._active_turn: bool = False
         self._cancel_requested: bool = False
@@ -66,11 +68,8 @@ class SessionCore(Session):
         return self.agent.tools.desc_tool(set(self.turn_allowed_tools))
 
     def iter_nodes(self) -> Iterator[Node]:
-        """Iterate the linked node chain from tail back to head."""
-        node: Node | None = self.tail
-        while node is not None:
-            yield node
-            node = node.prev
+        """Iterate messages in reverse order (newest first)."""
+        return reversed(self.messages)
 
     async def prompt(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
@@ -145,9 +144,22 @@ class SessionCore(Session):
             current_turn_id.reset(tid_token)
 
     def append_node(self, node: Node) -> None:
-        if self.tail is not None:
-            self.tail.freeze()
-        self.tail = node
+        if self.messages:
+            self.messages[-1].freeze()
+        self.messages.append(node)
+
+    def _apply_compress_result(self, summary: str, remaining: list[Node]) -> None:
+        """Apply compressor output; trim old summaries per W-limit."""
+        if summary:
+            self.summaries.append(summary)
+        self.messages = remaining
+        w_tokens = self.agent.compressed_window_tokens
+        if w_tokens > 0:
+            while len(self.summaries) > 1:
+                total = sum(len(s.encode("utf-8")) // 3 for s in self.summaries)
+                if total <= w_tokens:
+                    break
+                self.summaries.pop(0)
 
     async def wait_compress(self) -> None:
         """Wait for any in-flight post-turn compress task to complete."""
@@ -163,17 +175,19 @@ class SessionCore(Session):
             self.compress_task.cancel()
 
     async def fork(self) -> Session:
-        """Fork into a new session sharing the frozen history."""
+        """Fork into a new session with a shallow copy of messages and summaries."""
         if self._active_turn:
             raise RuntimeError("Cannot fork session with active turn")
-        if self.tail is not None:
-            self.tail.freeze()
+        if self.messages:
+            self.messages[-1].freeze()
         new_session = SessionCore(
             session_id=str(uuid.uuid4()),
             cwd=self.cwd,
             agent=self.agent,
         )
-        new_session.tail = self.tail
+        new_session.system_prompt = self.system_prompt
+        new_session.summaries = list(self.summaries)
+        new_session.messages = list(self.messages)
         await self.call_hooks("on_fork", self, new_session)
         return new_session
 
@@ -183,21 +197,16 @@ class SessionCore(Session):
             raise RuntimeError("Cannot compress session with active turn")
         if self.agent.compressor is None:
             raise RuntimeError("No compressor configured")
-        new_head = await self.agent.compressor.compress(self.tail)
-        if new_head is not None:
-            self.tail = new_head
-            await self.call_hooks("on_compress", self)
+        summary, remaining = await self.agent.compressor.compress(self.messages)
+        self._apply_compress_result(summary, remaining)
+        await self.call_hooks("on_compress", self)
 
     def save(self) -> JSONValue:
         """Serialize session state to a JSON-compatible dict."""
-        chain: list[dict[str, JSONValue]] = []
-        node = self.tail
-        while node is not None:
-            chain.append(node.to_dict())
-            node = node.prev
-        chain.reverse()
-        return {"id": self.id, "cwd": self.cwd, "chain": chain}  # type: ignore[dict-item]
-
-    def _rebuild_tail(self, chain: list[Any]) -> None:
-        """Rebuild tail from serialized chain data."""
-        self.tail = _rebuild_chain(chain)
+        return {
+            "id": self.id,
+            "cwd": self.cwd,
+            "system_prompt": self.system_prompt,
+            "summaries": self.summaries,  # type: ignore[dict-item]
+            "messages": [node.to_dict() for node in self.messages],
+        }

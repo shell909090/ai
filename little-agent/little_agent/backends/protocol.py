@@ -38,7 +38,9 @@ class BackendSession(Protocol):
     """Minimal session contract required by Backend.generate()."""
 
     id: str
-    tail: "Node | None"
+    system_prompt: str | None
+    summaries: list[str]
+    messages: "list[Node]"
 
     def get_turn_tool_map(self) -> "ToolMap": ...
 

@@ -10,7 +10,7 @@ import pytest
 
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.exceptions import SessionBusyError
-from little_agent.agent.nodes import AssistantNode, UserPromptNode
+from little_agent.agent.nodes import AssistantNode
 from little_agent.agent.session import SessionCore
 from little_agent.agent.turn_runner import MAX_TURN_ITERATIONS
 from little_agent.backends.exceptions import ContextOverflowError
@@ -246,7 +246,7 @@ async def test_fork_shares_history() -> None:
     await session.prompt("hi")
     new_session = await session.fork()
     assert new_session.id != session.id
-    assert new_session.tail is not None
+    assert len(new_session.messages) > 0
 
 
 @pytest.mark.asyncio
@@ -400,7 +400,7 @@ async def test_cancel_when_not_active() -> None:
     await session.cancel()
     saved = session.save()
     assert isinstance(saved, dict)
-    assert not saved.get("chain")
+    assert not saved.get("messages")
 
 
 @pytest.mark.asyncio
@@ -413,8 +413,8 @@ async def test_compress_with_compressor() -> None:
     from little_agent.agent.nodes import Node
 
     class FakeCompressor:
-        async def compress(self, head: Node | None) -> Node | None:
-            return head
+        async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]:
+            return "", messages
 
     agent = AgentCore(client=client, backend=backend, tools=tools, compressor=FakeCompressor())
     session = await agent.new()
@@ -434,8 +434,8 @@ async def test_compress_no_compressor_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_returns_dict_with_chain() -> None:
-    """Test save returns session data with chain."""
+async def test_save_returns_dict_with_messages() -> None:
+    """Test save returns session data with messages."""
     client = MockClient()
     backend = MockBackend(
         [
@@ -449,8 +449,8 @@ async def test_save_returns_dict_with_chain() -> None:
     result = session.save()
     assert isinstance(result, dict)
     assert result["id"] == session.id
-    assert "chain" in result
-    assert len(result["chain"]) == 2  # type: ignore[arg-type]
+    assert "messages" in result
+    assert len(result["messages"]) == 2  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -488,8 +488,8 @@ async def test_agent_load_missing_id_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_load_with_chain() -> None:
-    """Test AgentCore.load restores chain."""
+async def test_agent_load_with_messages() -> None:
+    """Test AgentCore.load restores messages."""
     client = MockClient()
     backend = MockBackend()
     tools = MockToolProvider()
@@ -497,7 +497,9 @@ async def test_agent_load_with_chain() -> None:
     data: JSONValue = {
         "id": "test-id",
         "cwd": "/tmp",
-        "chain": [
+        "system_prompt": None,
+        "summaries": [],
+        "messages": [
             {"kind": "user_prompt", "id": "n1", "prompt": "hello"},
             {"kind": "assistant", "id": "n2", "text": "hi"},
         ],
@@ -505,12 +507,11 @@ async def test_agent_load_with_chain() -> None:
     session = await agent.load(data)
     session_core = cast(SessionCore, session)
     assert session_core.id == "test-id"
-    assert session_core.tail is not None
-    assert session_core.tail.kind == "assistant"
-    assert session_core.tail.text == "hi"
-    assert session_core.tail.prev is not None
-    assert session_core.tail.prev.kind == "user_prompt"
-    assert session_core.tail.prev.prompt == "hello"
+    assert len(session_core.messages) >= 2
+    assert session_core.messages[-1].kind == "assistant"
+    assert session_core.messages[-1].text == "hi"
+    assert session_core.messages[-2].kind == "user_prompt"
+    assert session_core.messages[-2].prompt == "hello"
 
 
 @pytest.mark.asyncio
@@ -533,9 +534,9 @@ async def test_save_load_round_trip() -> None:
     original_core = cast(SessionCore, session)
     assert loaded_core.id == original_core.id
     assert loaded_core.cwd == original_core.cwd
-    assert loaded_core.tail is not None
-    assert loaded_core.tail.kind == "assistant"
-    assert loaded_core.tail.text == "hello"
+    assert len(loaded_core.messages) > 0
+    assert loaded_core.messages[-1].kind == "assistant"
+    assert loaded_core.messages[-1].text == "hello"
 
 
 @pytest.mark.asyncio
@@ -579,9 +580,9 @@ async def test_post_turn_compress_triggered_by_token_ratio() -> None:
     compress_calls: list[object] = []
 
     class _TrackingCompressor:
-        async def compress(self, tail):
-            compress_calls.append(tail)
-            return tail
+        async def compress(self, messages):
+            compress_calls.append(messages)
+            return "", messages
 
     backend = MockBackend(
         [
@@ -615,9 +616,9 @@ async def test_post_turn_compress_not_triggered_below_threshold() -> None:
     compress_calls: list[object] = []
 
     class _TrackingCompressor:
-        async def compress(self, tail):
-            compress_calls.append(tail)
-            return tail
+        async def compress(self, messages):
+            compress_calls.append(messages)
+            return "", messages
 
     backend = MockBackend(
         [
@@ -649,9 +650,9 @@ async def test_post_turn_compress_char_fallback_when_usage_none() -> None:
     compress_calls: list[object] = []
 
     class _TrackingCompressor:
-        async def compress(self, tail):
-            compress_calls.append(tail)
-            return tail
+        async def compress(self, messages):
+            compress_calls.append(messages)
+            return "", messages
 
     backend = MockBackend(
         [
@@ -684,9 +685,9 @@ async def test_post_turn_compress_char_fallback_when_usage_zero() -> None:
     compress_calls: list[object] = []
 
     class _TrackingCompressor:
-        async def compress(self, tail):
-            compress_calls.append(tail)
-            return tail
+        async def compress(self, messages):
+            compress_calls.append(messages)
+            return "", messages
 
     backend = MockBackend(
         [
@@ -718,9 +719,9 @@ async def test_post_turn_compress_r_boundary_not_triggered() -> None:
     compress_calls: list[object] = []
 
     class _TrackingCompressor:
-        async def compress(self, tail):
-            compress_calls.append(tail)
-            return tail
+        async def compress(self, messages):
+            compress_calls.append(messages)
+            return "", messages
 
     # ratio = 64000 / 128000 = 0.5, R = 0.5 → ratio > R is False
     backend = MockBackend(
@@ -754,10 +755,10 @@ async def test_compress_task_holds_pending_queue() -> None:
     compress_release = asyncio.Event()
 
     class _SlowCompressor:
-        async def compress(self, tail):
+        async def compress(self, messages):
             compress_started.set()
             await compress_release.wait()
-            return tail
+            return "", messages
 
     backend = MockBackend(
         [
@@ -818,10 +819,8 @@ async def test_in_turn_overflow_retry_success() -> None:
             )
 
     class _MinimalCompressor:
-        async def compress(self, tail):
-            import dataclasses
-
-            return dataclasses.replace(tail)  # new object signals compression ran
+        async def compress(self, messages):
+            return "compressed", messages  # non-empty summary signals compression ran
 
     backend = _OverflowOnceThenSucceed()
     agent = AgentCore(
@@ -852,8 +851,8 @@ async def test_in_turn_overflow_second_raises() -> None:
             yield  # pragma: no cover
 
     class _NoopCompressor:
-        async def compress(self, tail):
-            return tail
+        async def compress(self, messages):
+            return "", messages
 
     agent = AgentCore(
         client=MockClient(),
@@ -926,14 +925,14 @@ async def test_cancel_interrupts_compress_task() -> None:
     cancelled_flag: list[bool] = []
 
     class _SlowCompressor:
-        async def compress(self, tail):
+        async def compress(self, messages):
             compress_started.set()
             try:
                 await asyncio.sleep(10)
             except asyncio.CancelledError:
                 cancelled_flag.append(True)
                 raise
-            return tail
+            return "", messages
 
     backend = MockBackend(
         [
@@ -976,10 +975,8 @@ async def test_cancel_interrupts_compress_task() -> None:
 
 def test_tool_call_node_output_text_preserved_in_chain() -> None:
     """AssistantNode text and tool_calls survive to_dict / from_dict round-trip."""
-    prev = UserPromptNode(id="n0", prev=None, prompt="go")
     node = AssistantNode(
         id="n1",
-        prev=prev,
         text="I will use bash",
         tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
@@ -987,7 +984,7 @@ def test_tool_call_node_output_text_preserved_in_chain() -> None:
     serialized = node.to_dict()
     assert serialized.get("text") == "I will use bash"
 
-    restored = AssistantNode.from_dict(serialized, prev=prev)
+    restored = AssistantNode.from_dict(serialized)
     assert isinstance(restored, AssistantNode)
     assert restored.text == "I will use bash"
     assert restored.tool_calls == node.tool_calls

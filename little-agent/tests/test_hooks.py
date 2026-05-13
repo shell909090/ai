@@ -264,15 +264,15 @@ async def test_on_cancel_fires() -> None:
 
 @pytest.mark.asyncio
 async def test_on_compress_fires() -> None:
-    """on_compress fires when a compressor runs and produces a new tail."""
-    from little_agent.agent.nodes import SummaryNode
+    """on_compress fires when a compressor runs."""
+    from little_agent.agent.nodes import Node
 
     record: list[str] = []
     hook = RecordingHook("h", record)
 
     class MockCompressor:
-        async def compress(self, head: object) -> object:
-            return SummaryNode(id="summary-1", summary="compressed")
+        async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]:
+            return "compressed summary", messages
 
     backend = MockBackend(
         [BackendTurnResult(output_text="ok", tool_calls=[], finish_reason="completed")]

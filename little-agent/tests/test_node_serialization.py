@@ -6,7 +6,6 @@ import json
 
 from little_agent.agent.nodes import (
     AssistantNode,
-    SummaryNode,
     ToolResultNode,
     UserPromptNode,
 )
@@ -18,14 +17,14 @@ from little_agent.agent.nodes import (
 
 def test_user_prompt_str_to_anthropic() -> None:
     """String prompt produces a user message with string content."""
-    n = UserPromptNode(id="1", prev=None, prompt="hello")
+    n = UserPromptNode(id="1", prompt="hello")
     msgs = n.to_anthropic()
     assert msgs == [{"role": "user", "content": "hello"}]
 
 
 def test_user_prompt_str_to_openai() -> None:
     """String prompt produces a user message with string content."""
-    n = UserPromptNode(id="1", prev=None, prompt="hello")
+    n = UserPromptNode(id="1", prompt="hello")
     msgs = n.to_openai()
     assert msgs == [{"role": "user", "content": "hello"}]
 
@@ -33,7 +32,7 @@ def test_user_prompt_str_to_openai() -> None:
 def test_user_prompt_content_block_to_anthropic() -> None:
     """List prompt is JSON-serialized into content string."""
     prompt = [{"type": "text", "text": "hi"}]
-    n = UserPromptNode(id="1", prev=None, prompt=prompt)
+    n = UserPromptNode(id="1", prompt=prompt)
     msgs = n.to_anthropic()
     assert len(msgs) == 1
     assert msgs[0]["role"] == "user"
@@ -43,7 +42,7 @@ def test_user_prompt_content_block_to_anthropic() -> None:
 def test_user_prompt_content_block_to_openai() -> None:
     """List prompt is JSON-serialized into content string."""
     prompt = [{"type": "text", "text": "hi"}]
-    n = UserPromptNode(id="1", prev=None, prompt=prompt)
+    n = UserPromptNode(id="1", prompt=prompt)
     msgs = n.to_openai()
     assert len(msgs) == 1
     assert msgs[0]["content"] == json.dumps(prompt)
@@ -56,7 +55,7 @@ def test_user_prompt_content_block_to_openai() -> None:
 
 def test_assistant_text_to_anthropic() -> None:
     """Produces assistant message with text content block."""
-    n = AssistantNode(id="2", prev=None, text="reply")
+    n = AssistantNode(id="2", text="reply")
     msgs = n.to_anthropic()
     assert len(msgs) == 1
     assert msgs[0]["role"] == "assistant"
@@ -65,14 +64,14 @@ def test_assistant_text_to_anthropic() -> None:
 
 def test_assistant_text_to_openai() -> None:
     """Produces assistant message with plain string content."""
-    n = AssistantNode(id="2", prev=None, text="reply")
+    n = AssistantNode(id="2", text="reply")
     msgs = n.to_openai()
     assert msgs == [{"role": "assistant", "content": "reply"}]
 
 
 def test_assistant_text_thinking_not_in_messages() -> None:
     """Thinking field is excluded from both provider messages."""
-    n = AssistantNode(id="2", prev=None, text="reply", thinking="secret thought")
+    n = AssistantNode(id="2", text="reply", thinking="secret thought")
     anthropic_msgs = n.to_anthropic()
     openai_msgs = n.to_openai()
     # thinking must not appear in converted messages
@@ -82,7 +81,7 @@ def test_assistant_text_thinking_not_in_messages() -> None:
 
 def test_assistant_text_empty_text() -> None:
     """Empty text still produces valid messages."""
-    n = AssistantNode(id="2", prev=None, text="")
+    n = AssistantNode(id="2", text="")
     assert n.to_anthropic()[0]["content"] == [{"type": "text", "text": ""}]
     assert n.to_openai()[0]["content"] == ""
 
@@ -96,7 +95,6 @@ def test_assistant_tool_call_to_anthropic_basic() -> None:
     """Single tool call produces assistant message with tool_use block."""
     n = AssistantNode(
         id="3",
-        prev=None,
         tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
     msgs = n.to_anthropic()
@@ -115,7 +113,6 @@ def test_assistant_tool_call_to_anthropic_with_text() -> None:
     """Text prepended as text block before tool_use blocks."""
     n = AssistantNode(
         id="3",
-        prev=None,
         text="I'll run bash",
         tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
@@ -129,7 +126,6 @@ def test_assistant_tool_call_to_anthropic_no_text() -> None:
     """Empty text omits text block."""
     n = AssistantNode(
         id="3",
-        prev=None,
         tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
     msgs = n.to_anthropic()
@@ -141,7 +137,6 @@ def test_assistant_tool_call_to_openai_basic() -> None:
     """Single tool call produces assistant message with tool_calls list."""
     n = AssistantNode(
         id="3",
-        prev=None,
         tool_calls={"c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}}},
     )
     msgs = n.to_openai()
@@ -161,7 +156,6 @@ def test_assistant_tool_call_to_openai_with_text() -> None:
     """Text becomes content field."""
     n = AssistantNode(
         id="3",
-        prev=None,
         text="thinking aloud",
         tool_calls={"c1": {"tool_name": "bash", "arguments": {}}},
     )
@@ -173,7 +167,6 @@ def test_assistant_tool_call_parallel_anthropic() -> None:
     """Multiple calls all appear as tool_use blocks in one message."""
     n = AssistantNode(
         id="3",
-        prev=None,
         tool_calls={
             "c1": {"tool_name": "bash", "arguments": {"cmd": "ls"}},
             "c2": {"tool_name": "echo", "arguments": {"text": "hi"}},
@@ -189,7 +182,6 @@ def test_assistant_tool_call_parallel_openai() -> None:
     """Multiple calls all appear in tool_calls list."""
     n = AssistantNode(
         id="3",
-        prev=None,
         tool_calls={
             "c1": {"tool_name": "bash", "arguments": {}},
             "c2": {"tool_name": "echo", "arguments": {}},
@@ -208,7 +200,6 @@ def test_tool_result_to_anthropic() -> None:
     """Produces user message with tool_result content block."""
     n = ToolResultNode(
         id="4",
-        prev=None,
         results={"c1": {"status": "completed", "content": "ok"}},
     )
     msgs = n.to_anthropic()
@@ -227,7 +218,6 @@ def test_tool_result_to_openai() -> None:
     """Produces one tool-role message per result."""
     n = ToolResultNode(
         id="4",
-        prev=None,
         results={
             "c1": {"status": "completed", "content": "out1"},
             "c2": {"status": "failed", "content": "err"},
@@ -243,14 +233,14 @@ def test_tool_result_to_openai() -> None:
 
 def test_tool_result_empty_results_anthropic() -> None:
     """Empty results produce a user message with empty content list."""
-    n = ToolResultNode(id="4", prev=None, results={})
+    n = ToolResultNode(id="4", results={})
     msgs = n.to_anthropic()
     assert msgs[0]["content"] == []
 
 
 def test_tool_result_empty_results_openai() -> None:
     """Empty results produce an empty list."""
-    n = ToolResultNode(id="4", prev=None, results={})
+    n = ToolResultNode(id="4", results={})
     msgs = n.to_openai()
     assert msgs == []
 
@@ -259,7 +249,6 @@ def test_tool_result_non_string_content_formatted() -> None:
     """Non-string content values are JSON-serialized."""
     n = ToolResultNode(
         id="4",
-        prev=None,
         results={"c1": {"status": "completed", "content": {"key": "val"}}},
     )
     msgs = n.to_anthropic()
@@ -267,51 +256,3 @@ def test_tool_result_non_string_content_formatted() -> None:
     assert '"key": "val"' in text
 
 
-# ---------------------------------------------------------------------------
-# SummaryNode
-# ---------------------------------------------------------------------------
-
-
-def test_summary_to_anthropic() -> None:
-    """SummaryNode renders as user message (backend handles hoisting)."""
-    n = SummaryNode(id="5", prev=None, summary="prior context")
-    msgs = n.to_anthropic()
-    assert msgs == [{"role": "user", "content": "prior context"}]
-
-
-def test_summary_to_openai() -> None:
-    """SummaryNode renders as system message."""
-    n = SummaryNode(id="5", prev=None, summary="prior context")
-    msgs = n.to_openai()
-    assert msgs == [{"role": "system", "content": "prior context"}]
-
-
-def test_summary_empty_string() -> None:
-    """Empty summary still produces a valid message."""
-    n = SummaryNode(id="5", prev=None, summary="")
-    assert n.to_anthropic()[0]["content"] == ""
-    assert n.to_openai()[0]["content"] == ""
-
-
-# ---------------------------------------------------------------------------
-# Base Node default
-# ---------------------------------------------------------------------------
-
-
-def test_base_node_to_anthropic_returns_empty() -> None:
-    """Base Node.to_anthropic returns empty list (no message produced)."""
-    from little_agent.agent.nodes import Node
-
-    # Use a concrete subclass to avoid abstract instantiation issues,
-    # but test the base-class default via super().
-    n = SummaryNode(id="x", prev=None, summary="s")
-    # Verify base Node method is callable and returns []
-    assert Node.to_anthropic(n) == []  # type: ignore[arg-type]
-
-
-def test_base_node_to_openai_returns_empty() -> None:
-    """Base Node.to_openai returns empty list."""
-    from little_agent.agent.nodes import Node
-
-    n = SummaryNode(id="x", prev=None, summary="s")
-    assert Node.to_openai(n) == []  # type: ignore[arg-type]

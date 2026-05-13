@@ -8,11 +8,10 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
 
-from little_agent.agent.nodes import SummaryNode
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
 
-from ._base import _iter_chain, _StreamAccumulator, _StreamingBackend
+from ._base import _StreamAccumulator, _StreamingBackend
 from ._utils import (
     _log_streaming_request,
     _log_streaming_response,
@@ -39,28 +38,19 @@ def _tool_map_to_anthropic_tools(tool_map: ToolMap) -> list[dict[str, Any]]:
 def _chain_to_messages(
     session: BackendSession,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Convert chain of nodes to Anthropic messages list.
+    """Convert session messages to Anthropic API format.
 
-    Returns (messages, system_injected) where system_injected is the text of
-    the first SummaryNode in the chain (hoisted to the Anthropic system param),
-    or None if no SummaryNode is present.  Subsequent SummaryNodes are rendered
-    as regular user messages so history context is preserved.
+    Returns (messages, effective_system) where effective_system combines
+    session.system_prompt and session.summaries.
     """
+    parts = [p for p in [session.system_prompt] + list(session.summaries) if p]
+    effective_system = "\n\n".join(parts) if parts else None
+
     messages: list[dict[str, Any]] = []
-    chain = _iter_chain(session)
-
-    system_injected: str | None = None
-    for n in chain:
-        if isinstance(n, SummaryNode):
-            if system_injected is None:
-                # First SummaryNode is lifted to the Anthropic system parameter.
-                system_injected = str(n.summary)
-                continue
-            # Subsequent SummaryNodes stay as regular messages via to_anthropic().
-        for msg in n.to_anthropic():
+    for node in session.messages:
+        for msg in node.to_anthropic():
             messages.append(msg)
-
-    return messages, system_injected
+    return messages, effective_system
 
 
 _CONTEXT_OVERFLOW_SUBSTRINGS = (
@@ -169,7 +159,6 @@ class AnthropicBackend(_StreamingBackend):
         timeout: float = 60.0,
         max_concurrency: int = 1,
         context_window: int = 128000,
-        system: str | None = None,
         max_tokens: int = 8192,
     ) -> None:
         import anthropic
@@ -184,14 +173,13 @@ class AnthropicBackend(_StreamingBackend):
             self._client = anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url)
         else:
             self._client = anthropic.AsyncAnthropic(api_key=api_key)
-        self._system = system
         self._max_tokens = max_tokens
 
     async def _generate_stream_inner(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
-        system_injected: str | None = None,
+        effective_system: str | None = None,
         session_id: str = "",
     ) -> AsyncGenerator[Any, None]:
         """Inner generator that wraps the Anthropic stream with timeout and exception handling."""
@@ -204,8 +192,6 @@ class AnthropicBackend(_StreamingBackend):
         }
         if tools:
             kwargs["tools"] = tools
-        # system_injected (from the first SummaryNode) takes priority; fall back to self._system.
-        effective_system = system_injected or self._system
         if effective_system:
             kwargs["system"] = effective_system
         if session_id:
@@ -225,7 +211,7 @@ class AnthropicBackend(_StreamingBackend):
         """Stream response from Anthropic, yielding updates then a final BackendTurnResult."""
         async with self._sem:
             tool_map = session.get_turn_tool_map()
-            messages, system_injected = _chain_to_messages(session)
+            messages, effective_system = _chain_to_messages(session)
             tools = _tool_map_to_anthropic_tools(tool_map) if tool_map else None
 
             _log_streaming_request(logger, "Anthropic", self._model, messages, tools)
@@ -235,7 +221,7 @@ class AnthropicBackend(_StreamingBackend):
             acc = _StreamAccumulator(finish_reason_raw="end_turn")
 
             async for event in self._generate_stream_inner(
-                messages, tools, system_injected, session.id
+                messages, tools, effective_system, session.id
             ):
                 if logger.isEnabledFor(logging.DEBUG):
                     _log_anthropic_event(logger, event)

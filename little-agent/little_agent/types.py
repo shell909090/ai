@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
+    from little_agent.agent.nodes import Node
     from little_agent.tools.protocol import AsyncToolFn, ToolMap, ToolProvider
 
 
@@ -82,7 +83,9 @@ class Session(Protocol):
 
     id: str
     cwd: str | None
-    tail: object  # Node | None; kept as object to avoid importing Node at runtime
+    system_prompt: str | None
+    summaries: list[str]
+    messages: list[Node]
 
     async def prompt(
         self, prompt: str | list[ContentBlock], allowed_tools: list[str] | None = None
@@ -101,9 +104,9 @@ class Hook:
     """Lifecycle hook base class. Override only the events you care about.
 
     Hook callbacks deliberately do NOT receive a node parameter: when each
-    callback fires, ``session.tail`` points at the just-frozen node the
+    callback fires, ``session.messages[-1]`` is the just-frozen node the
     callback would have been told about. Implementations that need the node
-    read ``session.tail`` (and ``session.tail.prev`` if they want neighbours).
+    read ``session.messages[-1]``.
     """
 
     async def on_turn_start(self, session: Session) -> None:
@@ -113,10 +116,10 @@ class Hook:
         """Called in finally after turn completes, is cancelled, or raises."""
 
     async def on_tool_call(self, session: Session) -> None:
-        """Called after AssistantNode is appended and frozen; session.tail is that node."""
+        """Called after AssistantNode is appended and frozen; session.messages[-1] is that node."""
 
     async def on_tool_result(self, session: Session) -> None:
-        """Called after ToolResultNode is frozen; session.tail is that node."""
+        """Called after ToolResultNode is frozen; session.messages[-1] is that node."""
 
     async def on_compress(self, session: Session) -> None:
         """Called after compress task completes."""

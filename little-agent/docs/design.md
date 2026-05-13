@@ -32,20 +32,20 @@ little-agent (script) → frontends → agent → {tools, backends}
 
 ## 2. Agent
 
-### 2.1 倒排链节点
+### 2.1 消息节点
 
 ```python
 @dataclass(slots=True)
 class Node:
     id: str
-    prev: "Node | None"
-    created_at: datetime
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    kind: ClassVar[str] = "node"
 
 
 @dataclass(slots=True)
 class UserPromptNode(Node):
     kind: ClassVar[str] = "user_prompt"
-    prompt: str | list[ContentBlock]
+    prompt: str | list[ContentBlock] = ""
 
 
 @dataclass(slots=True)
@@ -60,19 +60,13 @@ class AssistantNode(Node):
 @dataclass(slots=True)
 class ToolResultNode(Node):
     kind: ClassVar[str] = "tool_result"
-    results: dict[str, dict[str, Any]]  # call_id -> {status, content}
+    results: dict[str, dict[str, Any]] = field(default_factory=dict)  # call_id -> {status, content}
     frozen: bool = False
-
-
-@dataclass(slots=True)
-class SummaryNode(Node):
-    kind: ClassVar[str] = "summary"
-    summary: str
 ```
 
 规则：
 
-1. 运行时通过 `prev` 对象引用回溯。`id` 用于 save/load、日志、调试、fork 入口、Hook 状态跟踪。
+1. `id` 用于 save/load、日志、调试、Hook 状态跟踪。节点无 `prev` 字段；顺序由 `SessionCore.messages` list 维护。
 2. 节点整体逻辑 append-only。
 3. `frozen` 字段只出现在写入过程中可变的节点：`AssistantNode`、`ToolResultNode`。其他节点创建即不可变。
 4. 可变节点在任意时刻只能被一个 session 作为活跃尾节点持有。
@@ -80,8 +74,8 @@ class SummaryNode(Node):
    - 追加新节点时旧尾若可变，立刻冻结。
    - session 被 fork 时当前尾若可变，立刻冻结。
    - 当前 turn 结束或被取消时，尾节点立刻冻结。
-6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填（`Node.to_anthropic()` / `Node.to_openai()` 只读 `text` / `output_text`）。空字符串时序列化跳过该字段，节省体积。
-7. 每个 Node 子类实现 `to_anthropic() -> list[dict[str, Any]]` 和 `to_openai() -> list[dict[str, Any]]`，把节点转换为对应 provider 的消息列表（空列表表示该节点不产生消息）。把"chain → provider messages"的逐节点知识固化在节点自身，避免分散到各 backend 实现。Provider 特定的整合逻辑（如 Anthropic 把链首 `SummaryNode` 提升为 `system` 参数、assistant/user 序列拼装）由 backend 层完成（§5）。
+6. `thinking` 字段持久化模型思考文本（来自 `BackendTurnResult.thinking_text`），用于 reload history 时还原 thinking bubble。仅作展示，不进 backend 历史回填。空字符串时序列化跳过该字段，节省体积。
+7. 每个 Node 子类实现 `to_anthropic() -> list[dict[str, Any]]` 和 `to_openai() -> list[dict[str, Any]]`，把节点转换为对应 provider 的消息列表（空列表表示该节点不产生消息）。
 
 ### 2.2 Session 状态
 
@@ -89,16 +83,17 @@ class SummaryNode(Node):
 
 1. `id`
 2. `cwd`
-3. `tail`（当前链尾）
-4. 是否存在活跃 turn
-5. 当前 turn 是否已请求取消
-6. pending prompt 队列（容量 3，满则抛 `SessionBusyError`）
+3. `system_prompt: str | None`（会话级系统提示，初始化时从 `AgentCore.system_prompt` 复制）
+4. `summaries: list[str]`（历史压缩摘要文本，按时间顺序）
+5. `messages: list[Node]`（当前活跃消息列表，按时间顺序）
+6. 是否存在活跃 turn
+7. 当前 turn 是否已请求取消
+8. pending prompt 队列（容量 3，满则抛 `SessionBusyError`）
 
 并发规则：
 
-1. 非 fork 产生的 session 持有完全独立的链条。
-2. fork 产生的新 session 在 fork 点之前共享已冻结的历史节点，之后各自追加。
-3. 任何时刻，同一可变节点只能被一个 session 作为活跃尾节点持有。
+1. 任何时刻，同一可变节点只能被一个 session 作为活跃尾节点持有。
+2. fork 产生的新 session 浅拷贝 `messages` list 和 `summaries` list（节点本身已冻结不可变）。
 
 ### 2.3 Tool Call 与 Tool Result 节点约束
 
@@ -126,10 +121,10 @@ class SummaryNode(Node):
 
 ### 2.4 fork 规则
 
-1. `session.fork()` 基于当前 session 状态创建新 session，共享已有历史节点。
-2. fork 前若当前尾可变，必须先冻结。
+1. `session.fork()` 基于当前 session 状态创建新 session。
+2. fork 前若当前尾（`messages[-1]`）可变，必须先冻结。
 3. 存在活跃 turn 时调用 fork 直接抛异常。
-4. 不暴露 `from_node_id`；如需"从指定节点分叉"以新方法加入。
+4. fork 实现：浅拷贝 `messages` list（`list(self.messages)`）、浅拷贝 `summaries` list、复制 `system_prompt`。节点本身已冻结不可变，浅拷贝安全。
 
 ### 2.5 编排流程
 
@@ -168,17 +163,17 @@ class SummaryNode(Node):
 
 ```python
 class Compressor(Protocol):
-    async def compress(self, head: Node) -> Node: ...
+    async def compress(self, messages: list[Node]) -> tuple[str, list[Node]]: ...
 ```
 
 规则：
 
-1. 输入：链头节点（含通过 `prev` 可达的全部历史）。
-2. 输出：新链头节点（通常为 `SummaryNode`，协议不强制）。
+1. 输入：当前 session 的完整 `messages` 列表（正序）。
+2. 输出：`(summary_str, remaining_messages)`。`summary_str` 为本次压缩产生的摘要文本（空字符串表示无操作）；`remaining_messages` 为保留区节点列表。
 3. 由启动脚本按配置构造，在 `Agent.__init__` 注入。
 4. 配置中存在名为 `compressor` 的 backend 时使用它，否则与 agent 共用 backend。
-5. `Session.compress()`：未注入 compressor 或存在活跃 turn 抛异常；否则调用 `compressor.compress(tail)` 并把返回设为新 tail。
-6. 旧链不修改，不从旧链摘节点（保护 fork session 的链完整性）。
+5. `Session.compress()`：未注入 compressor 或存在活跃 turn 抛异常；否则调用 `compressor.compress(messages)` 后通过 `_apply_compress_result()` 更新 session 状态。
+6. `Session._apply_compress_result(summary, remaining)` 执行：① 若 summary 非空则 append 到 summaries；② messages = remaining；③ 按 W-limit 裁剪旧 summaries（W-limit = `agent.compressed_window_tokens`，0 表示无限制）。
 7. agent 编排在每次 turn 结束后自动评估并按需调度，详见 §2.6.2。
 
 #### 2.6.2 自动触发策略
@@ -188,34 +183,33 @@ class Compressor(Protocol):
 判据（任一即触发）：
 
 1. **token 阈值（首选）**：本 turn 最后一次 backend 调用的 `usage.input_tokens + usage.output_tokens` 与该 backend 的 `context_window` 之比超过 `R`。`R` 由 agent 配置项 `R` 调整，默认 `0.75`，取值 (0, 1]。
-2. **字符兜底**：本 turn 无有效 usage，从 tail 累加节点序列化字节数（UTF-8）除以 3 估算 token，比较 `R`。
+2. **字符兜底**：本 turn 无有效 usage，累加 `session.messages` 各节点序列化字节数（UTF-8）除以 3 估算 token，比较 `R`。
 3. **context-overflow 兜底**：见 §2.6.4。
 
 #### 2.6.3 算法
 
-参数：`keep_turns`（保留窗口，默认 3，下限 1），`compressed_window`（压缩历史上限比例，默认 0.15）。`W = compressed_window * primary.context_window`（tokens）。
+参数：`keep_turns`（保留窗口，默认 3，下限 1）。W-limit 由 session 侧应用（见 §2.6.1 规则 6）。
 
 turn 边界：从一条 `UserPromptNode` 起，到下一条 `UserPromptNode` 之前的所有节点。
 
-算法：
+`LLMCompressor.compress(messages)` 算法：
 
-1. **压缩区上界**：从 tail 往前回溯，找到最后一条 `SummaryNode`；若无则上界为链首。
-2. **保留区**：tail 起最近 `keep_turns` 个 turn。
-3. **被压区**：上界与保留区之间，按 turn 切分。
-4. **压缩**：每个被压 turn 一次 LLM 调用，压成一条 `SummaryNode`。多 turn 通过 `asyncio.gather` 并发；任一失败按 all-or-nothing 丢弃整批。
-5. **新链拼装**：上界之前的旧 SummaryNode + 新产出 SummaryNode + 保留区。保留区节点用 `dataclasses.replace` 复制以避免修改 fork 共享的旧链。
-6. **W 上限**：从最新 SummaryNode 往旧累加估算 token（UTF-8 字节数 / 3），超 `W` 处对齐边界丢弃更早的 SummaryNode；至少保留 1 条。
+1. 找保留区起始：从 `messages` 头开始统计 `UserPromptNode` 数；若总 turn 数 ≤ `keep_turns` 则返回 `("", messages)`（no-op）。
+2. **被压区**：`messages[:preserve_start]`（最近 `keep_turns` 个 turn 之前的所有节点）。
+3. **保留区**：`messages[preserve_start:]`（最近 `keep_turns` 个 turn）。
+4. **压缩**：将被压区按 turn 切分，每个 turn 一次 LLM 调用，并发 `asyncio.gather`；将所有摘要文本用 `"\n\n"` 拼接为一个 `summary_str`。
+5. 返回 `(summary_str, preserve_zone)`。
 
-**关键不变式**：`SummaryNode` 只出现在已压缩区（鏈头一侧的连续段），不混入活跃对话节点之间。步骤 1 的「从 tail 往前回溯找到第一条 SummaryNode 即作為壓縮區上界」依赖此不变式——一旦 SummaryNode 出现在活跃区中间，上界判定就会错误。任何其他机制（如 memory 注入）都不得在活跃区插入 SummaryNode；session 内确需在 context 之外保留信息的，应通过工具层（如后续的 session 搜索工具）按需检索，而非注入节点。
+W-limit（在 `Session._apply_compress_result` 中执行）：`summaries` 超过 W-limit 时从头部丢弃旧摘要，至少保留 1 条。
 
 #### 2.6.4 失败处理
 
-- **post-turn 路径**：异常向 frontend 抛，session 链不破坏。
-- **in-turn overflow retry**：主循环中 backend 抛 `ContextOverflowError` 时，agent 同步调用 `compressor.compress(self.tail)` 一次，retry 当前 backend 调用一次；retry 仍 overflow 按普通异常上抛。
+- **post-turn 路径**：异常向 frontend 抛，session 状态不破坏（messages 不改变）。
+- **in-turn overflow retry**：主循环中 backend 抛 `ContextOverflowError` 时，session 调用 `_apply_compress_result()` 更新自身，retry 当前 backend 调用一次；retry 仍 overflow 按普通异常上抛。
 
 #### 2.6.5 日志
 
-每次自动压缩输出 INFO：触发判据、估算 token、被压 turn 数、新生成 SummaryNode 数、丢弃数、耗时。
+每次自动压缩输出 INFO：触发判据、估算 token、被压 turn 数、耗时。
 
 ### 2.7 Permissions
 
@@ -620,7 +614,9 @@ ACP 映射：`new` ↔ `session/new`；`load` ↔ `session/load`。
 class Session(Protocol):
     id: str
     cwd: str | None
-    tail: Node | None
+    system_prompt: str | None
+    summaries: list[str]
+    messages: list[Node]
 
     async def prompt(
         self,
@@ -707,7 +703,9 @@ class BackendTurnResult:
 class BackendSession(Protocol):
     """Backend.generate() 所需的最小 session 契约。"""
     id: str
-    tail: Node | None
+    system_prompt: str | None
+    summaries: list[str]
+    messages: list[Node]
     def get_turn_tool_map(self) -> ToolMap: ...
 
 

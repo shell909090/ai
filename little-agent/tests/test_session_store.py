@@ -11,7 +11,6 @@ import pytest
 
 from little_agent.agent.nodes import (
     AssistantNode,
-    SummaryNode,
     UserPromptNode,
 )
 from little_agent.agent.session_store import _MAX_LOCKS, _SEARCH_TOOLDEF, SessionJSONLStore
@@ -21,7 +20,7 @@ from little_agent.tools.protocol import ToolArgDef
 class _MockSession:
     def __init__(self, session_id: str) -> None:
         self.id = session_id
-        self.tail = None
+        self.messages: list = []
 
 
 def _make_user_node(node_id: str | None = None, prompt: str = "hello") -> UserPromptNode:
@@ -30,10 +29,6 @@ def _make_user_node(node_id: str | None = None, prompt: str = "hello") -> UserPr
 
 def _make_assistant_node(node_id: str | None = None, text: str = "world") -> AssistantNode:
     return AssistantNode(id=node_id or str(uuid.uuid4()), text=text)
-
-
-def _make_summary_node(node_id: str | None = None, summary: str = "summary") -> SummaryNode:
-    return SummaryNode(id=node_id or str(uuid.uuid4()), summary=summary)
 
 
 # ---------------------------------------------------------------------------
@@ -48,11 +43,9 @@ async def test_on_turn_end_writes_nodes_in_order(tmp_path: Path) -> None:
 
     node1 = _make_user_node(prompt="first")
     node2 = _make_user_node(prompt="second")
-    node1.prev = None
-    node2.prev = node1
 
     session = _MockSession("sess-1")
-    session.tail = node2
+    session.messages = [node1, node2]
 
     await store.on_turn_end(session)
 
@@ -74,33 +67,6 @@ async def test_on_turn_end_writes_nodes_in_order(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_turn_end_skips_summary_node(tmp_path: Path) -> None:
-    """SessionJSONLStore omits SummaryNode records from the output file."""
-    store = SessionJSONLStore(sessions_dir=str(tmp_path), filename_template="test.jsonl")
-
-    node1 = _make_user_node(prompt="before")
-    node2 = _make_summary_node(summary="compressed")
-    node3 = _make_assistant_node(text="after")
-
-    node1.prev = None
-    node2.prev = node1
-    node3.prev = node2
-
-    session = _MockSession("sess-2")
-    session.tail = node3
-
-    await store.on_turn_end(session)
-
-    log_file = tmp_path / "test.jsonl"
-    lines = log_file.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 2
-
-    kinds = [json.loads(line)["kind"] for line in lines]
-    assert "summary" not in kinds
-    assert kinds == ["user_prompt", "assistant"]
-
-
-@pytest.mark.asyncio
 async def test_on_turn_end_only_new_nodes_after_second_call(tmp_path: Path) -> None:
     """Second on_turn_end() call writes only nodes added since the first call."""
     store = SessionJSONLStore(sessions_dir=str(tmp_path), filename_template="test.jsonl")
@@ -109,12 +75,8 @@ async def test_on_turn_end_only_new_nodes_after_second_call(tmp_path: Path) -> N
     node_b = _make_assistant_node(text="B")
     node_c = _make_user_node(prompt="C")
 
-    node_a.prev = None
-    node_b.prev = node_a
-    node_c.prev = node_b
-
     session = _MockSession("sess-3")
-    session.tail = node_c
+    session.messages = [node_a, node_b, node_c]
 
     await store.on_turn_end(session)
 
@@ -123,8 +85,7 @@ async def test_on_turn_end_only_new_nodes_after_second_call(tmp_path: Path) -> N
     assert len(lines) == 3
 
     node_d = _make_assistant_node(text="D")
-    node_d.prev = node_c
-    session.tail = node_d
+    session.messages = [node_a, node_b, node_c, node_d]
 
     await store.on_turn_end(session)
 
@@ -181,11 +142,8 @@ async def test_per_session_files_lazy_rebuild(tmp_path: Path) -> None:
     existing_node = _make_user_node(node_id="existing-node", prompt="old")
     new_node = _make_user_node(node_id="new-node", prompt="new")
 
-    existing_node.prev = None
-    new_node.prev = existing_node
-
     session = _MockSession("s1")
-    session.tail = new_node
+    session.messages = [existing_node, new_node]
 
     await store.on_turn_end(session)
 
@@ -204,11 +162,9 @@ async def test_concurrent_on_turn_end_same_file(tmp_path: Path) -> None:
     for i in range(3):
         node1 = _make_user_node(prompt=f"session-{i}-node-1")
         node2 = _make_assistant_node(text=f"session-{i}-node-2")
-        node1.prev = None
-        node2.prev = node1
 
         s = _MockSession(f"sess-concurrent-{i}")
-        s.tail = node2
+        s.messages = [node1, node2]
         sessions.append(s)
 
     await asyncio.gather(*[store.on_turn_end(s) for s in sessions])
@@ -253,17 +209,13 @@ async def test_concurrent_first_log_shared_file_no_duplicates(tmp_path: Path) ->
 
     old1 = _make_user_node(node_id="s1-old", prompt="old1")
     new1 = _make_user_node(node_id="s1-new", prompt="new1")
-    old1.prev = None
-    new1.prev = old1
     sess1 = _MockSession("s1")
-    sess1.tail = new1
+    sess1.messages = [old1, new1]
 
     old2 = _make_user_node(node_id="s2-old", prompt="old2")
     new2 = _make_user_node(node_id="s2-new", prompt="new2")
-    old2.prev = None
-    new2.prev = old2
     sess2 = _MockSession("s2")
-    sess2.tail = new2
+    sess2.messages = [old2, new2]
 
     await asyncio.gather(store.on_turn_end(sess1), store.on_turn_end(sess2))
 
@@ -302,11 +254,9 @@ async def test_load_history_strips_session_id(tmp_path: Path) -> None:
 
     node1 = _make_user_node(prompt="hello")
     node2 = _make_assistant_node(text="world")
-    node1.prev = None
-    node2.prev = node1
 
     session = _MockSession("load-test")
-    session.tail = node2
+    session.messages = [node1, node2]
     await store.on_turn_end(session)
 
     records = await store.load_history("load-test")
