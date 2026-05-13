@@ -251,6 +251,87 @@ async def test_fork_for_inheritance_preserves_full_history(
 
 
 # ---------------------------------------------------------------------------
+# T4: fork mode produces valid Anthropic message format (no naked tool_use)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fork_for_inheritance_anthropic_format_valid(
+    simple_agent: AgentCore,
+) -> None:
+    """Forked session messages convert to Anthropic format without naked tool_use blocks.
+
+    Anthropic requires every tool_use in an assistant message to have a
+    matching tool_result in the following user message. The placeholder
+    ToolResultNode added by _fork_for_inheritance must satisfy this.
+    """
+    provider = TaskToolProvider(simple_agent)
+    session = SessionCore(session_id="s1", cwd="/tmp", agent=simple_agent)
+    user = UserPromptNode(id="u1", prompt="go")
+    asst = AssistantNode(
+        id="a1",
+        tool_calls={
+            "call_1": {"tool_name": "task", "arguments": {"prompt": "sub"}},
+            "call_2": {"tool_name": "bash", "arguments": {"command": "ls"}},
+        },
+    )
+    active_result = ToolResultNode(id="r1", results={})
+    session.messages = [user, asst, active_result]
+
+    sub = await provider._fork_for_inheritance(session)
+
+    # Convert to Anthropic format
+    messages: list[dict] = []
+    for node in sub.messages:
+        messages.extend(node.to_anthropic())
+
+    # Collect all tool_use ids and all tool_result ids
+    tool_use_ids: set[str] = set()
+    tool_result_ids: set[str] = set()
+    for msg in messages:
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "tool_use":
+                        tool_use_ids.add(block["id"])
+                    elif block.get("type") == "tool_result":
+                        tool_result_ids.add(block["tool_use_id"])
+
+    assert tool_use_ids == {"call_1", "call_2"}, "all tool_use ids must be present"
+    assert tool_use_ids == tool_result_ids, "every tool_use must have a matching tool_result"
+
+
+# ---------------------------------------------------------------------------
+# T4: new session mode (inheritance=False) starts with no history
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_task_new_session_has_no_history(simple_agent: AgentCore) -> None:
+    """New session mode creates a fresh session with no messages from the parent."""
+    from unittest.mock import patch
+
+    created_sessions: list = []
+    original_new = simple_agent.new
+
+    async def capturing_new(cwd: str | None = None):  # type: ignore[no-untyped-def]
+        sess = await original_new(cwd=cwd)
+        created_sessions.append(sess)
+        return sess
+
+    provider = TaskToolProvider(simple_agent)
+    with patch.object(simple_agent, "new", side_effect=capturing_new):
+        result = await provider._task_dispatch({"prompt": "hello", "inheritance": False})
+
+    assert result["status"] == "completed"
+    assert len(created_sessions) == 1
+    # The session starts with no pre-existing messages (UserPromptNode is added by prompt())
+    sub = created_sessions[0]
+    assert sub.summaries == []
+
+
+# ---------------------------------------------------------------------------
 # T68: CancelledError does not escape _run_scheduler; result_future is set
 # ---------------------------------------------------------------------------
 
