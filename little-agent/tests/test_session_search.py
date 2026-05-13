@@ -1,4 +1,4 @@
-"""Tests for SessionJSONLStore._search() — TASK-D5."""
+"""Tests for SessionSearchProvider._search()."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from little_agent.agent.session_store import SessionJSONLStore
+from little_agent.tools.session_search import SessionSearchProvider
 
 SESSION_ID = "test-session-abc"
 
@@ -20,8 +21,10 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
             f.write(json.dumps(rec) + "\n")
 
 
-def _store(tmp_path: Path) -> SessionJSONLStore:
-    return SessionJSONLStore(sessions_dir=str(tmp_path))
+def _make_searcher(tmp_path: Path) -> tuple[SessionJSONLStore, SessionSearchProvider]:
+    store = SessionJSONLStore(sessions_dir=str(tmp_path))
+    searcher = SessionSearchProvider(store.resolve_path)
+    return store, searcher
 
 
 def _resolve(store: SessionJSONLStore, session_id: str) -> Path:
@@ -86,7 +89,9 @@ _ALL_RECORDS = [
 ]
 
 
-def _write_fixture(store: SessionJSONLStore, records: list[dict[str, Any]] | None = None) -> Path:
+def _write_fixture(
+    store: SessionJSONLStore, records: list[dict[str, Any]] | None = None
+) -> Path:
     path = _resolve(store, SESSION_ID)
     _write_jsonl(path, records if records is not None else _ALL_RECORDS)
     return path
@@ -100,11 +105,11 @@ def _write_fixture(store: SessionJSONLStore, records: list[dict[str, Any]] | Non
 @pytest.mark.asyncio
 async def test_turn_query_matches_any_node(tmp_path: Path) -> None:
     """kind=turn: query against one node returns the whole turn."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
     # "hi there" is in turn 1's assistant response
-    result = await store._search(SESSION_ID, query="hi there", kind="turn", limit=5)
+    result = await searcher._search(SESSION_ID, query="hi there", kind="turn", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     turn = result[0]
@@ -121,10 +126,10 @@ async def test_turn_query_matches_any_node(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_turn_query_matches_user_prompt(tmp_path: Path) -> None:
     """kind=turn: query matching only the user_prompt still returns full turn."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="hello world", kind="turn", limit=5)
+    result = await searcher._search(SESSION_ID, query="hello world", kind="turn", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]["turn_id"] == "t1-user"  # type: ignore[index]
@@ -138,11 +143,11 @@ async def test_turn_query_matches_user_prompt(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_any_matches_all_kinds(tmp_path: Path) -> None:
     """kind=any: matches across all node types; each hit is a single node."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
     # "done" only appears in turn2 assistant node
-    result = await store._search(SESSION_ID, query="done", kind="any", limit=5)
+    result = await searcher._search(SESSION_ID, query="done", kind="any", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     hit = result[0]
@@ -156,10 +161,10 @@ async def test_any_matches_all_kinds(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_any_matches_tool_call(tmp_path: Path) -> None:
     """kind=any: query matches text inside a tool_call node."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="running bash", kind="any", limit=5)
+    result = await searcher._search(SESSION_ID, query="running bash", kind="any", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]["node_id"] == "t2-tc"  # type: ignore[index]
@@ -173,10 +178,10 @@ async def test_any_matches_tool_call(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_kind_user_prompt_filters_correctly(tmp_path: Path) -> None:
     """kind=user_prompt returns only user_prompt nodes."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="user_prompt", limit=10)
+    result = await searcher._search(SESSION_ID, query="", kind="user_prompt", limit=10)
     assert isinstance(result, list)
     assert len(result) == 2
     assert all(h["kind"] == "user_prompt" for h in result)  # type: ignore[index]
@@ -185,10 +190,10 @@ async def test_kind_user_prompt_filters_correctly(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_kind_assistant_filters_correctly(tmp_path: Path) -> None:
     """kind=assistant returns only assistant nodes."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="assistant", limit=10)
+    result = await searcher._search(SESSION_ID, query="", kind="assistant", limit=10)
     assert isinstance(result, list)
     assert len(result) == 3
     assert all(h["kind"] == "assistant" for h in result)  # type: ignore[index]
@@ -197,10 +202,10 @@ async def test_kind_assistant_filters_correctly(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_kind_assistant_includes_tool_call_nodes(tmp_path: Path) -> None:
     """kind=assistant returns assistant nodes including those with tool_calls."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="assistant", limit=10)
+    result = await searcher._search(SESSION_ID, query="", kind="assistant", limit=10)
     assert isinstance(result, list)
     assert len(result) == 3
     assert all(r["kind"] == "assistant" for r in result)  # type: ignore[index]
@@ -212,10 +217,10 @@ async def test_kind_assistant_includes_tool_call_nodes(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_kind_tool_result_filters_correctly(tmp_path: Path) -> None:
     """kind=tool_result returns only tool_result nodes."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="tool_result", limit=10)
+    result = await searcher._search(SESSION_ID, query="", kind="tool_result", limit=10)
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0]["kind"] == "tool_result"  # type: ignore[index]
@@ -229,10 +234,10 @@ async def test_kind_tool_result_filters_correctly(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_limit_caps_results(tmp_path: Path) -> None:
     """Results are capped at the limit parameter."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="turn", limit=1)
+    result = await searcher._search(SESSION_ID, query="", kind="turn", limit=1)
     assert isinstance(result, list)
     assert len(result) == 1
 
@@ -240,10 +245,10 @@ async def test_limit_caps_results(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_turn_results_newest_first(tmp_path: Path) -> None:
     """kind=turn results are returned newest-first."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="turn", limit=5)
+    result = await searcher._search(SESSION_ID, query="", kind="turn", limit=5)
     assert isinstance(result, list)
     assert len(result) == 2
     # turn2 is newer — should be first
@@ -254,10 +259,10 @@ async def test_turn_results_newest_first(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_node_results_newest_first(tmp_path: Path) -> None:
     """kind=any results are returned newest-first."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="user_prompt", limit=5)
+    result = await searcher._search(SESSION_ID, query="", kind="user_prompt", limit=5)
     assert isinstance(result, list)
     assert len(result) == 2
     # t2-user is newer — should be first
@@ -273,10 +278,10 @@ async def test_node_results_newest_first(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_empty_query_turn_returns_latest_n_turns(tmp_path: Path) -> None:
     """Empty query with kind=turn returns the latest N turns."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="turn", limit=2)
+    result = await searcher._search(SESSION_ID, query="", kind="turn", limit=2)
     assert isinstance(result, list)
     assert len(result) == 2
 
@@ -284,10 +289,10 @@ async def test_empty_query_turn_returns_latest_n_turns(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_empty_query_any_returns_latest_n_nodes(tmp_path: Path) -> None:
     """Empty query with kind=any returns the latest N nodes."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result = await store._search(SESSION_ID, query="", kind="any", limit=3)
+    result = await searcher._search(SESSION_ID, query="", kind="any", limit=3)
     assert isinstance(result, list)
     assert len(result) == 3
 
@@ -300,8 +305,10 @@ async def test_empty_query_any_returns_latest_n_nodes(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_missing_jsonl_returns_empty(tmp_path: Path) -> None:
     """_search returns [] when no JSONL file exists for the session."""
-    store = _store(tmp_path)
-    result = await store._search("nonexistent-session-xyz", query="anything", kind="turn", limit=5)
+    store, searcher = _make_searcher(tmp_path)
+    result = await searcher._search(
+        "nonexistent-session-xyz", query="anything", kind="turn", limit=5
+    )
     assert result == []
 
 
@@ -313,7 +320,7 @@ async def test_missing_jsonl_returns_empty(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_corrupt_last_line_skipped(tmp_path: Path) -> None:
     """_search skips a truncated last line without raising an exception."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     path = _resolve(store, SESSION_ID)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -321,7 +328,7 @@ async def test_corrupt_last_line_skipped(tmp_path: Path) -> None:
         f.write(json.dumps(_TURN1_ASSISTANT) + "\n")
         f.write('{"session_id": "' + SESSION_ID + '", "id": "broken"')  # truncated — no closing }
 
-    result = await store._search(SESSION_ID, query="hello", kind="turn", limit=5)
+    result = await searcher._search(SESSION_ID, query="hello", kind="turn", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1  # only the valid turn
 
@@ -344,10 +351,10 @@ async def test_snippet_truncated_to_500_chars(tmp_path: Path) -> None:
             "prompt": long_text,
         }
     ]
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store, records)
 
-    result = await store._search(SESSION_ID, query="", kind="turn", limit=5)
+    result = await searcher._search(SESSION_ID, query="", kind="turn", limit=5)
     assert isinstance(result, list)
     assert len(result) == 1
     turn = result[0]
@@ -367,10 +374,10 @@ async def test_snippet_truncated_to_500_chars(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_search_case_insensitive(tmp_path: Path) -> None:
     """Query matching is case-insensitive."""
-    store = _store(tmp_path)
+    store, searcher = _make_searcher(tmp_path)
     _write_fixture(store)
 
-    result_lower = await store._search(SESSION_ID, query="hello world", kind="turn", limit=5)
-    result_upper = await store._search(SESSION_ID, query="HELLO WORLD", kind="turn", limit=5)
+    result_lower = await searcher._search(SESSION_ID, query="hello world", kind="turn", limit=5)
+    result_upper = await searcher._search(SESSION_ID, query="HELLO WORLD", kind="turn", limit=5)
     assert result_lower == result_upper
     assert len(result_lower) == 1  # type: ignore[arg-type]

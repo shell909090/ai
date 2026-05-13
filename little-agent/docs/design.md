@@ -287,58 +287,57 @@ class Hook:
 4. 多 hook 顺序：按配置顺序串行调用；不并发，避免共享状态竞争。
 5. 压缩结果以字符串形式存入 `session.summaries`，不作为节点追加进 `messages`；关心压缩事件的 hook 使用 `on_compress`，不需要从节点链识别压缩行为。
 
-#### SessionJSONLStore（plugin：同时实现 Hook + ToolProvider）
+#### SessionJSONLStore（Hook）
 
-将节点链以 JSONL 形式持久化到文件，并在同一类上暴露 `search_session` 工具供 agent 主动回查。它是当前唯一一个跨「Hook 注册点」与「Tool 注册点」的组件——一个实例同时挂到 `agent.hooks` 与 `ToolRegistry`。
-
-**这是一个新的注册范式（暂称 plugin）**：单一组件同时占用多个注册点。当前仅 `SessionJSONLStore` 一例，不抽象通用 plugin 机制；未来若同类组件增多再考虑抽象。
-
-接口：
+将节点链以 JSONL 形式持久化到文件。住在 `little_agent/agent/session_store.py`，仅实现 `Hook` 接口（不再是 ToolProvider）。
 
 ```python
-class SessionJSONLStore(Hook, ToolProvider):
+class SessionJSONLStore(Hook):
     def __init__(self, sessions_dir: str, filename_template: str = "{session_id}_session.jsonl"):
         ...
+
+    def resolve_path(self, session_id: str) -> Path: ...
 
     # Hook 接口：唯一 override on_turn_end
     async def on_turn_end(self, session: Session) -> None:
         # 增量遍历自上次 tail 起的新节点，append 到 JSONL
         ...
 
-    # ToolProvider 接口：yield search_session 工具
-    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
-        async def search_session_fn(args: dict[str, JSONValue]) -> JSONValue:
-            session_id = current_session_id.get()
-            return await self._search(session_id, **args)
-        yield ("search_session", _SEARCH_TOOLDEF, search_session_fn)
-
-    # 共享内部
-    async def _append_node(self, session_id: str, node_dict: dict) -> None: ...
-    async def _search(self, session_id: str, query: str, kind: str = "turn", limit: int = 5) -> list[Hit]: ...
-    async def load_history(self, session_id: str) -> list[NodeRecord]: ...   # 供 §4.6 web `session/resume` 调用
+    async def load_history(self, session_id: str) -> list[dict]: ...   # 供 §4.6 web session/resume
+    async def delete_session(self, session_id: str) -> None: ...
 ```
 
 **注册规则**：启动脚本检测顶层 `session_store:` 配置段：
 
-- **存在**：实例化 `SessionJSONLStore(**session_store)`，同时 `agent.hooks.append(store)` 和 `tool_registry.register(store)`。
-- **缺省**：不实例化；hook 与 tool 双方都不出现 `SessionJSONLStore`。
-- **Web frontend 特例**：用户未配置 `session_store:` 但启用了 web frontend 时，启动脚本以默认参数（`sessions_dir=~/.local/state/little_agent/sessions/`）自动实例化并注入，日志 INFO 提示「session_store auto-enabled for web frontend」。
+- **存在**：实例化 `SessionJSONLStore(**session_store)`，`agent.hooks.append(store)`；同时构造 `SessionSearchProvider(store.resolve_path)` 并注册到 `ToolRegistry`。
+- **缺省**：不实例化；两侧均不出现。
+- **Web frontend 特例**：用户未配置 `session_store:` 但启用了 web frontend 时，启动脚本以默认参数自动实例化，日志 INFO 提示「session_store auto-enabled for web frontend」。
 
-**Hook 侧行为**（与原 FileLogger 一致）：
+**Hook 侧行为**：
 
 1. 仅 override `on_turn_end`；其他 hook 方法走 `Hook` 基类默认 no-op。
 2. 内部状态 `last_tail_ids: dict[str, str]`：session_id → 上次成功记录时的尾节点 id。
 3. 遍历算法：`on_turn_end` 触发时从 `session.messages[-1]` 向前遍历；遇 `id == last_tail_ids[session_id]` 停止（首次调用无 stop point，遍历整条链）；按正序持久化；完成后更新 `last_tail_ids`。
 4. Stop point 可达性：`on_turn_end` 在 compress 之前触发（§2.5 步骤 7.1），compress 至少保留 `keep_turns ≥ 1` 轮，所以上次记录的尾节点 id 始终在 preserve zone 内。
-5. `filename_template.format(session_id=session.id)` 解析路径，相对路径基于 `sessions_dir`；`~` 自动展开。
+5. `filename_template.format(session_id=session.id)` 解析路径，`~` 自动展开。
 6. 文件存在时启动重建：逐行解析 JSON，按 `session_id` 分组取最后一条记录的 `id` 写入 `last_tail_ids`。
-7. 每节点一行 JSON 追加：`{"session_id": ..., **node.to_dict()}`，复用现有节点序列化。
+7. 每节点一行 JSON 追加：`{"session_id": ..., **node.to_dict()}`。
 8. 写端：每个实际文件路径一把 `asyncio.Lock`，保证并发追加安全。
 
-**Tool 侧行为**（`search_session` 工具实现请见 §3.4）：
+#### SessionSearchProvider（ToolProvider）
 
-- 读端不持锁；JSONL 是 append-only，open→readlines→close 即可；尾部半行解析失败时跳过（容忍 writer 写到一半的情况）。
-- `current_session_id` 从 `little_agent/context.py` 的 ContextVar 读取，与编排层 turn-scoped context 一致。
+住在 `little_agent/tools/session_search.py`，实现 `ToolProvider` 协议，暴露 `search_session` 工具。构造时接收 `resolve_path: Callable[[str], Path]`（来自 `SessionJSONLStore.resolve_path`），通过依赖注入与 store 解耦，不 import `agent/` 模块。
+
+```python
+class SessionSearchProvider:
+    def __init__(self, resolve_path: Callable[[str], Path]) -> None: ...
+
+    def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
+        yield ("search_session", _SEARCH_TOOLDEF, search_session_fn)
+```
+
+- 读端不持锁；JSONL 是 append-only，open→readlines→close 即可；尾部半行解析失败时跳过。
+- `session.id` 从工具函数参数的 `session` 对象直接读取，不依赖 ContextVar。
 
 ## 3. Tools
 
@@ -512,7 +511,7 @@ class ToolRegistry(Protocol):
 - `turn_id` 统一为该 turn 的 `UserPromptNode.id`。
 - Snippet 截断到合理上限（建议 500 字符），避免单次返回过大。
 - 匹配实现：case-insensitive 子串；时间倒序（最新匹配排前）；超过 `limit` 后停止扫描。空 query 时 `kind=turn` 返回最近 `limit` 个 turn、`kind=any` 返回最近 `limit` 个节点。
-- 数据源：`SessionJSONLStore` 写入的 per-session JSONL；通过 `current_session_id` ContextVar 定位当前文件。JSONL 不存在时返回空列表，不抛异常。
+- 数据源：`SessionJSONLStore` 写入的 per-session JSONL；通过工具函数参数 `session.id` 定位当前文件。JSONL 不存在时返回空列表，不抛异常。
 
 ### 3.5 MCP Provider
 

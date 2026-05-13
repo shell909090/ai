@@ -149,6 +149,7 @@ logging:
 |------|--------|------|
 | `compress_threshold` | `0.75` | 压缩触发比例：`total_tokens / context_window` 超过该值时触发压缩 |
 | `max_tool_result_chars` | `50000` | 工具返回结果的大小上限（JSON 序列化字符数），超出时截断并标注 |
+| `ignore_agentsmd` | `false` | 跳过 session 启动时的 AGENTS.md 查找（在自带 AGENTS.md 的开发目录中使用） |
 
 #### `compressor`
 

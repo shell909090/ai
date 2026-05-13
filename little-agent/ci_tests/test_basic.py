@@ -41,25 +41,24 @@ async def test_multi_turn_conversation(ci_config: dict[str, Any]) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_in_flight(ci_config: dict[str, Any]) -> None:
-    """Cancel a prompt while it is running; verify stop_reason is 'cancelled'."""
+    """Cancel a prompt while a bash tool is running; verify stop_reason is 'cancelled'.
+
+    Uses a long-running bash tool (sleep 30) so that cancel reliably fires during
+    tool execution rather than racing against backend streaming completion.
+    """
     agent, client = build_agent(ci_config)
     session = await agent.new()
 
     async def _cancel_after_delay() -> None:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(5)
         await session.cancel()
 
     prompt_task = asyncio.create_task(
-        session.prompt(
-            "Count very slowly from 1 to 100, writing each number on a new line. Do not rush."
-        )
+        session.prompt("Run the bash command `sleep 30` and wait for it to finish.")
     )
     cancel_task = asyncio.create_task(_cancel_after_delay())
 
-    reason, partial_text = await prompt_task
+    reason, _ = await prompt_task
     await cancel_task
 
-    assert reason == "cancelled", (
-        f"Expected 'cancelled' stop reason, got {reason!r}. "
-        "If the model replied instantly before cancel fired, re-run."
-    )
+    assert reason == "cancelled", f"Expected 'cancelled' stop reason, got {reason!r}"

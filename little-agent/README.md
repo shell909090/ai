@@ -149,6 +149,7 @@ At least one of `api_key` or `api_key_env` must resolve to a non-empty value.
 |-------|---------|-------------|
 | `compress_threshold` | `0.75` | Compression trigger ratio: compress when `total_tokens / context_window` exceeds this value |
 | `max_tool_result_chars` | `50000` | Tool result size cap (serialised JSON characters); larger results are truncated |
+| `ignore_agentsmd` | `false` | Skip AGENTS.md discovery on session start (useful when developing inside a repo that has its own AGENTS.md) |
 
 #### `compressor`
 

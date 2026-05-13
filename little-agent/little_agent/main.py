@@ -215,7 +215,9 @@ def main() -> None:
     )
 
     if session_store is not None:
-        tools.register(session_store)
+        from little_agent.tools.session_search import SessionSearchProvider
+
+        tools.register(SessionSearchProvider(session_store.resolve_path))
 
     if task_enabled:
         tools.register(TaskToolProvider(agent))

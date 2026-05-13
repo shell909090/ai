@@ -13,8 +13,9 @@ from little_agent.agent.nodes import (
     AssistantNode,
     UserPromptNode,
 )
-from little_agent.agent.session_store import _MAX_LOCKS, _SEARCH_TOOLDEF, SessionJSONLStore
+from little_agent.agent.session_store import _MAX_LOCKS, SessionJSONLStore
 from little_agent.tools.protocol import ToolArgDef
+from little_agent.tools.session_search import _SEARCH_TOOLDEF, SessionSearchProvider
 
 
 class _MockSession:
@@ -276,14 +277,15 @@ async def test_load_history_missing_file(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (c) __iter__ yields "search_session" with correct ToolDef
+# (c) SessionSearchProvider.__iter__ yields "search_session" with correct ToolDef
 # ---------------------------------------------------------------------------
 
 
 def test_iter_yields_search_session(tmp_path: Path) -> None:
     """__iter__ yields exactly one 'search_session' tool with the correct ToolDef."""
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
-    items = list(store)
+    searcher = SessionSearchProvider(store.resolve_path)
+    items = list(searcher)
     assert len(items) == 1
     name, tooldef, fn = items[0]
     assert name == "search_session"
@@ -311,7 +313,8 @@ async def test_search_session_fn_returns_list(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
-    items = list(store)
+    searcher = SessionSearchProvider(store.resolve_path)
+    items = list(searcher)
     _, _, fn = items[0]
     mock_session = MagicMock()
     mock_session.id = "no-such-session"
@@ -328,5 +331,6 @@ async def test_search_session_fn_returns_list(tmp_path: Path) -> None:
 async def test_search_returns_results(tmp_path: Path) -> None:
     """_search returns a list (empty when no JSONL file exists for the session)."""
     store = SessionJSONLStore(sessions_dir=str(tmp_path))
-    result = await store._search("some-session", query="hello", kind="turn", limit=5)
+    searcher = SessionSearchProvider(store.resolve_path)
+    result = await searcher._search("some-session", query="hello", kind="turn", limit=5)
     assert isinstance(result, list)
