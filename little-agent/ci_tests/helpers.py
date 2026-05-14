@@ -9,7 +9,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.permissions import YesManChecker
 from little_agent.backends.build import _DEFAULT_BACKEND_CONFIG, _build_backend
 from little_agent.main import _deep_merge
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
@@ -27,7 +27,7 @@ def build_agent(config: dict[str, Any]) -> tuple[AgentCore, MockClient]:
     """Build an AgentCore from config with real backend and bash tool."""
     backend = make_backend(config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     client: MockClient = MockClient()
     agent = AgentCore(
         client=client,

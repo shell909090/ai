@@ -18,7 +18,7 @@ _DANGEROUS_ENV_VARS = frozenset({"PATH"})
 _DANGEROUS_ENV_PREFIXES = ("LD_", "DYLD_", "PYTHON")
 
 
-class BashToolProvider:
+class BashProvider:
     """Execute shell commands via asyncio subprocess."""
 
     def __init__(self, timeout: int = 30, max_timeout: int = 1800) -> None:

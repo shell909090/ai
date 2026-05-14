@@ -10,7 +10,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.types import Hook
 from little_agent.agent.permissions import YesManChecker
 from little_agent.types import Session
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
@@ -43,7 +43,7 @@ async def test_hooks_fired_on_tool_turn(ci_config: dict[str, Any]) -> None:
     """Verify on_turn_start/end and on_tool_call/result all fire during a tool turn."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     hook = _RecordingHook()
     client: MockClient = MockClient()
     agent = AgentCore(
@@ -71,7 +71,7 @@ async def test_hooks_fired_on_fork(ci_config: dict[str, Any]) -> None:
     """Verify on_fork fires when a session is forked."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
 
     class _ForkHook(Hook):
         def __init__(self) -> None:

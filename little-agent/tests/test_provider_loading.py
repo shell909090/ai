@@ -14,7 +14,7 @@ from little_agent.agent.tool_setup import (
     start_mcp_providers,
 )
 from little_agent.main import _DEFAULT_CONFIG, _deep_merge
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 
 
 def test_empty_providers_dict_returns_no_providers() -> None:
@@ -25,17 +25,17 @@ def test_empty_providers_dict_returns_no_providers() -> None:
 
 
 def test_bash_provider_loaded_with_args() -> None:
-    """BashToolProvider is instantiated with constructor args from config."""
+    """BashProvider is instantiated with constructor args from config."""
     config = {
         "tools": {
             "providers": {
-                "little_agent.tools.bash.BashToolProvider": {"timeout": 60, "max_timeout": 3600}
+                "little_agent.tools.bash.BashProvider": {"timeout": 60, "max_timeout": 3600}
             }
         }
     }
     providers, task_enabled = load_providers_from_config(config)
     assert len(providers) == 1
-    assert isinstance(providers[0], BashToolProvider)
+    assert isinstance(providers[0], BashProvider)
     assert providers[0]._timeout == 60
     assert providers[0]._max_timeout == 3600
     assert task_enabled is False
@@ -74,7 +74,7 @@ def test_custom_provider_loaded_with_args() -> None:
 
 def test_args_none_skips_provider() -> None:
     """Provider with null args is silently skipped (opt-out from default)."""
-    config = {"tools": {"providers": {"little_agent.tools.bash.BashToolProvider": None}}}
+    config = {"tools": {"providers": {"little_agent.tools.bash.BashProvider": None}}}
     providers, task_enabled = load_providers_from_config(config)
     assert providers == []
     assert task_enabled is False
@@ -82,7 +82,7 @@ def test_args_none_skips_provider() -> None:
 
 def test_args_non_dict_raises_value_error() -> None:
     """Provider with non-dict args raises ValueError."""
-    config = {"tools": {"providers": {"little_agent.tools.bash.BashToolProvider": "invalid"}}}
+    config = {"tools": {"providers": {"little_agent.tools.bash.BashProvider": "invalid"}}}
     with pytest.raises(ValueError, match="must be a dict"):
         load_providers_from_config(config)
 
@@ -108,7 +108,7 @@ def test_missing_class_in_module_raises_import_error() -> None:
 
 def test_old_list_format_raises_value_error() -> None:
     """Old list-format tools.providers raises ValueError."""
-    config = {"tools": {"providers": ["little_agent.tools.bash.BashToolProvider"]}}
+    config = {"tools": {"providers": ["little_agent.tools.bash.BashProvider"]}}
     with pytest.raises(ValueError, match="Old list format is not supported"):
         load_providers_from_config(config)
 
@@ -139,7 +139,7 @@ def test_default_config_injects_bash() -> None:
     # Merging an empty user config with defaults yields the default providers.
     merged = _deep_merge(_DEFAULT_CONFIG, {})
     providers, task_enabled = load_providers_from_config(merged)
-    assert any(isinstance(p, BashToolProvider) for p in providers)
+    assert any(isinstance(p, BashProvider) for p in providers)
     assert task_enabled is True
 
 
@@ -185,11 +185,11 @@ def test_build_tools_register_failure_warns_and_skips() -> None:
     """If a provider registration raises ValueError, it is logged and skipped."""
     from little_agent.agent.tool_manager import ToolManager
 
-    # Pre-fill a ToolManager with BashToolProvider so a second registration conflicts.
+    # Pre-fill a ToolManager with BashProvider so a second registration conflicts.
     pre_filled = ToolManager()
-    pre_filled.register(BashToolProvider())
+    pre_filled.register(BashProvider())
 
-    config = {"tools": {"providers": {"little_agent.tools.bash.BashToolProvider": {}}}}
+    config = {"tools": {"providers": {"little_agent.tools.bash.BashProvider": {}}}}
 
     with patch("little_agent.agent.tool_setup.logger") as mock_logger:
         with patch("little_agent.agent.tool_setup.ToolManager", return_value=pre_filled):

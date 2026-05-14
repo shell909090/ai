@@ -11,7 +11,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
 from little_agent.agent.permissions import YesManChecker
 from little_agent.frontends.cli import CliClient
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 
 from .helpers import make_backend, walk_chain
@@ -24,7 +24,7 @@ async def test_new_command(ci_config: dict[str, Any]) -> None:
     """Complete one turn, call /new, verify the new session has a different id."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     cli_client = CliClient()
     agent = AgentCore(client=cli_client, backend=backend, tools=tools, permissions=YesManChecker())
     session = await agent.new()
@@ -43,7 +43,7 @@ async def test_fork_command(ci_config: dict[str, Any]) -> None:
     """Complete one turn, call /fork, verify forked session shares history but has different id."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     cli_client = CliClient()
     agent = AgentCore(client=cli_client, backend=backend, tools=tools, permissions=YesManChecker())
     session = await agent.new()
@@ -66,7 +66,7 @@ async def test_save_load(ci_config: dict[str, Any], tmp_path: Path) -> None:
     """Save session to a file, load it, verify last message id matches."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     cli_client = CliClient()
     agent = AgentCore(client=cli_client, backend=backend, tools=tools, permissions=YesManChecker())
     session: Any = await agent.new()
@@ -92,7 +92,7 @@ async def test_compact_cli(ci_config: dict[str, Any]) -> None:
     """Inject compressor, do 3 turns, call /compact, verify summaries are non-empty."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     compressor = LLMCompressor(backend, keep_turns=1)
     cli_client = CliClient()
     agent = AgentCore(

@@ -9,7 +9,7 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.permissions import YesManChecker
 from little_agent.frontends.acp import AcpClient
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 
 from .helpers import make_backend
@@ -22,7 +22,7 @@ async def test_acp_session_prompt(ci_config: dict[str, Any]) -> None:
     """Call ACP dispatch for session/new + session/prompt; verify stop_reason and text."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     acp_client = AcpClient()
     agent = AgentCore(
         client=acp_client, backend=backend, tools=tools, permissions=YesManChecker()
@@ -48,7 +48,7 @@ async def test_acp_save_load(ci_config: dict[str, Any]) -> None:
     """Run a turn, save the session, load it back, verify last message id is preserved."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     acp_client = AcpClient()
     agent = AgentCore(
         client=acp_client, backend=backend, tools=tools, permissions=YesManChecker()

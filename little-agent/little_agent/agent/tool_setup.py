@@ -11,7 +11,7 @@ from little_agent.agent.tool_manager import ToolManager
 logger = logging.getLogger(__name__)
 
 _TASK_PROVIDER_PATH = "little_agent.tools.task.TaskToolProvider"
-_BASH_PROVIDER_PATH = "little_agent.tools.bash.BashToolProvider"
+_BASH_PROVIDER_PATH = "little_agent.tools.bash.BashProvider"
 
 
 def _validate_tools_config(tools_config: dict[str, Any]) -> None:
@@ -26,14 +26,14 @@ def _validate_tools_config(tools_config: dict[str, Any]) -> None:
         raise ValueError(
             "'tools.bash.*' is no longer supported. "
             "Configure bash via: tools.providers: "
-            "{little_agent.tools.bash.BashToolProvider: {timeout: 30}}"
+            "{little_agent.tools.bash.BashProvider: {timeout: 30}}"
         )
     providers_cfg = tools_config.get("providers")
     if providers_cfg is not None and not isinstance(providers_cfg, dict):
         raise ValueError(
             "'tools.providers' must be a dict mapping class paths to constructor args. "
             "Old list format is not supported. "
-            "Example: tools.providers: {little_agent.tools.bash.BashToolProvider: {}}"
+            "Example: tools.providers: {little_agent.tools.bash.BashProvider: {}}"
         )
 
 

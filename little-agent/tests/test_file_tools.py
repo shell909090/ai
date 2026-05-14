@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from little_agent.agent.tool_manager import ToolManager
-from little_agent.tools.file import EditFileToolProvider
+from little_agent.tools.file import FileProvider
 
 
 def _make_manager() -> ToolManager:
     mgr = ToolManager()
-    mgr.register(EditFileToolProvider())
+    mgr.register(FileProvider())
     return mgr
 
 
@@ -26,54 +26,20 @@ def mock_session() -> MagicMock:
 
 
 def test_file_tool_listed() -> None:
-    """EditFileToolProvider.__iter__ only yields 'edit_file', not 'write_file'."""
-    provider = EditFileToolProvider()
+    """FileProvider.__iter__ only yields 'edit', not 'edit_file'."""
+    provider = FileProvider()
     tools = {name for name, _tooldef, _ in provider}
-    assert "edit_file" in tools
-    assert "write_file" not in tools
+    assert "edit" in tools
+    assert "edit_file" not in tools
 
 
 @pytest.mark.asyncio
-async def test_full_overwrite_creates_file(tmp_path: Path, mock_session: MagicMock) -> None:
-    """create=True on a missing file creates the file with new_str as content."""
+async def test_no_old_str_no_pos_raises(tmp_path: Path, mock_session: MagicMock) -> None:
+    """Omitting both old_str and pos raises ValueError."""
     mgr = _make_manager()
     target = tmp_path / "hello.txt"
-    await mgr["edit_file"](
-        {"path": str(target), "new_str": "hello world", "create": True}, mock_session
-    )
-    assert target.exists()
-    assert target.read_text() == "hello world"
-
-
-@pytest.mark.asyncio
-async def test_full_overwrite_creates_parent_dirs(tmp_path: Path, mock_session: MagicMock) -> None:
-    """create=True with nested missing parent directories auto-creates them."""
-    mgr = _make_manager()
-    target = tmp_path / "a" / "b" / "c" / "file.txt"
-    await mgr["edit_file"]({"path": str(target), "new_str": "nested", "create": True}, mock_session)
-    assert target.exists()
-    assert target.read_text() == "nested"
-
-
-@pytest.mark.asyncio
-async def test_full_overwrite_overwrites_existing(tmp_path: Path, mock_session: MagicMock) -> None:
-    """Full overwrite (no old_str/pos) with create=True replaces existing file content."""
-    mgr = _make_manager()
-    target = tmp_path / "overwrite.txt"
-    target.write_text("first")
-    await mgr["edit_file"]({"path": str(target), "new_str": "second", "create": True}, mock_session)
-    assert target.read_text() == "second"
-
-
-@pytest.mark.asyncio
-async def test_full_overwrite_file_not_found(tmp_path: Path, mock_session: MagicMock) -> None:
-    """create=False (default) on a missing file returns a string containing 'not found'."""
-    mgr = _make_manager()
-    target = tmp_path / "missing.txt"
-    result = await mgr["edit_file"]({"path": str(target), "new_str": "data"}, mock_session)
-    assert isinstance(result, str)
-    assert "not found" in result.lower()
-    assert not target.exists()
+    with pytest.raises(ValueError):
+        await mgr["edit"]({"path": str(target), "new_str": "hello world"}, mock_session)
 
 
 @pytest.mark.asyncio
@@ -82,7 +48,7 @@ async def test_old_str_replace(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "edit.txt"
     target.write_text("foo bar foo")
-    await mgr["edit_file"]({"path": str(target), "old_str": "foo", "new_str": "baz"}, mock_session)
+    await mgr["edit"]({"path": str(target), "old_str": "foo", "new_str": "baz"}, mock_session)
     assert target.read_text() == "baz bar foo"
 
 
@@ -92,7 +58,7 @@ async def test_old_str_delete(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "delete.txt"
     target.write_text("hello world")
-    await mgr["edit_file"]({"path": str(target), "old_str": "hello ", "new_str": ""}, mock_session)
+    await mgr["edit"]({"path": str(target), "old_str": "hello ", "new_str": ""}, mock_session)
     assert target.read_text() == "world"
 
 
@@ -103,7 +69,7 @@ async def test_old_str_not_found(tmp_path: Path, mock_session: MagicMock) -> Non
     target = tmp_path / "noedit.txt"
     original = "hello world"
     target.write_text(original)
-    result = await mgr["edit_file"](
+    result = await mgr["edit"](
         {"path": str(target), "old_str": "missing", "new_str": "x"}, mock_session
     )
     assert isinstance(result, str)
@@ -116,7 +82,7 @@ async def test_old_str_create_new_file(tmp_path: Path, mock_session: MagicMock) 
     """create=True + old_str on a missing file: content is '' so old_str not found."""
     mgr = _make_manager()
     target = tmp_path / "newfile.txt"
-    result = await mgr["edit_file"](
+    result = await mgr["edit"](
         {"path": str(target), "old_str": "anything", "new_str": "x", "create": True}, mock_session
     )
     assert isinstance(result, str)
@@ -129,7 +95,7 @@ async def test_pos_prepend(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "prepend.txt"
     target.write_text("world")
-    await mgr["edit_file"](
+    await mgr["edit"](
         {"path": str(target), "pos": 0, "len": 0, "new_str": "hello "}, mock_session
     )
     assert target.read_text() == "hello world"
@@ -141,7 +107,7 @@ async def test_pos_append(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "append.txt"
     target.write_text("hello")
-    await mgr["edit_file"](
+    await mgr["edit"](
         {"path": str(target), "pos": -1, "len": 0, "new_str": " world"}, mock_session
     )
     assert target.read_text() == "hello world"
@@ -153,7 +119,7 @@ async def test_pos_replace_range(tmp_path: Path, mock_session: MagicMock) -> Non
     mgr = _make_manager()
     target = tmp_path / "replace.txt"
     target.write_text("hello world")
-    await mgr["edit_file"](
+    await mgr["edit"](
         {"path": str(target), "pos": 6, "len": 5, "new_str": "there"}, mock_session
     )
     assert target.read_text() == "hello there"
@@ -164,7 +130,7 @@ async def test_pos_create_new_file(tmp_path: Path, mock_session: MagicMock) -> N
     """create=True + pos=0, len=0 on a missing file writes new_str as the full content."""
     mgr = _make_manager()
     target = tmp_path / "newpos.txt"
-    await mgr["edit_file"](
+    await mgr["edit"](
         {"path": str(target), "pos": 0, "len": 0, "new_str": "brand new", "create": True},
         mock_session,
     )
@@ -179,7 +145,7 @@ async def test_old_str_and_pos_raises(tmp_path: Path, mock_session: MagicMock) -
     target = tmp_path / "conflict.txt"
     target.write_text("some content")
     with pytest.raises(ValueError):
-        await mgr["edit_file"](
+        await mgr["edit"](
             {"path": str(target), "old_str": "some", "pos": 0, "new_str": "other"}, mock_session
         )
 
@@ -189,7 +155,7 @@ async def test_path_not_string_raises(mock_session: MagicMock) -> None:
     """path=123 (non-string) raises ValueError."""
     mgr = _make_manager()
     with pytest.raises(ValueError):
-        await mgr["edit_file"]({"path": 123, "new_str": "data"}, mock_session)
+        await mgr["edit"]({"path": 123, "new_str": "data"}, mock_session)
 
 
 @pytest.mark.asyncio
@@ -199,7 +165,7 @@ async def test_new_str_not_string_raises(tmp_path: Path, mock_session: MagicMock
     target = tmp_path / "test.txt"
     target.write_text("content")
     with pytest.raises(ValueError):
-        await mgr["edit_file"]({"path": str(target), "new_str": 123}, mock_session)
+        await mgr["edit"]({"path": str(target), "new_str": 123}, mock_session)
 
 
 @pytest.mark.asyncio
@@ -209,7 +175,7 @@ async def test_pos_negative_len_returns_error(tmp_path: Path, mock_session: Magi
     target = tmp_path / "neg.txt"
     original = "hello world"
     target.write_text(original)
-    result = await mgr["edit_file"](
+    result = await mgr["edit"](
         {"path": str(target), "pos": 5, "len": -3, "new_str": "x"}, mock_session
     )
     assert isinstance(result, str)

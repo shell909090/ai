@@ -16,7 +16,7 @@ from little_agent.frontends.web.handlers import (
     do_session_new,
     do_session_prompt,
 )
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 
 from .helpers import make_backend, make_ws_mock
@@ -29,7 +29,7 @@ async def test_web_session_prompt(ci_config: dict[str, Any], tmp_path: Path) -> 
     """session/new then session/prompt via handler functions; verify prompt_response."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()
     web_client = WebClient(sessions_dir=sessions_dir)
@@ -62,7 +62,7 @@ async def test_web_compact(ci_config: dict[str, Any], tmp_path: Path) -> None:
     """Do 3 turns via web handlers then session/compact; verify ok=True and summaries set."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     compressor = LLMCompressor(backend, keep_turns=1)
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()

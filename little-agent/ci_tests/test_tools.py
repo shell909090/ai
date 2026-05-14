@@ -12,8 +12,8 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.agent.tool_manager import ToolManager
-from little_agent.tools.file import EditFileToolProvider
-from little_agent.tools.http import HttpToolProvider
+from little_agent.tools.file import FileProvider
+from little_agent.tools.http import HttpProvider
 from little_agent.tools.mcp import MCPStdioProvider
 from little_agent.tools.task import TaskToolProvider
 from tests.mocks import MockClient
@@ -51,7 +51,7 @@ async def test_http_tool(ci_config: dict[str, Any]) -> None:
     """Ask the agent to use the http tool and verify status=200."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(HttpToolProvider())
+    tools.register(HttpProvider())
     client: MockClient = MockClient()
     agent = AgentCore(client=client, backend=backend, tools=tools, permissions=YesManChecker())
     session = await agent.new()
@@ -80,7 +80,7 @@ async def test_edit_file_tool(ci_config: dict[str, Any], tmp_path: Path) -> None
     """Ask the agent to create a temp file and verify content exists."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(EditFileToolProvider())
+    tools.register(FileProvider())
     client: MockClient = MockClient()
     agent = AgentCore(client=client, backend=backend, tools=tools, permissions=YesManChecker())
     session = await agent.new()
@@ -89,15 +89,15 @@ async def test_edit_file_tool(ci_config: dict[str, Any], tmp_path: Path) -> None
     sentinel = "ci-file-sentinel-xk9m2"
 
     reason, _text = await session.prompt(
-        f"Use the edit_file tool to create the file '{target_file}' "
-        f"with create=true containing the text: {sentinel}"
+        f"Use the edit tool to create the file '{target_file}' "
+        f"with create=true and pos=0 containing the text: {sentinel}"
     )
 
     assert reason == "end_turn"
 
     chain = walk_chain(session)
     tool_results = [n for n in chain if isinstance(n, ToolResultNode)]
-    assert tool_results, "Expected at least one edit_file tool call"
+    assert tool_results, "Expected at least one edit tool call"
 
     assert target_file.exists(), f"File should have been created: {target_file}"
     content = target_file.read_text(encoding="utf-8")

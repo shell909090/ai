@@ -10,7 +10,7 @@ from little_agent.agent.agent import AgentCore
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import BlackWhiteListChecker, YesManChecker
 from little_agent.agent.tool_manager import ToolManager
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from tests.mocks import MockClient
 
 from .helpers import make_backend, walk_chain
@@ -23,7 +23,7 @@ async def test_whitelist_allow(ci_config: dict[str, Any]) -> None:
     """Whitelist-only config allows bash; verify bash tool result has status=completed."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     # blacklist empty, whitelist=["bash"] → bash is explicitly allowed
     permissions = BlackWhiteListChecker(
         blacklist=[], whitelist=["bash"], next_checker=YesManChecker()
@@ -55,7 +55,7 @@ async def test_blackwhitelist_deny(ci_config: dict[str, Any]) -> None:
     """Blacklist bash; verify bash tool result has status=failed and 'Permission denied'."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     permissions = BlackWhiteListChecker(
         blacklist=["bash"], whitelist=[], next_checker=YesManChecker()
     )

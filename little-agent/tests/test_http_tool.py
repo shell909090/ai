@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from little_agent.agent.tool_manager import ToolManager
-from little_agent.tools.http import HttpToolProvider
+from little_agent.tools.http import HttpProvider
 
 
 def _make_manager() -> ToolManager:
     mgr = ToolManager()
-    mgr.register(HttpToolProvider())
+    mgr.register(HttpProvider())
     return mgr
 
 
@@ -50,8 +50,8 @@ def mock_session() -> MagicMock:
 
 
 def test_http_tool_listed() -> None:
-    """HttpToolProvider.__iter__ yields 'http' with url as required parameter."""
-    provider = HttpToolProvider()
+    """HttpProvider.__iter__ yields 'http' with url as required parameter."""
+    provider = HttpProvider()
     tools = {name: tooldef for name, tooldef, _ in provider}
     assert "http" in tools
     arg_map = {arg.name: arg for arg in tools["http"].args}

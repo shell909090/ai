@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from little_agent.agent.tool_manager import ToolManager
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 
 
 def _make_manager() -> ToolManager:
     mgr = ToolManager()
-    mgr.register(BashToolProvider())
+    mgr.register(BashProvider())
     return mgr
 
 
@@ -26,8 +26,8 @@ def mock_session() -> MagicMock:
 
 
 def test_bash_list() -> None:
-    """Test BashToolProvider exposes bash tool via __iter__."""
-    provider = BashToolProvider()
+    """Test BashProvider exposes bash tool via __iter__."""
+    provider = BashProvider()
     tools = {name: tooldef for name, tooldef, _ in provider}
     assert "bash" in tools
     assert any(arg.name == "command" for arg in tools["bash"].args)
@@ -71,7 +71,7 @@ def test_bash_unknown_tool_raises() -> None:
 @pytest.mark.asyncio
 async def test_bash_timeout(mock_session: MagicMock) -> None:
     """Test bash tool times out on long-running command."""
-    provider = BashToolProvider(timeout=2)
+    provider = BashProvider(timeout=2)
     mgr = ToolManager()
     mgr.register(provider)
     result = await mgr["bash"]({"command": "sleep 60"}, mock_session)
@@ -128,8 +128,8 @@ async def test_bash_backward_compat_no_new_params(mock_session: MagicMock) -> No
 
 
 def test_bash_tool_lists_new_params() -> None:
-    """Test BashToolProvider lists cwd, env, stdin as optional parameters."""
-    provider = BashToolProvider()
+    """Test BashProvider lists cwd, env, stdin as optional parameters."""
+    provider = BashProvider()
     tools = {name: tooldef for name, tooldef, _ in provider}
     bash_def = tools["bash"]
     arg_names = [arg.name for arg in bash_def.args]
@@ -191,22 +191,22 @@ async def test_bash_env_dangerous_vars_filtered(
 
 
 def test_bash_default_timeout_values() -> None:
-    """BashToolProvider default timeout is 30s, max_timeout is 1800s."""
-    provider = BashToolProvider()
+    """BashProvider default timeout is 30s, max_timeout is 1800s."""
+    provider = BashProvider()
     assert provider._timeout == 30
     assert provider._max_timeout == 1800
 
 
 def test_bash_custom_timeout_init() -> None:
-    """BashToolProvider accepts custom timeout and max_timeout."""
-    provider = BashToolProvider(timeout=60, max_timeout=3600)
+    """BashProvider accepts custom timeout and max_timeout."""
+    provider = BashProvider(timeout=60, max_timeout=3600)
     assert provider._timeout == 60
     assert provider._max_timeout == 3600
 
 
 def test_bash_tool_lists_timeout_param() -> None:
-    """BashToolProvider includes optional 'timeout' parameter in ToolDef."""
-    provider = BashToolProvider()
+    """BashProvider includes optional 'timeout' parameter in ToolDef."""
+    provider = BashProvider()
     tools = {name: tooldef for name, tooldef, _ in provider}
     bash_def = tools["bash"]
     arg_names = [arg.name for arg in bash_def.args]
@@ -219,7 +219,7 @@ def test_bash_tool_lists_timeout_param() -> None:
 @pytest.mark.asyncio
 async def test_bash_per_call_timeout_override(mock_session: MagicMock) -> None:
     """Per-call timeout arg (within max_timeout) is used instead of default."""
-    provider = BashToolProvider(timeout=30, max_timeout=60)
+    provider = BashProvider(timeout=30, max_timeout=60)
     mgr = ToolManager()
     mgr.register(provider)
     # Passes a timeout of 5s; sleep 0.1s is well within that
@@ -233,7 +233,7 @@ async def test_bash_timeout_clamped_to_max(
     caplog: pytest.LogCaptureFixture, mock_session: MagicMock
 ) -> None:
     """Per-call timeout exceeding max_timeout is clamped with a WARNING."""
-    provider = BashToolProvider(timeout=10, max_timeout=20)
+    provider = BashProvider(timeout=10, max_timeout=20)
     mgr = ToolManager()
     mgr.register(provider)
     with caplog.at_level(logging.WARNING, logger="little_agent.tools.bash"):
@@ -247,8 +247,8 @@ async def test_bash_timeout_clamped_to_max(
 
 @pytest.mark.asyncio
 async def test_bash_config_timeout_kills_process(mock_session: MagicMock) -> None:
-    """BashToolProvider with low timeout kills long-running process."""
-    provider = BashToolProvider(timeout=1, max_timeout=10)
+    """BashProvider with low timeout kills long-running process."""
+    provider = BashProvider(timeout=1, max_timeout=10)
     mgr = ToolManager()
     mgr.register(provider)
     result = await mgr["bash"]({"command": "sleep 60"}, mock_session)

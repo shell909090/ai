@@ -53,7 +53,7 @@ def load_config(path: Path) -> dict[str, Any]:
 _DEFAULT_CONFIG: dict[str, Any] = yaml.safe_load("""
 tools:
   providers:
-    little_agent.tools.bash.BashToolProvider:
+    little_agent.tools.bash.BashProvider:
       timeout: 30
       max_timeout: 1800
     little_agent.tools.task.TaskToolProvider: {}

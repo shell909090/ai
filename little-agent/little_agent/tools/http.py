@@ -14,7 +14,7 @@ from .protocol import ToolArgDef, ToolDef
 logger = logging.getLogger(__name__)
 
 
-class HttpToolProvider:
+class HttpProvider:
     """Send HTTP requests via aiohttp."""
 
     _TOOL_DEF = ToolDef(

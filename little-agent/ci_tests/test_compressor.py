@@ -9,7 +9,7 @@ import pytest
 from little_agent.agent.agent import AgentCore
 from little_agent.agent.compressor import LLMCompressor
 from little_agent.agent.permissions import YesManChecker
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 from tests.mocks import MockClient
 
@@ -23,7 +23,7 @@ async def test_auto_compression(ci_config: dict[str, Any]) -> None:
     """With compress_ratio=1e-6, verify summaries are non-empty after 2 turns."""
     backend = make_backend(ci_config)
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     compressor = LLMCompressor(backend, keep_turns=1)
     client: MockClient = MockClient()
     agent = AgentCore(

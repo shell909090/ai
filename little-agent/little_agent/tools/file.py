@@ -10,17 +10,17 @@ from little_agent.types import AsyncToolFn, JSONValue, Session
 from .protocol import ToolArgDef, ToolDef
 
 
-class EditFileToolProvider:
+class FileProvider:
     """Read and write files on the local filesystem."""
 
     _EDIT_TOOL_DEF = ToolDef(
         desc=(
-            "Edit a file. Three mutually exclusive modes: "
-            "(1) full overwrite — omit both old_str and pos, file is replaced by new_str; "
-            "(2) string mode — set old_str to locate target (first occurrence), "
+            "Edit a file. Two mutually exclusive modes: "
+            "(1) string mode — set old_str to locate target (first occurrence), "
             "new_str='' deletes; returns error and leaves file unchanged if old_str absent; "
-            "(3) position mode — set pos (0-indexed char offset, -1 = end of file) "
-            "and optionally len (chars to replace at pos; 0 = pure insert)."
+            "(2) position mode — set pos (0-indexed char offset, -1 = end of file) "
+            "and optionally len (chars to replace at pos; 0 = pure insert). "
+            "Both old_str and pos are required; omitting both is an error."
         ),
         args=[
             ToolArgDef("path", "string", "File path", True),
@@ -62,8 +62,8 @@ class EditFileToolProvider:
     )
 
     def __iter__(self) -> Iterator[tuple[str, ToolDef, AsyncToolFn]]:
-        """Yield edit_file tool triple."""
-        yield ("edit_file", self._EDIT_TOOL_DEF, self._edit_dispatch)
+        """Yield edit tool triple."""
+        yield ("edit", self._EDIT_TOOL_DEF, self._edit_dispatch)
 
     def _validate(
         self, args: dict[str, JSONValue]
@@ -82,6 +82,8 @@ class EditFileToolProvider:
             raise ValueError("old_str must be a string")
         if old_str is not None and pos is not None:
             raise ValueError("old_str and pos are mutually exclusive")
+        if old_str is None and pos is None:
+            raise ValueError("either old_str or pos must be provided")
 
         encoding_val = args.get("encoding")
         encoding = encoding_val if isinstance(encoding_val, str) else "utf-8"

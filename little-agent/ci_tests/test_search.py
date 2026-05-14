@@ -12,7 +12,7 @@ from little_agent.agent.compressor import LLMCompressor
 from little_agent.agent.nodes import ToolResultNode
 from little_agent.agent.permissions import YesManChecker
 from little_agent.agent.session_store import SessionJSONLStore
-from little_agent.tools.bash import BashToolProvider
+from little_agent.tools.bash import BashProvider
 from little_agent.agent.tool_manager import ToolManager
 from little_agent.tools.session_search import SessionSearchProvider
 from tests.mocks import MockClient
@@ -32,7 +32,7 @@ async def test_compact_search_session(ci_config: dict[str, Any], tmp_path: Path)
 
     store = SessionJSONLStore(sessions_dir=str(sessions_dir))
     tools = ToolManager()
-    tools.register(BashToolProvider())
+    tools.register(BashProvider())
     tools.register(SessionSearchProvider(store.resolve_path))
 
     compressor = LLMCompressor(backend, keep_turns=1)
