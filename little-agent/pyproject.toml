@@ -73,3 +73,6 @@ dev = [
     "mypy>=1.10",
     "types-pyyaml>=6.0.12.20260408",
 ]
+eval = [
+    "chardet>=7.4.3",
+]
