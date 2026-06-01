@@ -1,0 +1,1781 @@
+{
+  "generated_at_utc": "2026-06-01T06:19:43.456416+00:00",
+  "window_days": 31,
+  "inventory_count": 0,
+  "kev_entries_in_window": 21,
+  "report_count": 21,
+  "rows": [
+    {
+      "cve_id": "CVE-2026-0257",
+      "date_added": "2026-05-29",
+      "kev_vendor_project": "Palo Alto Networks",
+      "kev_product": "PAN-OS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-01",
+      "kev_notes": "https://security.paloaltonetworks.com/CVE-2026-0257 ; https://nvd.nist.gov/vuln/detail/CVE-2026-0257",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "paloaltonetworks:pan-os",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.2.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "paloaltonetworks:pan-os",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "paloaltonetworks:prisma_access",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-48027",
+      "date_added": "2026-05-27",
+      "kev_vendor_project": "Nx",
+      "kev_product": "Nx Console",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-10",
+      "kev_notes": "This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/nrwl/nx-console/security/advisories/GHSA-c9j4-9m59-847w ; https://nvd.nist.gov/vuln/detail/CVE-2026-48027",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "nx:nx_console",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-45321",
+      "date_added": "2026-05-27",
+      "kev_vendor_project": "TanStack",
+      "kev_product": "TanStack",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-10",
+      "kev_notes": "This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/TanStack/router/security/advisories/GHSA-g7cv-rxg3-hmpx ; https://nvd.nist.gov/vuln/detail/CVE-2026-45321",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "tanstack:tanstack\\/arktype-adapter",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/eslint-plugin-router",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/eslint-plugin-start",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/history",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/nitro-v2-vite-plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-router",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-router-devtools",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-router-ssr-query",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-start",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-start-client",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-start-rsc",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/react-start-server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-devtools",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-devtools-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-generator",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-ssr-query-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-utils",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/router-vite-plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-router",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-router-devtools",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-router-ssr-query",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-start",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-start-client",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/solid-start-server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-client-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-fn-stubs",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-plugin-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-server-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-static-server-functions",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/start-storage-context",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/valibot-adapter",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/virtual-file-routes",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-router",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-router-devtools",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-router-ssr-query",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-start",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-start-client",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/vue-start-server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "tanstack:tanstack\\/zod-adapter",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mistral:mistralai",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mistral:mistralai\\/mistralai",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mistral:mistralai\\/mistralai-azure",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mistral:mistralai\\/mistralai-gcp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "antoinebcx:ml-toolkit-ts",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "antoinebcx:ml-toolkit-ts\\/preprocessing",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "antoinebcx:ml-toolkit-ts\\/xgboost",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "beproduct:beproduct\\/nestjs-auth",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "christianalares:git-git-git",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "christianalares:git_branch_selector",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "christianalares:nextmove-mcp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "christianalares:tolka\\/cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "multiagentcognition:cmux-agent-mcp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "abhishake1:supersurkhet\\/cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "abhishake1:supersurkhet\\/sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "abhishake1:taskflow-corp\\/cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/components",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/connector-medusa",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/connector-shopify",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/connector-vendure",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/connector-woocommerce",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/database",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/pos",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/storage-sqlite",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "kilbot:tallyui\\/theme",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:draftauth\\/client",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:draftauth\\/core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:draftlab\\/auth",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:draftlab\\/auth-router",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:draftlab\\/db",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "matheuspergoli:simple_type-safe_actions",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:cross-stitch",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/airports",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/airspace",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/airspace-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/airway-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/airways",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/fix-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/fixes",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/flight-math",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/flightplan",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/geo",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/icao-registry",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/icao-registry-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/mcp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/navaid-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/navaids",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/notams",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/procedure-data",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/procedures",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/types",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/units",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:squawk\\/weather",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:ts-dna",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "neilcochran:wot-api",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "agentworkhq:agentwork-cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "dirigible:dirigible-ai\\/sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "guardrailsai:guardrails_ai",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linuxfoundation:opensearch",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mesa:mesadev\\/rest",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mesa:mesadev\\/saguaro",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "mesa:mesadev\\/sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/access-policy-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/access-policy-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/admin-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/agent-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/agent-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/aops-policy-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/ap-chat",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/api-workflow-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/apollo-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/apollo-react",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/apollo-wind",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/auth",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/case-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/cli",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/codedagent-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/codedagents-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/codedapp-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/common",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/context-grounding-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/data-fabric-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/docsai-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/filesystem",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/flow-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/functions-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/gov-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/identity-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/insights-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/insights-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/integrationservice-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/integrationservice-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/llmgw-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/maestro-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/maestro-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/orchestrator-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-apiworkflow",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-bpmn",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-case",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-connector",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-flow",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-functions",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-webapp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-workflowcompiler",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/packager-tool-workflowcompiler-browser",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/platform-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/project-packager",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/resource-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/resourcecatalog-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/resources-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/robot",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/rpa-legacy-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/rpa-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/solution-packager",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/solution-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/solutionpackager-sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/solutionpackager-tool-core",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/tasks-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/telemetry",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/test-manager-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/tool-workflowcompiler",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/traces-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/ui-widgets-multi-file-upload",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/uipath-python-bridge",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/vertical-solutions-tool",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/vss",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "uipath:uipath\\/widget.sdk",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-8398",
+      "date_added": "2026-05-27",
+      "kev_vendor_project": "Daemon",
+      "kev_product": "Daemon Tools Lite",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-30",
+      "kev_notes": "https://blog.daemon-tools.cc/post/security-incident ; https://nvd.nist.gov/vuln/detail/CVE-2026-8398",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "disc-soft:daemon_tools",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-48172",
+      "date_added": "2026-05-26",
+      "kev_vendor_project": "LiteSpeed",
+      "kev_product": "cPanel Plugin",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-29",
+      "kev_notes": "https://blog.litespeedtech.com/2026/05/21/security-update-for-litespeed-cpanel-plugin/ ; https://nvd.nist.gov/vuln/detail/CVE-2026-48172",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "litespeedtech:litespeed_cpanel_plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "2.4.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "litespeedtech:litespeed_whm_plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.3.1.0",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-9082",
+      "date_added": "2026-05-22",
+      "kev_vendor_project": "Drupal",
+      "kev_product": "Core",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-27",
+      "kev_notes": "https://www.drupal.org/sa-core-2026-004 ; https://nvd.nist.gov/vuln/detail/CVE-2026-9082",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.4.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.5.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.6.9",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "11.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "11.2.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "drupal:drupal",
+          "ecosystem": "cpe",
+          "min_safe_version": "11.3.10",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-34291",
+      "date_added": "2026-05-21",
+      "kev_vendor_project": "Langflow",
+      "kev_product": "Langflow",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-04",
+      "kev_notes": "This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/langflow-ai/langflow ; https://github.com/langflow-ai/langflow/releases/tag/v1.9.3; https://github.com/langflow-ai/langflow/issues/11465#event-25774545848 ; https://nvd.nist.gov/vuln/detail/CVE-2025-34291",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "langflow:langflow",
+          "ecosystem": "cpe",
+          "min_safe_version": ">1.6.9",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-34926",
+      "date_added": "2026-05-21",
+      "kev_vendor_project": "Trend Micro",
+      "kev_product": "Apex One",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-04",
+      "kev_notes": "https://success.trendmicro.com/en-US/solution/KA-0023430 ; https://nvd.nist.gov/vuln/detail/CVE-2026-34926",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "trendmicro:apex_one",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.0.0.17079",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "trendmicro:apex_one",
+          "ecosystem": "cpe",
+          "min_safe_version": "14.0.20731",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2008-4250",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Windows",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/securitybulletins/2008/ms08-067 ; https://nvd.nist.gov/vuln/detail/CVE-2008-4250",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:windows_2000",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2003",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2008",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_vista",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_xp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2009-1537",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "DirectX",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/securitybulletins/2009/ms09-028 ; https://nvd.nist.gov/vuln/detail/CVE-2009-1537",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:directx",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_2000",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_2003_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_server_2003",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:windows_xp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2009-3459",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Adobe",
+      "kev_product": "Acrobat and Reader",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://www.cisa.gov/news-events/alerts/2009/10/13/adobe-reader-and-acrobat-vulnerabilities ; https://web.archive.org/web/20120324170253/http://www.adobe.com/support/security/bulletins/apsb09-15.html#:~:text=CVE%2D2009%2D3459).-,NOTE%3A,-There%20are%20reports ; https://nvd.nist.gov/vuln/detail/CVE-2009-3459",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "adobe:acrobat",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.1.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "adobe:acrobat",
+          "ecosystem": "cpe",
+          "min_safe_version": "8.1.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "adobe:acrobat",
+          "ecosystem": "cpe",
+          "min_safe_version": "9.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "adobe:acrobat_reader",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.1.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "adobe:acrobat_reader",
+          "ecosystem": "cpe",
+          "min_safe_version": "8.1.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "adobe:acrobat_reader",
+          "ecosystem": "cpe",
+          "min_safe_version": "9.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2010-0249",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Internet Explorer",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/SecurityAdvisories/2010/979352 ; https://nvd.nist.gov/vuln/detail/CVE-2010-0249",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:internet_explorer",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2010-0806",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Internet Explorer",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://learn.microsoft.com/en-us/security-updates/securityadvisories/2010/981374 ; https://nvd.nist.gov/vuln/detail/CVE-2010-0806",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:internet_explorer",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-41091",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Defender",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-41091 ; https://nvd.nist.gov/vuln/detail/CVE-2026-41091",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:malware_protection_engine",
+          "ecosystem": "cpe",
+          "min_safe_version": "1.1.26040.8",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-45498",
+      "date_added": "2026-05-20",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Defender",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-03",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-45498 ; https://nvd.nist.gov/vuln/detail/CVE-2026-45498",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:defender_antimalware_platform",
+          "ecosystem": "cpe",
+          "min_safe_version": "4.18.26040.7",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-42897",
+      "date_added": "2026-05-15",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Microsoft",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-29",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-42897 ; https://learn.microsoft.com/en-us/exchange/plan-and-deploy/post-installation-tasks/security-best-practices/exchange-emergency-mitigation-service ; https://nvd.nist.gov/vuln/detail/CVE-2026-42897",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-20182",
+      "date_added": "2026-05-14",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN",
+      "kev_required_action": "Please adhere to CISA’s guidelines to assess exposure and mitigate risks associated with Cisco SD-WAN devices as outlined in CISA’s Emergency Directive 26-03 (URL listed below in Notes) and CISA’s Hunt & Hardening Guidance for Cisco SD-WAN Devices (URL listed below in Notes). Adhere to the applicable BOD 22-01 guidance for cloud services or discontinue use of the product if mitigations are not available.",
+      "kev_due_date": "2026-05-17",
+      "kev_notes": "CISA Mitigation Instructions: https://www.cisa.gov/news-events/directives/ed-26-03-mitigate-vulnerabilities-cisco-sd-wan-systems ; https://www.cisa.gov/news-events/directives/supplemental-direction-ed-26-03-hunt-and-hardening-guidance-cisco-sd-wan-systems ; https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-rpa2-v69WY2SW ; https://nvd.nist.gov/vuln/detail/CVE-2026-20182",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-42208",
+      "date_added": "2026-05-08",
+      "kev_vendor_project": "BerriAI",
+      "kev_product": "LiteLLM",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-11",
+      "kev_notes": "https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc ; https://nvd.nist.gov/vuln/detail/CVE-2026-42208",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "litellm:litellm",
+          "ecosystem": "cpe",
+          "min_safe_version": "1.83.7",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-6973",
+      "date_added": "2026-05-07",
+      "kev_vendor_project": "Ivanti",
+      "kev_product": "Endpoint Manager Mobile (EPMM)",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-10",
+      "kev_notes": "https://hub.ivanti.com/s/article/May-2026-Security-Advisory-Ivanti-Endpoint-Manager-Mobile-EPMM-Multiple-CVEs?language=en_US ; https://nvd.nist.gov/vuln/detail/CVE-2026-6973",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-0300",
+      "date_added": "2026-05-06",
+      "kev_vendor_project": "Palo Alto Networks",
+      "kev_product": "PAN-OS",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable. Until the vendor releases an official fix, the following workaround should be implemented:  - Restrict User-ID Authentication Portal access to only trusted zones.  - Disable User-ID Authentication Portal if not required. 5/13/2026: Palo Alto has released a variety of patches. If these are relevant to your environment, please apply the designated patch.",
+      "kev_due_date": "2026-05-09",
+      "kev_notes": "https://security.paloaltonetworks.com/CVE-2026-0300 ; https://nvd.nist.gov/vuln/detail/CVE-2026-0300",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-31431",
+      "date_added": "2026-05-01",
+      "kev_vendor_project": "Linux",
+      "kev_product": "Kernel",
+      "kev_required_action": "\"Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-05-15",
+      "kev_notes": "https://lore.kernel.org/linux-cve-announce/2026042214-CVE-2026-31431-3d65@gregkh/; https://xint.io/blog/copy-fail-linux-distributions#the-fix-6 ; https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/about/ ; https://nvd.nist.gov/vuln/detail/CVE-2026-31431",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.10.254",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.15.204",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.1.170",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.6.137",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.12.85",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.18.22",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.19.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "linux:linux_kernel",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "redhat:openshift_container_platform",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "redhat:enterprise_linux",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "amazon:amazon_linux",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "canonical:ubuntu_linux",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "debian:debian_linux",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "opensuse:leap",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:caas_platform",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:enterprise_storage",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:manager_proxy",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:manager_retail_branch_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:manager_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:openstack_cloud",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:openstack_cloud_crowbar",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:basesystem_module",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:development_tools_module",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:legacy_module",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_desktop",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_high_availability_extension",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_high_performance_computing",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_live_patching",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_micro",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_real_time",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_enterprise_workstation_extension",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:linux_micro",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:public_cloud_module",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "suse:realtime_module",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "nixos:nixos",
+          "ecosystem": "cpe",
+          "min_safe_version": "25.11",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:cloudvision_agni",
+          "ecosystem": "cpe",
+          "min_safe_version": ">2025.2.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:cloudvision_portal",
+          "ecosystem": "cpe",
+          "min_safe_version": ">2026.1.0",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:velocloud_edge",
+          "ecosystem": "cpe",
+          "min_safe_version": ">6.4.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:velocloud_gateway",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "vmware:velocloud_orchestrator",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:netvisor_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.1.0",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:netvisor_os",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "siemens:simatic_s7-1500_cpu_1518-4_pn\\/dp_mfp_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "siemens:simatic_s7-1500_cpu_1518f-4_pn\\/dp_mfp_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "siemens:siplus_s7-1500_cpu_1518-4_pn\\/dp_mfp_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "siemens:simatic_s7-1500_tm_mfp_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "1.1",
+          "evidence_source": "NVD"
+        }
+      ]
+    }
+  ]
+}

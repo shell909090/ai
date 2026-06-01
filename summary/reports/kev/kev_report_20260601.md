@@ -1,0 +1,453 @@
+# KEV Report (2026-06-01)
+
+- Window: last 31 days
+- Inventory items: 0
+- KEV rows in window: 21
+- Report rows (after inventory filter): 21
+
+## CVE-2026-0257
+- Date added: 2026-05-29
+- Vendor/Product: Palo Alto Networks / PAN-OS
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-01
+- Notes: https://security.paloaltonetworks.com/CVE-2026-0257 ; https://nvd.nist.gov/vuln/detail/CVE-2026-0257
+- Matched local software: none
+- Affected software and minimum safe version:
+  - paloaltonetworks:pan-os | min_safe_version=10.2.7 | source=NVD
+  - paloaltonetworks:pan-os | min_safe_version=unknown | source=NVD
+  - paloaltonetworks:prisma_access | min_safe_version=unknown | source=NVD
+
+## CVE-2026-48027
+- Date added: 2026-05-27
+- Vendor/Product: Nx / Nx Console
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-10
+- Notes: This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/nrwl/nx-console/security/advisories/GHSA-c9j4-9m59-847w ; https://nvd.nist.gov/vuln/detail/CVE-2026-48027
+- Matched local software: none
+- Affected software and minimum safe version:
+  - nx:nx_console | min_safe_version=unknown | source=NVD
+
+## CVE-2026-45321
+- Date added: 2026-05-27
+- Vendor/Product: TanStack / TanStack
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-10
+- Notes: This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/TanStack/router/security/advisories/GHSA-g7cv-rxg3-hmpx ; https://nvd.nist.gov/vuln/detail/CVE-2026-45321
+- Matched local software: none
+- Affected software and minimum safe version:
+  - tanstack:tanstack\/arktype-adapter | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/eslint-plugin-router | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/eslint-plugin-start | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/history | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/nitro-v2-vite-plugin | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-router | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-router-devtools | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-router-ssr-query | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-start | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-start-client | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-start-rsc | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/react-start-server | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-cli | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-devtools | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-devtools-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-generator | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-plugin | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-ssr-query-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-utils | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/router-vite-plugin | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-router | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-router-devtools | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-router-ssr-query | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-start | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-start-client | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/solid-start-server | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-client-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-fn-stubs | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-plugin-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-server-core | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-static-server-functions | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/start-storage-context | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/valibot-adapter | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/virtual-file-routes | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-router | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-router-devtools | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-router-ssr-query | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-start | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-start-client | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/vue-start-server | min_safe_version=unknown | source=NVD
+  - tanstack:tanstack\/zod-adapter | min_safe_version=unknown | source=NVD
+  - mistral:mistralai | min_safe_version=unknown | source=NVD
+  - mistral:mistralai\/mistralai | min_safe_version=unknown | source=NVD
+  - mistral:mistralai\/mistralai-azure | min_safe_version=unknown | source=NVD
+  - mistral:mistralai\/mistralai-gcp | min_safe_version=unknown | source=NVD
+  - antoinebcx:ml-toolkit-ts | min_safe_version=unknown | source=NVD
+  - antoinebcx:ml-toolkit-ts\/preprocessing | min_safe_version=unknown | source=NVD
+  - antoinebcx:ml-toolkit-ts\/xgboost | min_safe_version=unknown | source=NVD
+  - beproduct:beproduct\/nestjs-auth | min_safe_version=unknown | source=NVD
+  - christianalares:git-git-git | min_safe_version=unknown | source=NVD
+  - christianalares:git_branch_selector | min_safe_version=unknown | source=NVD
+  - christianalares:nextmove-mcp | min_safe_version=unknown | source=NVD
+  - christianalares:tolka\/cli | min_safe_version=unknown | source=NVD
+  - multiagentcognition:cmux-agent-mcp | min_safe_version=unknown | source=NVD
+  - abhishake1:supersurkhet\/cli | min_safe_version=unknown | source=NVD
+  - abhishake1:supersurkhet\/sdk | min_safe_version=unknown | source=NVD
+  - abhishake1:taskflow-corp\/cli | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/components | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/connector-medusa | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/connector-shopify | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/connector-vendure | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/connector-woocommerce | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/core | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/database | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/pos | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/storage-sqlite | min_safe_version=unknown | source=NVD
+  - kilbot:tallyui\/theme | min_safe_version=unknown | source=NVD
+  - matheuspergoli:draftauth\/client | min_safe_version=unknown | source=NVD
+  - matheuspergoli:draftauth\/core | min_safe_version=unknown | source=NVD
+  - matheuspergoli:draftlab\/auth | min_safe_version=unknown | source=NVD
+  - matheuspergoli:draftlab\/auth-router | min_safe_version=unknown | source=NVD
+  - matheuspergoli:draftlab\/db | min_safe_version=unknown | source=NVD
+  - matheuspergoli:simple_type-safe_actions | min_safe_version=unknown | source=NVD
+  - neilcochran:cross-stitch | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/airports | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/airspace | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/airspace-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/airway-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/airways | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/fix-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/fixes | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/flight-math | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/flightplan | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/geo | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/icao-registry | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/icao-registry-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/mcp | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/navaid-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/navaids | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/notams | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/procedure-data | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/procedures | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/types | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/units | min_safe_version=unknown | source=NVD
+  - neilcochran:squawk\/weather | min_safe_version=unknown | source=NVD
+  - neilcochran:ts-dna | min_safe_version=unknown | source=NVD
+  - neilcochran:wot-api | min_safe_version=unknown | source=NVD
+  - agentworkhq:agentwork-cli | min_safe_version=unknown | source=NVD
+  - dirigible:dirigible-ai\/sdk | min_safe_version=unknown | source=NVD
+  - guardrailsai:guardrails_ai | min_safe_version=unknown | source=NVD
+  - linuxfoundation:opensearch | min_safe_version=unknown | source=NVD
+  - mesa:mesadev\/rest | min_safe_version=unknown | source=NVD
+  - mesa:mesadev\/saguaro | min_safe_version=unknown | source=NVD
+  - mesa:mesadev\/sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/access-policy-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/access-policy-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/admin-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/agent-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/agent-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/aops-policy-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/ap-chat | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/api-workflow-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/apollo-core | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/apollo-react | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/apollo-wind | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/auth | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/case-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/cli | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/codedagent-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/codedagents-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/codedapp-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/common | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/context-grounding-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/data-fabric-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/docsai-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/filesystem | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/flow-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/functions-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/gov-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/identity-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/insights-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/insights-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/integrationservice-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/integrationservice-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/llmgw-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/maestro-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/maestro-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/orchestrator-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-apiworkflow | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-bpmn | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-case | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-connector | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-flow | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-functions | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-webapp | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-workflowcompiler | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/packager-tool-workflowcompiler-browser | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/platform-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/project-packager | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/resource-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/resourcecatalog-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/resources-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/robot | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/rpa-legacy-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/rpa-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/solution-packager | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/solution-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/solutionpackager-sdk | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/solutionpackager-tool-core | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/tasks-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/telemetry | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/test-manager-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/tool-workflowcompiler | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/traces-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/ui-widgets-multi-file-upload | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/uipath-python-bridge | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/vertical-solutions-tool | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/vss | min_safe_version=unknown | source=NVD
+  - uipath:uipath\/widget.sdk | min_safe_version=unknown | source=NVD
+
+## CVE-2026-8398
+- Date added: 2026-05-27
+- Vendor/Product: Daemon / Daemon Tools Lite
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-30
+- Notes: https://blog.daemon-tools.cc/post/security-incident ; https://nvd.nist.gov/vuln/detail/CVE-2026-8398
+- Matched local software: none
+- Affected software and minimum safe version:
+  - disc-soft:daemon_tools | min_safe_version=unknown | source=NVD
+
+## CVE-2026-48172
+- Date added: 2026-05-26
+- Vendor/Product: LiteSpeed / cPanel Plugin
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-29
+- Notes: https://blog.litespeedtech.com/2026/05/21/security-update-for-litespeed-cpanel-plugin/ ; https://nvd.nist.gov/vuln/detail/CVE-2026-48172
+- Matched local software: none
+- Affected software and minimum safe version:
+  - litespeedtech:litespeed_cpanel_plugin | min_safe_version=2.4.7 | source=NVD
+  - litespeedtech:litespeed_whm_plugin | min_safe_version=5.3.1.0 | source=NVD
+
+## CVE-2026-9082
+- Date added: 2026-05-22
+- Vendor/Product: Drupal / Core
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-27
+- Notes: https://www.drupal.org/sa-core-2026-004 ; https://nvd.nist.gov/vuln/detail/CVE-2026-9082
+- Matched local software: none
+- Affected software and minimum safe version:
+  - drupal:drupal | min_safe_version=10.4.10 | source=NVD
+  - drupal:drupal | min_safe_version=10.5.10 | source=NVD
+  - drupal:drupal | min_safe_version=10.6.9 | source=NVD
+  - drupal:drupal | min_safe_version=11.1.10 | source=NVD
+  - drupal:drupal | min_safe_version=11.2.12 | source=NVD
+  - drupal:drupal | min_safe_version=11.3.10 | source=NVD
+
+## CVE-2025-34291
+- Date added: 2026-05-21
+- Vendor/Product: Langflow / Langflow
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-04
+- Notes: This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/langflow-ai/langflow ; https://github.com/langflow-ai/langflow/releases/tag/v1.9.3; https://github.com/langflow-ai/langflow/issues/11465#event-25774545848 ; https://nvd.nist.gov/vuln/detail/CVE-2025-34291
+- Matched local software: none
+- Affected software and minimum safe version:
+  - langflow:langflow | min_safe_version=>1.6.9 | source=NVD
+
+## CVE-2026-34926
+- Date added: 2026-05-21
+- Vendor/Product: Trend Micro / Apex One
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-04
+- Notes: https://success.trendmicro.com/en-US/solution/KA-0023430 ; https://nvd.nist.gov/vuln/detail/CVE-2026-34926
+- Matched local software: none
+- Affected software and minimum safe version:
+  - trendmicro:apex_one | min_safe_version=14.0.0.17079 | source=NVD
+  - trendmicro:apex_one | min_safe_version=14.0.20731 | source=NVD
+
+## CVE-2008-4250
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / Windows
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://learn.microsoft.com/en-us/security-updates/securitybulletins/2008/ms08-067 ; https://nvd.nist.gov/vuln/detail/CVE-2008-4250
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:windows_2000 | min_safe_version=unknown | source=NVD
+  - microsoft:windows_server_2003 | min_safe_version=unknown | source=NVD
+  - microsoft:windows_server_2008 | min_safe_version=unknown | source=NVD
+  - microsoft:windows_vista | min_safe_version=unknown | source=NVD
+  - microsoft:windows_xp | min_safe_version=unknown | source=NVD
+
+## CVE-2009-1537
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / DirectX
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://learn.microsoft.com/en-us/security-updates/securitybulletins/2009/ms09-028 ; https://nvd.nist.gov/vuln/detail/CVE-2009-1537
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:directx | min_safe_version=unknown | source=NVD
+  - microsoft:windows_2000 | min_safe_version=unknown | source=NVD
+  - microsoft:windows_2003_server | min_safe_version=unknown | source=NVD
+  - microsoft:windows_server_2003 | min_safe_version=unknown | source=NVD
+  - microsoft:windows_xp | min_safe_version=unknown | source=NVD
+
+## CVE-2009-3459
+- Date added: 2026-05-20
+- Vendor/Product: Adobe / Acrobat and Reader
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://www.cisa.gov/news-events/alerts/2009/10/13/adobe-reader-and-acrobat-vulnerabilities ; https://web.archive.org/web/20120324170253/http://www.adobe.com/support/security/bulletins/apsb09-15.html#:~:text=CVE%2D2009%2D3459).-,NOTE%3A,-There%20are%20reports ; https://nvd.nist.gov/vuln/detail/CVE-2009-3459
+- Matched local software: none
+- Affected software and minimum safe version:
+  - adobe:acrobat | min_safe_version=7.1.4 | source=NVD
+  - adobe:acrobat | min_safe_version=8.1.7 | source=NVD
+  - adobe:acrobat | min_safe_version=9.2 | source=NVD
+  - adobe:acrobat_reader | min_safe_version=7.1.4 | source=NVD
+  - adobe:acrobat_reader | min_safe_version=8.1.7 | source=NVD
+  - adobe:acrobat_reader | min_safe_version=9.2 | source=NVD
+
+## CVE-2010-0249
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / Internet Explorer
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://learn.microsoft.com/en-us/security-updates/SecurityAdvisories/2010/979352 ; https://nvd.nist.gov/vuln/detail/CVE-2010-0249
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:internet_explorer | min_safe_version=unknown | source=NVD
+
+## CVE-2010-0806
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / Internet Explorer
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://learn.microsoft.com/en-us/security-updates/securityadvisories/2010/981374 ; https://nvd.nist.gov/vuln/detail/CVE-2010-0806
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:internet_explorer | min_safe_version=unknown | source=NVD
+
+## CVE-2026-41091
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / Defender
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-41091 ; https://nvd.nist.gov/vuln/detail/CVE-2026-41091
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:malware_protection_engine | min_safe_version=1.1.26040.8 | source=NVD
+
+## CVE-2026-45498
+- Date added: 2026-05-20
+- Vendor/Product: Microsoft / Defender
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-06-03
+- Notes: https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-45498 ; https://nvd.nist.gov/vuln/detail/CVE-2026-45498
+- Matched local software: none
+- Affected software and minimum safe version:
+  - microsoft:defender_antimalware_platform | min_safe_version=4.18.26040.7 | source=NVD
+
+## CVE-2026-42897
+- Date added: 2026-05-15
+- Vendor/Product: Microsoft / Microsoft
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-29
+- Notes: https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-42897 ; https://learn.microsoft.com/en-us/exchange/plan-and-deploy/post-installation-tasks/security-best-practices/exchange-emergency-mitigation-service ; https://nvd.nist.gov/vuln/detail/CVE-2026-42897
+- Matched local software: none
+- Affected software and minimum safe version:
+  - unknown (no OSV/NVD mapping found)
+
+## CVE-2026-20182
+- Date added: 2026-05-14
+- Vendor/Product: Cisco / Catalyst SD-WAN
+- Required action: Please adhere to CISA’s guidelines to assess exposure and mitigate risks associated with Cisco SD-WAN devices as outlined in CISA’s Emergency Directive 26-03 (URL listed below in Notes) and CISA’s Hunt & Hardening Guidance for Cisco SD-WAN Devices (URL listed below in Notes). Adhere to the applicable BOD 22-01 guidance for cloud services or discontinue use of the product if mitigations are not available.
+- KEV due date: 2026-05-17
+- Notes: CISA Mitigation Instructions: https://www.cisa.gov/news-events/directives/ed-26-03-mitigate-vulnerabilities-cisco-sd-wan-systems ; https://www.cisa.gov/news-events/directives/supplemental-direction-ed-26-03-hunt-and-hardening-guidance-cisco-sd-wan-systems ; https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-rpa2-v69WY2SW ; https://nvd.nist.gov/vuln/detail/CVE-2026-20182
+- Matched local software: none
+- Affected software and minimum safe version:
+  - unknown (no OSV/NVD mapping found)
+
+## CVE-2026-42208
+- Date added: 2026-05-08
+- Vendor/Product: BerriAI / LiteLLM
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-11
+- Notes: https://github.com/BerriAI/litellm/security/advisories/GHSA-r75f-5x8p-qvmc ; https://nvd.nist.gov/vuln/detail/CVE-2026-42208
+- Matched local software: none
+- Affected software and minimum safe version:
+  - litellm:litellm | min_safe_version=1.83.7 | source=NVD
+
+## CVE-2026-6973
+- Date added: 2026-05-07
+- Vendor/Product: Ivanti / Endpoint Manager Mobile (EPMM)
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-10
+- Notes: https://hub.ivanti.com/s/article/May-2026-Security-Advisory-Ivanti-Endpoint-Manager-Mobile-EPMM-Multiple-CVEs?language=en_US ; https://nvd.nist.gov/vuln/detail/CVE-2026-6973
+- Matched local software: none
+- Affected software and minimum safe version:
+  - unknown (no OSV/NVD mapping found)
+
+## CVE-2026-0300
+- Date added: 2026-05-06
+- Vendor/Product: Palo Alto Networks / PAN-OS
+- Required action: Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable. Until the vendor releases an official fix, the following workaround should be implemented:  - Restrict User-ID Authentication Portal access to only trusted zones.  - Disable User-ID Authentication Portal if not required. 5/13/2026: Palo Alto has released a variety of patches. If these are relevant to your environment, please apply the designated patch.
+- KEV due date: 2026-05-09
+- Notes: https://security.paloaltonetworks.com/CVE-2026-0300 ; https://nvd.nist.gov/vuln/detail/CVE-2026-0300
+- Matched local software: none
+- Affected software and minimum safe version:
+  - unknown (no OSV/NVD mapping found)
+
+## CVE-2026-31431
+- Date added: 2026-05-01
+- Vendor/Product: Linux / Kernel
+- Required action: "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.
+- KEV due date: 2026-05-15
+- Notes: https://lore.kernel.org/linux-cve-announce/2026042214-CVE-2026-31431-3d65@gregkh/; https://xint.io/blog/copy-fail-linux-distributions#the-fix-6 ; https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/about/ ; https://nvd.nist.gov/vuln/detail/CVE-2026-31431
+- Matched local software: none
+- Affected software and minimum safe version:
+  - linux:linux_kernel | min_safe_version=5.10.254 | source=NVD
+  - linux:linux_kernel | min_safe_version=5.15.204 | source=NVD
+  - linux:linux_kernel | min_safe_version=6.1.170 | source=NVD
+  - linux:linux_kernel | min_safe_version=6.6.137 | source=NVD
+  - linux:linux_kernel | min_safe_version=6.12.85 | source=NVD
+  - linux:linux_kernel | min_safe_version=6.18.22 | source=NVD
+  - linux:linux_kernel | min_safe_version=6.19.12 | source=NVD
+  - linux:linux_kernel | min_safe_version=unknown | source=NVD
+  - redhat:openshift_container_platform | min_safe_version=unknown | source=NVD
+  - redhat:enterprise_linux | min_safe_version=unknown | source=NVD
+  - amazon:amazon_linux | min_safe_version=unknown | source=NVD
+  - canonical:ubuntu_linux | min_safe_version=unknown | source=NVD
+  - debian:debian_linux | min_safe_version=unknown | source=NVD
+  - opensuse:leap | min_safe_version=unknown | source=NVD
+  - suse:caas_platform | min_safe_version=unknown | source=NVD
+  - suse:enterprise_storage | min_safe_version=unknown | source=NVD
+  - suse:manager_proxy | min_safe_version=unknown | source=NVD
+  - suse:manager_retail_branch_server | min_safe_version=unknown | source=NVD
+  - suse:manager_server | min_safe_version=unknown | source=NVD
+  - suse:openstack_cloud | min_safe_version=unknown | source=NVD
+  - suse:openstack_cloud_crowbar | min_safe_version=unknown | source=NVD
+  - suse:basesystem_module | min_safe_version=unknown | source=NVD
+  - suse:development_tools_module | min_safe_version=unknown | source=NVD
+  - suse:legacy_module | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_desktop | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_high_availability_extension | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_high_performance_computing | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_live_patching | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_micro | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_real_time | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_server | min_safe_version=unknown | source=NVD
+  - suse:linux_enterprise_workstation_extension | min_safe_version=unknown | source=NVD
+  - suse:linux_micro | min_safe_version=unknown | source=NVD
+  - suse:public_cloud_module | min_safe_version=unknown | source=NVD
+  - suse:realtime_module | min_safe_version=unknown | source=NVD
+  - nixos:nixos | min_safe_version=25.11 | source=NVD
+  - arista:cloudvision_agni | min_safe_version=>2025.2.2 | source=NVD
+  - arista:cloudvision_portal | min_safe_version=>2026.1.0 | source=NVD
+  - arista:velocloud_edge | min_safe_version=>6.4.1 | source=NVD
+  - arista:velocloud_gateway | min_safe_version=unknown | source=NVD
+  - vmware:velocloud_orchestrator | min_safe_version=unknown | source=NVD
+  - arista:netvisor_os | min_safe_version=7.1.0 | source=NVD
+  - arista:netvisor_os | min_safe_version=unknown | source=NVD
+  - siemens:simatic_s7-1500_cpu_1518-4_pn\/dp_mfp_firmware | min_safe_version=unknown | source=NVD
+  - siemens:simatic_s7-1500_cpu_1518f-4_pn\/dp_mfp_firmware | min_safe_version=unknown | source=NVD
+  - siemens:siplus_s7-1500_cpu_1518-4_pn\/dp_mfp_firmware | min_safe_version=unknown | source=NVD
+  - siemens:simatic_s7-1500_tm_mfp_firmware | min_safe_version=1.1 | source=NVD
