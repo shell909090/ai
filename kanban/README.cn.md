@@ -3,53 +3,85 @@
 一个由调度器驱动的工作流系统，把 Trello 看板作为人类与 AI agent 协作的界面。
 AI agent 在隔离的 git worktree 中执行任务，跑过三件套验证后，串行合并回 `main`。
 
+> English readme: [README.md](README.md).
+
 ## 当前状态
 
-**v0 — 项目已初始化**。任务清单见 `docs/tasks.md`，设计见 `docs/design.md`。
+**v0 — finish-watcher 调度器已交付**。调度器轮询 Trello `doing` 列，为每张卡片
+开一个 opencode session；通过轮询 session 最后一条 message 的 `info.finish` 字段
+被动检测完成——无 agent 信号、无 done URL、无 per-card 锁。完整规划见
+`docs/tasks.md` 与 `docs/design.md`。
 
 已交付：
 
-- Go module 骨架（`github.com/shell909090/kanban`）。
-- `kanban-connectivity` CLI，端到端验证本机 `opencode serve` + Trello HTTP API。
-
-未交付：
-
-- 调度器主进程（`kanban` 占位，见 T002）。
+- `kanband` —— 长跑调度器（`internal/kanban` 库的 thin CLI 包装）
+- `internal/kanban` —— 业务逻辑库：Trello + opencode 客户端、finish watcher、
+  状态机、配置加载
+- `scripts/connectivity-test.py` —— Python smoke test，验证 Trello / opencode
+  HTTP API 可达性
 
 ## 依赖
 
 - Go 1.26+
-- `opencode` CLI 需在 `$PATH` 上（`kanban-connectivity` start 模式需要）
-- `make`
+- Python 3（跑 smoke test 用）
+- Trello API key + token（或 OAuth 1.0a access token）
+- 本机可达的 `opencode serve` 实例
 
 ## 构建
 
 ```sh
-make build          # 产物：bin/kanban、bin/kanban-connectivity
+make build          # 产物：bin/kanband
 ```
 
 ## 测试
 
-`make test` 跑单测 + 连通性 smoke test。连通性测试需要
-`OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD`；Trello 检查只在
-`TRELLO_API_KEY` / `TRELLO_TOKEN` 设置时执行（缺失则 SKIPPED）。
+`make test` 跑单测 + smoke test。
 
 ```sh
-export OPENCODE_SERVER_USERNAME=user
-export OPENCODE_SERVER_PASSWORD=...
-make test
+make test                                    # 只跑单测
+KANBAN_OPENCODE_URL=http://localhost:4096 \
+OPENCODE_SERVER_USERNAME=user \
+OPENCODE_SERVER_PASSWORD=... \
+  make test                                  # 单测 + smoke（opencode）
 ```
 
-用 `SKIP_OPENCODE=1` 加 `KANBAN_OPENCODE_URL=http://...` 可以对已存在的
-`opencode serve` 做联通检查，不开子进程。
+smoke test 对凭据缺失的步骤一律 SKIPPED（在干净 checkout 上退出码永远 0）。
+Trello 凭据在 `.env` 时实测 `/members/me/boards`；opencode 环境变量齐时
+轮询 `/global/health` 直到 200 或 30 秒超时。
+
+## 运行
+
+```sh
+cp .env.example .env
+# 编辑 .env：TRELLO_API_KEY、TRELLO_TOKEN、OPENCODE_SERVER_*
+./bin/kanband -workdir /path/to/repo
+```
+
+参数：
+
+- `-workdir`（必填）—— git 仓库的绝对路径，opencode session 建在这里
+- `-poll`（默认 `5s`）—— Trello 轮询间隔
+- `-idle`（默认 `10s`）—— finish watcher 轮询间隔
+- `-http`（默认 `127.0.0.1:8087`）—— `/health` 监听地址
+- `-log` —— 日志文件路径（默认 stderr）
+
+`SIGINT` / `SIGTERM` 触发优雅退出：HTTP server 关闭、finish watcher 退出、
+主循环返回。
 
 ## 目录
 
 ```
-cmd/
-  kanban/            # 调度器（占位，T002 实现）
-  connectivity/      # 连通性 smoke test
-docs/                # 需求、设计、任务、评审、日志
+cmd/kanband/            # thin CLI 包装（~80 行）
+internal/kanban/        # 业务逻辑库
+  config.go             # Config、LoadConfig、.env 解析
+  api.go                # Trello + opencode HTTP 客户端方法
+  finish.go             # extractFinish、isAbnormalFinish、FinishWatcher
+  poll.go               # pollOnce、processCard
+  log.go                # log + writeJSON + SetLogWriter
+  *_test.go             # 单测（用 httptest 替 Trello + opencode）
+scripts/
+  connectivity-test.py  # smoke test
+docs/                   # 需求、设计、任务、评审、日志
 Makefile
 go.mod
 .env.example
@@ -58,4 +90,4 @@ go.mod
 ## 作者与许可
 
 作者：shell <shell909090@gmail.com>
-许可：MIT（详细协议将在 T008 补全）
+许可：MIT

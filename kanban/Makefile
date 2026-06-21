@@ -1,7 +1,7 @@
 GO ?= go
 BIN ?= bin
 
-.PHONY: all fmt lint build unittest connect test clean
+.PHONY: all fmt lint build unittest smoke test serve clean
 
 all: fmt lint build test
 
@@ -13,24 +13,18 @@ lint:
 
 build:
 	mkdir -p $(BIN)
-	$(GO) build -o $(BIN)/kanban ./cmd/kanban
-	$(GO) build -o $(BIN)/kanban-connectivity ./cmd/connectivity
-	$(GO) build -o $(BIN)/kanban-oneshot ./cmd/kanban-oneshot
 	$(GO) build -o $(BIN)/kanband ./cmd/kanband
 
 unittest:
 	$(GO) test ./...
 
-connect: build
-	./$(BIN)/kanban-connectivity
+smoke: build
+	python3 scripts/connectivity-test.py
+
+test: unittest smoke
 
 serve: build
 	./$(BIN)/kanband
-
-oneshot: build
-	./$(BIN)/kanban-oneshot
-
-test: unittest connect
 
 clean:
 	rm -rf $(BIN)/
