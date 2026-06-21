@@ -583,19 +583,41 @@ PlannedCard {
 
 ### 7.1 todo → doing
 
-1. 调度器检测卡片进入 doing。
-2. 若 doing 数超过上限，移动回 todo 并评论说明。
-3. 若 label 为 `human-task`，调度器忽略该卡，不启动 session、不移动卡、不创建 worktree；只有当它进入 done/archived 相关状态时才按人工完成结果处理。
-4. 若需要 worktree，创建或复用 `.worktrees/<cardId>`，分支 `card/<cardId>`；复用时 rebase main。
-5. 执行 `worktree_init` 钩子；失败记录 warning，继续。
-6. 写 `▶️ Started session <id>` comment。
-7. 调 `SessionManager.start_or_resume`。
+1. 调度器检测卡片进入 doing（两条通路，行为必须一致）：
+   - **Step 2**：人类手动拖到 doing 的新卡（拖之前调度器没见过的 cardID）。
+   - **Step 3**：auto-promote from todo（见 §7.1.1）。
+2. 两通路**共用** cap-check helper `acceptNewCard(card, total, perProject) -> (rejected bool, reason string)`：当 `total >= MaxDoingTotal` 或 `perProject[project] >= MaxDoingPerProject` 时返回 `rejected=true` + 人类可读 `reason`（格式：`at-capacity, global=N per-project=M, project=X`）。Step 3 在显式 `break` 之前调一次；Step 2 在 register 进 `cardSessions` 之前调一次。详见 §7.1.2。
+3. **Step 2 拒绝路径**（cap-check 命中）：写 `⏸ 并发上限已满：<reason>` comment（comment 先写、移卡后写，确保人类在 doing 看到原因）→ `trelloMoveCard(cardID, todoID)` → log `cap.reject card=... project=... reason=...` → **不**改 `cardSessions`（避免后续 poll 误认"在历史里"）→ **不**加 `needs-attention`（与 auto-promote cap 行为对齐，用户应能自行判断下一步）。用户后续把卡再次拖到 doing 时调度器重新评估。
+4. 若 label 为 `human-task`，调度器忽略该卡，不启动 session、不移动卡、不创建 worktree；只有当它进入 done/archived 相关状态时才按人工完成结果处理。
+5. 若需要 worktree，创建或复用 `.worktrees/<cardId>`，分支 `card/<cardId>`；复用时 rebase main。
+6. 执行 `worktree_init` 钩子；失败记录 warning，继续。
+7. 写 `▶️ Started session <id>` comment。
+8. 调 `SessionManager.start_or_resume`。
 
 ### 7.2 doing → todo 暂停/失败
 
 - 人类拖回 todo：写 `⏸ Paused by user` 和 session 结束摘要；保留 session 元数据、worktree、分支。
 - session 异常：调度器拖回 todo，写 `❌ Error in session <id>`；保留 worktree。
 - 三件套超限：拖回 todo，写失败命令、摘要和重试次数。
+- **并发上限超限**（Step 2 / Step 3 拒绝路径，详见 §7.1.2 / §7.1.1）：移回 todo，写 `⏸ 并发上限已满：<reason>` comment，**不**加 `needs-attention` label，**不**改 `cardSessions` map（保留卡在调度器视角的"未见过"状态；用户后续重拖可重新评估）。
+
+### 7.1.1 auto-promote（todo → doing 调度器主动通路）
+
+- 调度器每 5s 扫 todo 列，按 `MaxDoingTotal` / `MaxDoingPerProject` 评估：未超 → 调 `trelloMoveCard(cardID, doingID)` + 启动 session（与 Step 2 共享 `acceptNewCard` helper 评估 cap，详见 §7.1.2）。
+- 移动失败（`trelloMoveCard` 返 error）：回滚 `cardSessions` 注册（delete 该 cardID 的 entry）+ `total--` / `perProject[project]--` + log `promote.move.fail` + 不启动 session。下次 poll 重新评估。
+
+### 7.1.2 `acceptNewCard` helper（Step 2 / Step 3 共享的 cap check）
+
+```text
+acceptNewCard(card: TrelloCard, total: int, perProject: map<string, int>) -> (rejected: bool, reason: string)
+```
+
+- 纯函数：只读 `cfg.MaxDoingTotal` / `cfg.MaxDoingPerProject` / `card.Labels`（解析 `projectOf`），不读不写任何状态。
+- 当 `total >= MaxDoingTotal` 或 `perProject[projectOf(card)] >= MaxDoingPerProject` 时 `rejected=true`，否则 `rejected=false`。
+- `reason` 在 `rejected=true` 时为 `at-capacity, global=N per-project=M, project=X`（人类可读、安全 surface 到 comment 与 log）；`rejected=false` 时为空字符串。
+- 调用方负责维护 `total` / `perProject`（每次成功 accept 后 `total++` / `perProject[projectOf(card)]++`），helper 不做 mutation。
+- Step 3 调用约定：循环顶部 `if total >= MaxDoingTotal: break` 保留（性能优化，避免遍历整张 todo 表）；`acceptNewCard` 处理 per-project skip + 兜底 global 检查。Step 2 调用约定：每次循环调一次，rejected→拒绝路径，未 rejected→register 进 `cardSessions` + 启动 `processCard`。
+- 测试：纯函数单测覆盖 global / per-project / OK 三情形；Step 2 / Step 3 集成单测覆盖"超 cap 拒绝"和"未超 cap 接受"两条路径。
 
 ### 7.3 session finish 检测
 

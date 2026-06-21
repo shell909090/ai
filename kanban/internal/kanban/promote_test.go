@@ -55,6 +55,45 @@ func TestCountByProject(t *testing.T) {
 	}
 }
 
+func TestAcceptNewCard(t *testing.T) {
+	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", "http://opencode.invalid")
+	// Defaults: MaxDoingTotal=2, MaxDoingPerProject=1.
+	card := trelloCard{ID: "x", Labels: []trelloLabel{{Name: "proj:agent"}}}
+
+	// Under cap → accept.
+	if reject, reason := s.acceptNewCard(card, 0, map[string]int{}); reject {
+		t.Errorf("empty cap: reject=true reason=%q, want false", reason)
+	}
+	// Per-project cap hit → reject; reason names the project.
+	if reject, reason := s.acceptNewCard(card, 1, map[string]int{"agent": 1}); !reject {
+		t.Errorf("per-project=1 hit: reject=false, want true")
+	} else if !strings.Contains(reason, "project=agent") {
+		t.Errorf("reason=%q, want project=agent", reason)
+	} else if !strings.Contains(reason, "global=2") {
+		t.Errorf("reason=%q, want global=2", reason)
+	} else if !strings.Contains(reason, "per-project=1") {
+		t.Errorf("reason=%q, want per-project=1", reason)
+	}
+	// Global cap hit → reject; takes precedence over per-project
+	// even when per-project would still allow.
+	if reject, reason := s.acceptNewCard(card, 2, map[string]int{"agent": 0, "other": 1}); !reject {
+		t.Errorf("global=2 hit: reject=false, want true")
+	} else if !strings.Contains(reason, "global=2") {
+		t.Errorf("reason=%q, want global=2", reason)
+	}
+	// No proj:* label uses defaultProject.
+	def := trelloCard{ID: "y"}
+	if reject, reason := s.acceptNewCard(def, 1, map[string]int{defaultProject: 1}); !reject {
+		t.Errorf("default project cap hit: reject=false, want true")
+	} else if !strings.Contains(reason, "project="+defaultProject) {
+		t.Errorf("reason=%q, want project=%s", reason, defaultProject)
+	}
+	// Accept path returns empty reason.
+	if reject, reason := s.acceptNewCard(card, 0, map[string]int{"agent": 0}); reject || reason != "" {
+		t.Errorf("under cap: reject=%v reason=%q, want false/empty", reject, reason)
+	}
+}
+
 // ---------- drag-out (Feature A) ----------
 
 func TestHandleDragOut(t *testing.T) {
