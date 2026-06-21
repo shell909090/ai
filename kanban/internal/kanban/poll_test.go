@@ -126,7 +126,7 @@ func TestPollOncePollError(t *testing.T) {
 
 func TestPollOnceNewCardTriggersProcess(t *testing.T) {
 	trello := newFakeTrello()
-	trello.cards = []trelloCard{{ID: "c1", Name: "first"}}
+	trello.setCards(doingID, []trelloCard{{ID: "c1", Name: "first"}})
 	trURL := httptest.NewServer(trello.handler())
 	defer trURL.Close()
 	oc := &fakeOpencode{sessionID: "ses_xyz"}

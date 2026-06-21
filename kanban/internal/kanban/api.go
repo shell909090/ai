@@ -11,9 +11,10 @@ import (
 	"strings"
 )
 
-// Trello API: list cards in a list.
+// Trello API: list cards in a list. Includes the labels field so the
+// caller can extract proj:* / model:* labels for routing.
 func (s *Server) trelloListCards(ctx context.Context, listID string) ([]trelloCard, error) {
-	u := fmt.Sprintf("https://api.trello.com/1/lists/%s/cards?key=%s&token=%s&fields=name,desc,idList,url",
+	u := fmt.Sprintf("https://api.trello.com/1/lists/%s/cards?key=%s&token=%s&fields=name,desc,idList,url,labels",
 		listID, s.cfg.TrelloKey, s.cfg.TrelloToken)
 	return s.trelloGetCards(ctx, u)
 }
@@ -143,6 +144,25 @@ func (s *Server) trelloRequest(ctx context.Context, method, u string, body []byt
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// Opencode API: abort a session. Best-effort; failures are logged
+// at the call site. Used when a card leaves doing before the model
+// finished, so opencode stops generating.
+func (s *Server) ocAbortSession(ctx context.Context, sessionID string) error {
+	u := fmt.Sprintf("%s/session/%s/abort", s.cfg.OpenCodeBaseURL, sessionID)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
+	req.SetBasicAuth(s.cfg.OpenCodeUser, s.cfg.OpenCodePass)
+	resp, err := s.httpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("status=%d body=%s", resp.StatusCode, string(b))
 	}

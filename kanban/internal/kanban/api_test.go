@@ -10,7 +10,7 @@ import (
 
 func TestTrelloListCards(t *testing.T) {
 	trello := newFakeTrello()
-	trello.cards = []trelloCard{{ID: "c1", Name: "first"}}
+	trello.setCards(doingID, []trelloCard{{ID: "c1", Name: "first"}})
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")

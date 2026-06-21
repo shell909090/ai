@@ -12,26 +12,12 @@ import (
 	"time"
 )
 
-// Config holds the runtime configuration. Fields are exported because
-// callers (cmd/kanband) assemble the struct from flags + LoadConfig().
-type Config struct {
-	TrelloKey       string
-	TrelloToken     string
-	OpenCodeUser    string
-	OpenCodePass    string
-	OpenCodeBaseURL string
-	WorkDir         string
-	PollInterval    time.Duration
-	HTTPTimeout     time.Duration
-	HTTPListen      string
-	IdleInterval    time.Duration
-}
-
 // sessionInfo is the per-card state held in cardSessions.
 type sessionInfo struct {
 	cardID    string
 	cardName  string
 	sessionID string
+	project   string
 	status    string
 	startedAt time.Time
 }
@@ -44,11 +30,12 @@ const (
 
 // Trello HTTP API shapes we consume.
 type trelloCard struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Desc   string `json:"desc"`
-	IDList string `json:"idList"`
-	URL    string `json:"url"`
+	ID     string        `json:"id"`
+	Name   string        `json:"name"`
+	Desc   string        `json:"desc"`
+	IDList string        `json:"idList"`
+	URL    string        `json:"url"`
+	Labels []trelloLabel `json:"labels"`
 }
 
 type trelloLabel struct {
@@ -77,9 +64,11 @@ type logRec struct {
 // Board + list IDs from the active Trello board. Constants in one place
 // so tests and production share them.
 const (
-	boardID = "6a369a37d68f530666bce32e"
-	doingID = "6a36a4625fe4a561ecc34bc6"
-	doneID  = "6a36a4630e0cee0f90d16394"
+	boardID  = "6a369a37d68f530666bce32e"
+	iceboxID = "6a36a461229793dd1a9e8d28"
+	todoID   = "6a36a462ff3d43852d8c4ad4"
+	doingID  = "6a36a4625fe4a561ecc34bc6"
+	doneID   = "6a36a4630e0cee0f90d16394"
 )
 
 // Server is the kanban scheduler. One Server per process; it owns the
@@ -114,6 +103,12 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.HTTPListen == "" {
 		cfg.HTTPListen = "127.0.0.1:8087"
+	}
+	if cfg.MaxDoingTotal <= 0 {
+		cfg.MaxDoingTotal = 2
+	}
+	if cfg.MaxDoingPerProject <= 0 {
+		cfg.MaxDoingPerProject = 1
 	}
 	return &Server{
 		cfg:          cfg,

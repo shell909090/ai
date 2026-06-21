@@ -9,14 +9,16 @@ import (
 )
 
 // fakeTrello is a minimal Trello stand-in for tests. It records every
-// call and returns canned responses.
+// call and returns canned responses. cardsByList separates the canned
+// card sets per Trello list id so a test can pre-load doing and todo
+// independently.
 type fakeTrello struct {
 	mu          sync.Mutex
 	comments    []string
 	labelAdds   []string
 	moves       []moveRec
 	labelExists map[string]string
-	cards       []trelloCard
+	cardsByList map[string][]trelloCard
 }
 
 type moveRec struct {
@@ -25,7 +27,18 @@ type moveRec struct {
 }
 
 func newFakeTrello() *fakeTrello {
-	return &fakeTrello{labelExists: map[string]string{}}
+	return &fakeTrello{
+		labelExists: map[string]string{},
+		cardsByList: map[string][]trelloCard{},
+	}
+}
+
+// setCards pre-loads a list id with the given cards. Use this in
+// tests instead of touching the unexported cardsByList directly.
+func (f *fakeTrello) setCards(listID string, cards []trelloCard) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cardsByList[listID] = cards
 }
 
 func (f *fakeTrello) handler() http.Handler {
@@ -130,13 +143,17 @@ func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	// URL is /1/lists/{listID}/cards
+	path := strings.TrimPrefix(r.URL.Path, "/1/lists/")
+	listID := strings.TrimSuffix(path, "/cards")
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.cards == nil {
+	cards := f.cardsByList[listID]
+	if cards == nil {
 		_, _ = w.Write([]byte(`[]`))
 		return
 	}
-	_ = json.NewEncoder(w).Encode(f.cards)
+	_ = json.NewEncoder(w).Encode(cards)
 }
 
 // fakeOpencode is a minimal opencode stand-in. It serves /session and

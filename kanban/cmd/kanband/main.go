@@ -23,6 +23,8 @@ func main() {
 	workdir := flag.String("workdir", "", "workdir for opencode session (default $KANBAN_WORKDIR; must be absolute)")
 	logPath := flag.String("log", "", "log file path (default stderr)")
 	httpListen := flag.String("http", "127.0.0.1:8087", "HTTP listen address for /health")
+	maxTotal := flag.Int("max-total", -1, "max cards in doing across all projects (overrides env; default 2)")
+	maxPerProject := flag.Int("max-per-project", -1, "max cards in doing per project (overrides env; default 1)")
 	flag.Parse()
 
 	cfg, err := kanban.LoadConfig()
@@ -55,6 +57,12 @@ func main() {
 		die("parse -idle: %v", err)
 	} else {
 		cfg.IdleInterval = d
+	}
+	if *maxTotal > 0 {
+		cfg.MaxDoingTotal = *maxTotal
+	}
+	if *maxPerProject > 0 {
+		cfg.MaxDoingPerProject = *maxPerProject
 	}
 	if *logPath != "" {
 		f, err := os.Create(*logPath)
