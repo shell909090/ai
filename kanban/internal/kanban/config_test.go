@@ -80,6 +80,122 @@ func TestLoadConfigMissingEnv(t *testing.T) {
 	}
 }
 
+func TestLoadConfigWithYAML(t *testing.T) {
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(prev)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(".env", []byte(strings.Join([]string{
+		"TRELLO_API_KEY=ABC",
+		"TRELLO_TOKEN=DEF",
+		"OPENCODE_SERVER_USERNAME=u",
+		"OPENCODE_SERVER_PASSWORD=p",
+	}, "\n")), 0644))
+	must(os.WriteFile("config.yaml", []byte(`
+trello:
+  board_id: "B"
+  lists:
+    icebox: "L1"
+    todo: "L2"
+    doing: "L3"
+    done: "L4"
+    archived: "L5"
+  labels:
+    human_task: "human-task"
+    no_worktree: "no-worktree"
+    needs_attention: "needs-attention"
+    needs_integration_test: "needs-integration-test"
+    ai_task: "ai-task"
+opencode:
+  base_url: "http://127.0.0.1:8567"
+  default_model:
+    providerID: "opencode-go"
+    modelID: "minimax-m3"
+  allowed_models:
+    - label: "model:minimax-m3"
+      providerID: "opencode-go"
+      modelID: "minimax-m3"
+repo:
+  main_path: "/tmp"
+  main_branch: "main"
+  allowed_paths:
+    - label: "proj:agent"
+      path: "/tmp"
+`), 0644))
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultModel.ProviderID != "opencode-go" || cfg.DefaultModel.ModelID != "minimax-m3" {
+		t.Errorf("DefaultModel=%+v", cfg.DefaultModel)
+	}
+	if len(cfg.AllowedModels) != 1 || cfg.AllowedModels[0].Label != "model:minimax-m3" {
+		t.Errorf("AllowedModels=%+v", cfg.AllowedModels)
+	}
+	if cfg.TrelloLists["todo"] != "L2" {
+		t.Errorf("TrelloLists[todo]=%q", cfg.TrelloLists["todo"])
+	}
+	if cfg.TrelloLists["archived"] != "L5" {
+		t.Errorf("TrelloLists[archived]=%q", cfg.TrelloLists["archived"])
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestValidateMissingDefaultModel(t *testing.T) {
+	c := Config{
+		TrelloLists: map[string]string{
+			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
+		},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for missing DefaultModel")
+	}
+}
+
+func TestValidateMissingTrelloList(t *testing.T) {
+	c := Config{
+		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:  map[string]string{"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4"},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for missing archived list")
+	}
+}
+
+func TestValidateAllowedPathNotDir(t *testing.T) {
+	c := Config{
+		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists: map[string]string{
+			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
+		},
+		AllowedPaths: []AllowedPath{{Label: "proj:x", Path: "/nonexistent/path/xyz"}},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for nonexistent allowed path")
+	}
+}
+
+func TestValidateAllowedModelEmpty(t *testing.T) {
+	c := Config{
+		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists: map[string]string{
+			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
+		},
+		AllowedModels: []AllowedModel{{Label: "model:x", ProviderID: "", ModelID: "m"}},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for allowed model missing providerID")
+	}
+}
+
 func TestLoadConfigOK(t *testing.T) {
 	dir := t.TempDir()
 	prev, _ := os.Getwd()

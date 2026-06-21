@@ -64,6 +64,9 @@ func main() {
 	if *maxPerProject > 0 {
 		cfg.MaxDoingPerProject = *maxPerProject
 	}
+	if err := cfg.Validate(); err != nil {
+		die("validate: %v", err)
+	}
 	if *logPath != "" {
 		f, err := os.Create(*logPath)
 		if err != nil {

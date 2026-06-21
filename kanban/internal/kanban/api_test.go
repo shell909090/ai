@@ -249,6 +249,14 @@ func TestOcSendPromptAsync(t *testing.T) {
 	if !strings.Contains(receivedBody, "hello") {
 		t.Errorf("body should contain prompt, got %q", receivedBody)
 	}
+	// Body must carry the binding's DefaultModel so opencode can route
+	// the prompt to the right provider/model.
+	if !strings.Contains(receivedBody, `"providerID":"opencode-go"`) {
+		t.Errorf("body missing providerID, got %q", receivedBody)
+	}
+	if !strings.Contains(receivedBody, `"modelID":"minimax-m3"`) {
+		t.Errorf("body missing modelID, got %q", receivedBody)
+	}
 }
 
 func TestOcSendPromptAsyncError(t *testing.T) {

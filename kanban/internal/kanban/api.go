@@ -194,14 +194,18 @@ func (s *Server) ocCreateSession(ctx context.Context) (ocSession, error) {
 	return sess, nil
 }
 
-// Opencode API: async-send a prompt to an existing session. The hard
-// coded model is opencode-go/minimax-m3 — the only chat/instruct
-// model confirmed working with the agent flow (see design.md §1).
+// Opencode API: async-send a prompt to an existing session. The
+// model is read from cfg.DefaultModel (validated at startup; see
+// design.md §3 + req.md §11.2). Future work: per-card override via
+// the "model:X" label; for v1 every card uses the binding default.
 func (s *Server) ocSendPromptAsync(ctx context.Context, sessionID, prompt string) error {
 	u := fmt.Sprintf("%s/session/%s/prompt_async?directory=%s",
 		s.cfg.OpenCodeBaseURL, sessionID, url.QueryEscape(s.cfg.WorkDir))
 	body, _ := json.Marshal(map[string]any{
-		"model": map[string]string{"providerID": "opencode-go", "modelID": "minimax-m3"},
+		"model": map[string]string{
+			"providerID": s.cfg.DefaultModel.ProviderID,
+			"modelID":    s.cfg.DefaultModel.ModelID,
+		},
 		"parts": []map[string]string{{"type": "text", "text": prompt}},
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))

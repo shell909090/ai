@@ -181,6 +181,7 @@ func newTestServerWithFake(t *testing.T, trelloURL, ocURL string) (*Server, *fak
 		HTTPListen:      "127.0.0.1:0",
 		PollInterval:    time.Second,
 		IdleInterval:    time.Second,
+		DefaultModel:    ModelRef{ProviderID: "opencode-go", ModelID: "minimax-m3"},
 	})
 	if err != nil {
 		t.Fatal(err)
