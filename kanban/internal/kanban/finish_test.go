@@ -141,7 +141,7 @@ func TestMarkCardFinishedWritesSummaryFirst(t *testing.T) {
 	if !strings.Contains(trello.comments[0], "简短总结") {
 		t.Errorf("first comment should contain summary text, got %q", trello.comments[0])
 	}
-	if !strings.Contains(trello.comments[1], "✅ Completed session ses1") {
+	if !strings.Contains(trello.comments[1], "✅ Completed session [ses1]") {
 		t.Errorf("second comment=%q, want ✅", trello.comments[1])
 	}
 }
@@ -204,7 +204,7 @@ func TestMarkCardFinishedNormal(t *testing.T) {
 	if got := len(trello.comments); got != 1 {
 		t.Fatalf("comments=%d, want 1", got)
 	}
-	if !strings.Contains(trello.comments[0], "✅ Completed session ses1") {
+	if !strings.Contains(trello.comments[0], "✅ Completed session [ses1]") {
 		t.Errorf("comment=%q", trello.comments[0])
 	}
 	if got := len(trello.labelAdds); got != 0 {
@@ -236,7 +236,7 @@ func TestMarkCardFinishedToolCalls(t *testing.T) {
 	if got := len(trello.comments); got != 2 {
 		t.Errorf("tool-calls should write ✅ + ❌, got %d", got)
 	}
-	if !strings.Contains(trello.comments[1], "❌ Error in session ses1") {
+	if !strings.Contains(trello.comments[1], "❌ Error in session [ses1]") {
 		t.Errorf("second comment=%q, want ❌", trello.comments[1])
 	}
 	if got := len(trello.labelAdds); got != 1 {
@@ -259,7 +259,7 @@ func TestMarkCardFinishedError(t *testing.T) {
 	if !strings.Contains(trello.comments[0], "✅ Completed") {
 		t.Errorf("first comment=%q", trello.comments[0])
 	}
-	if !strings.Contains(trello.comments[1], "❌ Error in session ses1") {
+	if !strings.Contains(trello.comments[1], "❌ Error in session [ses1]") {
 		t.Errorf("second comment=%q", trello.comments[1])
 	}
 	if !strings.Contains(trello.comments[1], "finish=error") {
@@ -437,7 +437,7 @@ func TestCheckOneSessionMarkDoneOnSummaryReturn(t *testing.T) {
 	if !strings.Contains(trello.comments[0], summary) {
 		t.Errorf("first comment should contain the summary text, got %q", trello.comments[0])
 	}
-	if !strings.Contains(trello.comments[1], "✅ Completed session ses1") {
+	if !strings.Contains(trello.comments[1], "✅ Completed session [ses1]") {
 		t.Errorf("second comment=%q, want ✅ Completed", trello.comments[1])
 	}
 	if got := len(trello.moves); got != 1 || trello.moves[0].listID != doneID {
@@ -540,10 +540,10 @@ func TestCheckOneSessionAbnormalFirstFinishSkipsSummary(t *testing.T) {
 			if got := len(trello.comments); got != 2 {
 				t.Fatalf("comments=%d, want 2 (✅ + ❌, no Summary)", got)
 			}
-			if !strings.Contains(trello.comments[0], "✅ Completed session ses1") {
+			if !strings.Contains(trello.comments[0], "✅ Completed session [ses1]") {
 				t.Errorf("first comment=%q, want ✅", trello.comments[0])
 			}
-			if !strings.Contains(trello.comments[1], "❌ Error in session ses1") {
+			if !strings.Contains(trello.comments[1], "❌ Error in session [ses1]") {
 				t.Errorf("second comment=%q, want ❌", trello.comments[1])
 			}
 			if !strings.Contains(trello.comments[1], "finish="+finish) {

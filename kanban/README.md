@@ -31,6 +31,18 @@ on the card before moving it to `done`. Any other finish value
 the summary round, posts a `❌ Error in session <id>` comment, adds the
 `needs-attention` label, and moves the card to `done` for human review.
 
+The summary prompt asks the model to describe the *result* of the run
+(what was done, what was produced) rather than restating the task
+description.
+
+Every `▶️ Started` / `✅ Completed` / `❌ Error` comment includes the opencode
+session id as a markdown link to the opencode web session URL, so humans
+can click through from Trello. The URL is built as
+`<base_url>/<base64url(workdir)>/session/<id>` — no extra config needed,
+the encoding matches opencode web's own. When the scheduler creates the
+session it also renames it to the Trello card title, so the opencode web
+session list mirrors the Trello board.
+
 ## Requirements
 
 - Go 1.26+
@@ -90,6 +102,7 @@ internal/kanban/        # business logic library
   api.go                # Trello + opencode HTTP client methods
   finish.go             # extractFinish, isAbnormalFinish, ExtractSummaryText,
                        # FinishWatcher, requestSummary
+  sessionlink.go        # formatSessionRef (session id → opencode web URL)
   poll.go               # pollOnce, processCard
   log.go                # log + writeJSON + SetLogWriter
   *_test.go             # unit tests (httptest fakes for Trello + opencode)

@@ -217,7 +217,17 @@ func (s *Server) processCard(ctx context.Context, card trelloCard) {
 	s.sessionCards[sess.ID] = card.ID
 	s.mu.Unlock()
 
-	comment := fmt.Sprintf("▶️ Started session %s\nWorkspace: %s", sess.ID, sess.Directory)
+	// Best-effort rename so the opencode web session list aligns
+	// with the Trello card title. A failure here does not block the
+	// agent from running; we log and continue.
+	if err := s.ocRenameSession(ctx, sess.ID, card.Name); err != nil {
+		s.log("session.rename.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sess.ID, err))
+	} else {
+		s.log("session.rename", fmt.Sprintf("card=%s session=%s title=%q", card.ID, sess.ID, card.Name))
+	}
+
+	comment := fmt.Sprintf("▶️ Started session %s\nWorkspace: %s",
+		formatSessionRef(s.cfg.OpenCodeBaseURL, s.cfg.WorkDir, sess.ID), sess.Directory)
 	if err := s.trelloAddComment(ctx, card.ID, comment); err != nil {
 		s.log("trello.comment.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
 	} else {

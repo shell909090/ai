@@ -2,8 +2,11 @@ package kanban
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -271,5 +274,81 @@ func TestHTTPHandler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"status":"ok"`) {
 		t.Errorf("body=%q", rec.Body.String())
+	}
+}
+
+// --- T017: ocRenameSession ---
+
+func TestOcRenameSessionSuccess(t *testing.T) {
+	var (
+		gotPath     string
+		gotQuery    url.Values
+		gotTitle    string
+		gotMethod   string
+		gotUser     string
+		gotPass     string
+		gotAuthHdr  string
+		gotCTHeader string
+	)
+	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
+		gotMethod = r.Method
+		gotUser, gotPass, _ = r.BasicAuth()
+		gotAuthHdr = r.Header.Get("Authorization")
+		gotCTHeader = r.Header.Get("Content-Type")
+		body, _ := io.ReadAll(r.Body)
+		var parsed struct {
+			Title string `json:"title"`
+		}
+		_ = json.Unmarshal(body, &parsed)
+		gotTitle = parsed.Title
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"ses_x","title":"` + parsed.Title + `"}`))
+	}))
+	defer ocSrv.Close()
+
+	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", ocSrv.URL)
+	if err := s.ocRenameSession(context.Background(), "ses_x", "新标题"); err != nil {
+		t.Fatalf("ocRenameSession: %v", err)
+	}
+
+	if gotMethod != http.MethodPatch {
+		t.Errorf("method=%q, want PATCH", gotMethod)
+	}
+	if gotPath != "/session/ses_x" {
+		t.Errorf("path=%q, want /session/ses_x", gotPath)
+	}
+	if gotQuery.Get("directory") != "/tmp" {
+		t.Errorf("directory query=%q, want /tmp", gotQuery.Get("directory"))
+	}
+	if gotTitle != "新标题" {
+		t.Errorf("title=%q, want 新标题", gotTitle)
+	}
+	if gotCTHeader != "application/json" {
+		t.Errorf("Content-Type=%q, want application/json", gotCTHeader)
+	}
+	if !strings.Contains(gotAuthHdr, "Basic ") {
+		t.Errorf("Authorization=%q, want Basic prefix", gotAuthHdr)
+	}
+	if gotUser != "u" || gotPass != "p" {
+		t.Errorf("BasicAuth user=%q pass=%q, want u/p", gotUser, gotPass)
+	}
+}
+
+func TestOcRenameSessionFailure(t *testing.T) {
+	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer ocSrv.Close()
+
+	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", ocSrv.URL)
+	err := s.ocRenameSession(context.Background(), "ses_x", "新标题")
+	if err == nil {
+		t.Fatal("expected error on 500, got nil")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error=%q, want 500 mentioned", err.Error())
 	}
 }

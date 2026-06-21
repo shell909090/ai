@@ -219,6 +219,30 @@ func (s *Server) ocSendPromptAsync(ctx context.Context, sessionID, prompt string
 	return nil
 }
 
+// Opencode API: rename a session by setting its title via
+// PATCH /session/{id}?directory={workdir}. The title is best-effort:
+// the caller logs and continues on error rather than treating a
+// rename failure as fatal. The directory query parameter is required
+// by opencode's session router even for PATCH.
+func (s *Server) ocRenameSession(ctx context.Context, sessionID, title string) error {
+	u := fmt.Sprintf("%s/session/%s?directory=%s",
+		s.cfg.OpenCodeBaseURL, sessionID, url.QueryEscape(s.cfg.WorkDir))
+	body, _ := json.Marshal(map[string]string{"title": title})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPatch, u, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(s.cfg.OpenCodeUser, s.cfg.OpenCodePass)
+	resp, err := s.httpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
 // Opencode API: return the last message of a session, or nil if the
 // session has no messages. Used by the finish watcher.
 func (s *Server) ocGetLastMessage(ctx context.Context, sessionID string) (map[string]any, error) {

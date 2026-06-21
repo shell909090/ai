@@ -27,6 +27,7 @@
 | 可执行文件名 | `kanban` |
 | 示例配置 | 提供 `config.example.yaml` |
 | Agent model 选择 | **每个 binding 在 `bindings[].opencode.model` 必填**，自选 provider/model；调度器不内置默认，文档要求必须是 chat/instruct 模型（FIM 模型不调工具，禁用于 doing 卡） |
+| opencode web session URL | URL 模式：`<opencode.base_url>/<base64url(workdir)>/session/<session_id>`。`base64url` 编码与 opencode web 自身一致（`packages/core/src/util/encode.ts:base64Encode`），Go 用 `base64.RawURLEncoding`。所有写 session id 的 comment 默认渲染为 markdown 链接，人类在 Trello 上一键直达。 |
 
 ## 2. 总体架构
 
@@ -77,6 +78,9 @@ opencode:
   base_url: "http://localhost:4096"
   username_env: OPENCODE_SERVER_USERNAME
   password_env: OPENCODE_SERVER_PASSWORD
+  # session URL 由 base_url + base64url(workdir) + session_id 拼接而成（见 §6.4），
+  # 不需要单独的 web 前缀配置。base_url 必须从浏览器可达；如 opencode 经 reverse proxy
+  # 暴露在 https://opencode.example.com/，把 base_url 改为该 URL（API 与 UI 共享）。
 
 bindings:
   - name: "default"
@@ -344,6 +348,7 @@ opencode v1 适配使用全局唯一 `opencode serve` HTTP API；该 server 服�
 ```text
 start_or_resume(card: TrelloCard, workspace_path: string, history: CardHistory) -> SessionRecord
 send_prompt(session_id: string, prompt: string) -> void
+rename_session(session_id: string, title: string) -> void
 terminate(session_id: string, reason: string) -> SessionRecord
 get_status(session_id: string) -> SessionStatus
 subscribe_events(binding_name: string) -> EventStream
@@ -363,8 +368,72 @@ SessionStatus {
 - workspace_path：普通卡为 worktree 路径，`no-worktree`/`human-task` 为主仓库路径或空。
 - history：卡片描述、全部评论摘要、当前 todo、历史 session 事件、worktree 状态。
 - model：从 `bindings[].opencode.model` 读 `providerID` + `modelID`，原样塞进 `POST /session/{id}/prompt_async` 的 `model` 字段；调度器不替用户猜默认，配置缺失则 `check-config` / 启动报错（见第 1 节默认值）。实测：server 端 `opencode.json` 配不配 provider 都行——模型走全局注册表，认证走 `auth.json`，scheduler 只管透传字符串。
+- title（rename）：session 创建成功后，调度器调 `rename_session(session_id, card.name)` 把 opencode 端的 session title 设为 Trello 卡片名，让 opencode web 列表与 Trello 列表一一对应。rename 是 best-effort：失败仅 log `session.rename.fail`，不阻塞发 prompt / 写 Started comment / 移 done。实现走 `PATCH /session/{session_id}?directory={workspace_path}`，body `{"title": card.name}`。
 
 第一轮 prompt 不由调度器拼装任务正文；调度器只提供环境变量和工作目录，让 opencode 自行读取卡片上下文。修复 prompt 可由调度器构造，内容包含失败命令和日志摘要。
+
+### 6.4.1 opencode web session URL 知识（外部约定）
+
+> **本节是项目对 opencode 外部行为的引用，不是调度器内部设计。**
+> 任何代码拼接 session URL 都必须按本节规则，否则浏览器无法直达对应会话。
+
+opencode web 的 session 路由**没有**独立的 basePath / prefix 配置项（vite + solidjs router 都不带 base）。URL 完全由 3 段拼成：
+
+```text
+<scheme>://<host>:<port>/<base64url(workdir)>/session/<session_id>
+```
+
+`base64url` 不是 RFC 标准的 `base64url`，而是 opencode 自己的变体——**JS `btoa` 标准 base64 + 替换 `+` → `-`、`/` → `_` + 去 `=` padding**。源码在 `packages/core/src/util/encode.ts:base64Encode`：
+
+```typescript
+export function base64Encode(value: string) {
+  const bytes = new TextEncoder().encode(value)
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("")
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+```
+
+Go 端对应实现：
+
+```go
+import "encoding/base64"
+
+func base64url(s string) string {
+    return base64.RawURLEncoding.EncodeToString([]byte(s))
+}
+```
+
+`RawURLEncoding` 与上述 JS 规则**字节级一致**（标准 base64 + URL-safe 替换 + 去 padding）。**不要**用 `URLEncoding`（带 `=` padding）或 `StdEncoding`（带 `+/`）。
+
+使用方在 `packages/app/src/pages/layout.tsx:448`：
+
+```typescript
+const href = `/${base64Encode(directory)}/session/${props.sessionID}`
+```
+
+**实操示例**：
+
+| workdir | base64url | 完整 URL（base=`http://opencode.home:1234`） |
+|---|---|---|
+| `/home/shell/tmp/kanban` | `L2hvbWUvc2hlbGwvdG1wL2thbmJhbg` | `http://opencode.home:1234/L2hvbWUvc2hlbGwvdG1wL2thbmJhbg/session/ses_xxx` |
+| `/home/用户/项目` | `L2hvbWUv5rWL6K-V5Lq65a6J5bqX`（UTF-8 字节先编码再 base64） | `http://opencode.home:1234/L2hvbWUv5rWL6K-V5Lq65a6J5bqX/session/ses_xxx` |
+
+**对调度器的影响**：
+
+- 调度器**没有**独立 `web_url_prefix` / `web_base_url` 配置；`opencode.base_url` 与 web URL 的 scheme/host/port **共享同一份配置**。
+- 调度器**复用** `OpenCodeBaseURL` + `WorkDir` 拼 URL；不引入新字段。
+- 若 opencode API 走 `http://127.0.0.1:4096`、web 走 `https://opencode.example.com/` 这种 base 必须不同的部署，把 `OpenCodeBaseURL` 配成 web 可达的那一个（API 调用也走该 base，因为 v1 阶段 base 是单一来源）；v2 若 API/UI base 强制分离再考虑加 `OpenCodeWebBaseURL` 字段。
+- 任何时候生成 session URL 都要走 `formatSessionRef(workdir, sessionID)` 单一函数，禁止散落拼接（避免 base64 规则被某处误改）。
+
+**session id 在 comment 中的链接渲染**：
+
+所有写 session id 的 comment（▶️ Started / ✅ Completed / ❌ Error）默认把 id 渲染为 markdown 链接，URL 模式：
+
+```text
+[<session_id>](<opencode.base_url>/<base64url(workdir)>/session/<session_id>)
+```
+
+Trello 端 markdown 渲染后人类一键直达 opencode web 的对应会话。`base_url` 末尾 `/` 由 `formatSessionRef` 内部归一化。
 ### 6.5 完成检测（基于 session finish）
 
 完成检测完全由调度器主动探测实现——**agent 不主动调用任何端点声明结束**，无 done URL、无 token、无提示词注入、无并发锁、无 post-done cool-down。
@@ -605,9 +674,14 @@ mark_card_finished(card_id, session_id, finish, summary) -> void
 **完整流程**：
 
 1. finish watcher 检测到 `info.finish = "stop"`（其他 5 个异常值都不进总结流程，详见 §6.5）。
-2. 调度器调 `ocSendPromptAsync` 发中文 prompt：
+2. 调度器调 `ocSendPromptAsync` 发固定中文 prompt（聚焦"本次运行的*结果*"，不是任务说明）：
    ```
-   请用 140 个字以内简短总结本次工作。仅输出总结本身，不要任何前缀、解释或 Markdown 标记。
+   请用 140 个字以内简要总结本次运行的*结果*，不是任务说明。聚焦：
+   - 实际做了哪些操作（执行了哪些命令、修改/创建/查看了哪些文件）
+   - 关键产出（新增/修改/删除的文件、跑通的测试、产生的数据、得到的结论）
+   - 任何值得人类关注的副产品（意外发现、未完成项、需要 follow-up 的事）
+
+   仅输出总结本身，不要任何前缀、解释、Markdown 标记。
    ```
 3. 发送成功：把 `sessionInfo.status` 切到 `statusSummarizing`，记录 `summary_started_at = time.Now()` 与 `last_finish = "stop"`。
 4. watcher 在后续轮询命中 `statusSummarizing` + 新 `info.finish`：
@@ -653,7 +727,7 @@ mark_card_finished(card_id, session_id, finish, summary) -> void
 
 ## 8. 评论与事件格式
 
-调度器/AI 事件 comment 采用固定前缀：
+调度器/AI 事件 comment 采用固定前缀。`<session-id>` 默认渲染为 markdown 链接 `[<session-id>](<base_url>/<base64url(workdir)>/session/<session-id>)`，人类在 Trello 上一键直达 opencode web 会话。`Summary: <text>` 来自模型对 §7.7 总结 prompt 的回复，聚焦"本次运行的结果"。
 
 ```text
 ▶️ Started session <session-id>

@@ -37,7 +37,49 @@ func TestProcessCard(t *testing.T) {
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
 	if len(trello.comments) != 1 {
-		t.Errorf("expected Started comment, got %d", len(trello.comments))
+		t.Fatalf("expected Started comment, got %d", len(trello.comments))
+	}
+	if !strings.Contains(trello.comments[0], "▶️ Started session [ses_proc](") {
+		t.Errorf("comment=%q, want markdown link to session", trello.comments[0])
+	}
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if len(oc.renames) != 1 {
+		t.Fatalf("expected 1 rename, got %d", len(oc.renames))
+	}
+	if oc.renames[0].SessionID != "ses_proc" || oc.renames[0].Title != "n1" {
+		t.Errorf("rename=%+v, want ses_proc/n1", oc.renames[0])
+	}
+}
+
+func TestProcessCardRenameFailureContinues(t *testing.T) {
+	// Rename failure must be best-effort: the scheduler still posts
+	// the Started comment, still sends the prompt, and still maps
+	// the session. Only the rename log is emitted as failure.
+	trello := newFakeTrello()
+	trURL := httptest.NewServer(trello.handler())
+	defer trURL.Close()
+	oc := &fakeOpencode{sessionID: "ses_proc", renameStatusCode: http.StatusInternalServerError}
+	ocURL := httptest.NewServer(oc.handler())
+	defer ocURL.Close()
+
+	log := &drainLog{}
+	withLogWriter(t, log)
+	s, _ := newTestServerWithFake(t, trURL.URL, ocURL.URL)
+	s.cardSessions["c1"] = &sessionInfo{cardID: "c1", cardName: "n1", status: statusStarted}
+	card := trelloCard{ID: "c1", Name: "n1", Desc: "do the thing"}
+	s.processCard(context.Background(), card)
+
+	if !strings.Contains(log.String(), "session.rename.fail") {
+		t.Errorf("expected session.rename.fail log, got %s", log.String())
+	}
+	if _, ok := s.cardSessions["c1"]; !ok {
+		t.Error("card should still be in cardSessions despite rename failure")
+	}
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.comments) != 1 {
+		t.Errorf("Started comment should still be written, got %d", len(trello.comments))
 	}
 }
 

@@ -30,9 +30,15 @@ const (
 
 // summaryPromptText is sent verbatim to the opencode session as the
 // follow-up after the model has emitted its first final assistant
-// message. Fixed Chinese wording keeps the behaviour deterministic
-// across model versions.
-const summaryPromptText = "请用 140 个字以内简短总结本次工作。仅输出总结本身，不要任何前缀、解释或 Markdown 标记。"
+// message. The wording emphasises the *result* of the run, not the
+// task description (which is already in the card description). See
+// docs/req.md §5.4.4 and docs/design.md §7.7 for the rationale.
+const summaryPromptText = `请用 140 个字以内简要总结本次运行的*结果*，不是任务说明。聚焦：
+- 实际做了哪些操作（执行了哪些命令、修改/创建/查看了哪些文件）
+- 关键产出（新增/修改/删除的文件、跑通的测试、产生的数据、得到的结论）
+- 任何值得人类关注的副产品（意外发现、未完成项、需要 follow-up 的事）
+
+仅输出总结本身，不要任何前缀、解释、Markdown 标记。`
 
 // summaryFallbackEmpty is the comment body used when the model
 // produced no readable text for the summary (e.g. the parts list
@@ -292,7 +298,7 @@ func (s *Server) MarkCardFinished(ctx context.Context, cardID, sessionID, finish
 		}
 	}
 
-	comment := fmt.Sprintf("✅ Completed session %s", sessionID)
+	comment := fmt.Sprintf("✅ Completed session %s", formatSessionRef(s.cfg.OpenCodeBaseURL, s.cfg.WorkDir, sessionID))
 	if err := s.trelloAddComment(ctx, cardID, comment); err != nil {
 		s.log("finish.comment.fail", fmt.Sprintf("card=%s err=%v", cardID, err))
 	}
@@ -300,7 +306,8 @@ func (s *Server) MarkCardFinished(ctx context.Context, cardID, sessionID, finish
 	if isAbnormalFinish(finish) {
 		errMsg := fmt.Sprintf(
 			"❌ Error in session %s (finish=%s). 用 opencode attach %s --session %s 查看。",
-			sessionID, finish, s.cfg.OpenCodeBaseURL, sessionID)
+			formatSessionRef(s.cfg.OpenCodeBaseURL, s.cfg.WorkDir, sessionID),
+			finish, s.cfg.OpenCodeBaseURL, sessionID)
 		if err := s.trelloAddComment(ctx, cardID, errMsg); err != nil {
 			s.log("finish.errcomment.fail", fmt.Sprintf("card=%s err=%v", cardID, err))
 		}

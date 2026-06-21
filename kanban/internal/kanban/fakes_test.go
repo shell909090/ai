@@ -157,16 +157,29 @@ func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // fakeOpencode is a minimal opencode stand-in. It serves /session and
+// renameCall records a single PATCH /session/{id} request handled by
+// the fake opencode, so tests can assert that the scheduler issued
+// the rename and used the right body.
+type renameCall struct {
+	SessionID string
+	Title     string
+	Directory string
+}
+
 // /session/* from canned responses so we can test the scheduler
 // without a real opencode server. The /session/{id}/message endpoint
 // pulls from messagesQueue first (FIFO) and falls back to message
 // when the queue is empty, so tests can drive multi-step flows like
-// "first finish → summary prompt → summary response".
+// "first finish → summary prompt → summary response". The PATCH
+// /session/{id} (rename) endpoint records into renames and responds
+// 200 by default; tests can set renameStatusCode to simulate failure.
 type fakeOpencode struct {
-	sessionID     string
-	message       map[string]any
-	messagesQueue []map[string]any
-	mu            sync.Mutex
+	sessionID        string
+	message          map[string]any
+	messagesQueue    []map[string]any
+	renames          []renameCall
+	renameStatusCode int // default 200 when 0
+	mu               sync.Mutex
 }
 
 func (f *fakeOpencode) handler() http.Handler {
@@ -209,6 +222,30 @@ func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		data, _ := json.Marshal(last)
 		_, _ = w.Write([]byte("[" + string(data) + "]"))
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/session/"):
+		// PATCH /session/{id}?directory=... (rename)
+		var body struct {
+			Title string `json:"title"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/session/"), "/")
+		f.mu.Lock()
+		f.renames = append(f.renames, renameCall{
+			SessionID: parts[0],
+			Title:     body.Title,
+			Directory: r.URL.Query().Get("directory"),
+		})
+		code := f.renameStatusCode
+		f.mu.Unlock()
+		if code == 0 {
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if code >= 300 {
+			_, _ = w.Write([]byte(`{"error":"simulated"}`))
+		} else {
+			_, _ = w.Write([]byte(`{"id":"` + parts[0] + `","title":"` + body.Title + `"}`))
+		}
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}

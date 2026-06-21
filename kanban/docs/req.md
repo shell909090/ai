@@ -231,6 +231,41 @@ session 本轮 `info.finish = "stop"`（模型正常结束）后、卡片移 don
 - 总结是软指标：发不出去 / 模型不答 / 模型答得不好，都不应阻塞卡片完成。
 - 140 字上限是面向人类阅读的硬性要求，模型写超 140 字会被截断（加 `…`），不重试。
 
+**总结内容要求**：
+
+总结 prompt 的目标不是"重新描述任务本身"——任务说明在卡片描述里已存在。总结的语义必须是"本次运行的*结果*"：偏重于"做了什么"、"产生了什么成果"、"修改/创建/查看了哪些文件、跑过什么命令、得到什么输出"，而非"要做什么"。具体措辞在 scheduler 端固定（详见 5.4.5）。
+
+#### 5.4.5 完成后总结 prompt 文案与 session 标识
+
+scheduler 发给 opencode 的总结 prompt 是固定中文文案，由调度器侧控制（不在卡片描述里，避免 agent 改写）。同时为了便于人类在 Trello 上一眼定位 session，scheduler 在所有写 session id 的 comment 里都把 id 渲染成可点击链接。
+
+**固定 prompt 文案**（scheduler 拼好后发出去，不依赖卡片描述）：
+
+```
+请用 140 个字以内简要总结本次运行的*结果*，不是任务说明。聚焦：
+- 实际做了哪些操作（执行了哪些命令、修改/创建/查看了哪些文件）
+- 关键产出（新增/修改/删除的文件、跑通的测试、产生的数据、得到的结论）
+- 任何值得人类关注的副产品（意外发现、未完成项、需要 follow-up 的事）
+
+仅输出总结本身，不要任何前缀、解释、Markdown 标记。
+```
+
+**session id 的链接渲染**：
+
+所有写 session id 的 comment（▶️ Started / ✅ Completed / ❌ Error）默认把 id 渲染成 markdown 链接，URL 模式：
+
+```
+<OpenCodeBaseURL>/<base64url(WorkDir)>/session/<sessionID>
+```
+
+`base64url` 编码规则与 opencode web 自身一致（`packages/core/src/util/encode.ts:base64Encode`：标准 base64 替换 `+` → `-`、`/` → `_`、去 `=` padding）。在 Go 中即 `base64.RawURLEncoding.EncodeToString([]byte(workdir))`。
+scheduler 已有 `OpenCodeBaseURL` 与 `WorkDir`，无需新加配置；人类在 Trello 上一键直达 opencode web 的对应会话。
+若 `OpenCodeBaseURL` 配的是 `http://127.0.0.1:4096` 而 opencode web 实际经 reverse proxy 暴露在 `http://opencode.home:1234/`，需要把 `OpenCodeBaseURL` 改成可被浏览器访问的 base（这点与 API 调用 base 共享同一配置；如有冲突，等未来多 binding 阶段再考虑拆分）。
+
+**session 重命名为卡片标题**：
+
+scheduler 在 todo→doing 创建 opencode session 之后、发 prompt 之前，调 `PATCH /session/{sessionID}?directory={workdir}` 把 session 的 `title` 设为卡片 title，让 opencode web 列表与 Trello 列表一一对应。rename 失败不影响主流程：log `session.rename.fail` 后继续。
+
 #### 5.4.2 暂停（卡片被拖回 todo）
 
 - 调度器检测到卡片回到 todo。

@@ -26,6 +26,14 @@ comment 写到卡片，再移到 `done`。其他 5 个 finish 值（`length` / `
 / `content-filter` / `error` / `unknown`）跳过总结、发 `❌ Error in session <id>`
 comment、加 `needs-attention` label，移到 `done` 等人介入。
 
+总结 prompt 要求模型描述本次运行的*结果*（做了什么、产生了什么成果），
+不重述任务说明。
+
+每条 `▶️ Started` / `✅ Completed` / `❌ Error` comment 里的 session id 都
+渲染为 markdown 链接，URL = `<base_url>/<base64url(workdir)>/session/<id>`，
+与 opencode web 自身编码规则一致，无需额外配置。scheduler 创建 session
+后还会把 title 设为 Trello 卡片名，让 opencode web 列表与 Trello 看板一一对应。
+
 ## 依赖
 
 - Go 1.26+
@@ -83,6 +91,7 @@ internal/kanban/        # 业务逻辑库
   api.go                # Trello + opencode HTTP 客户端方法
   finish.go             # extractFinish、isAbnormalFinish、ExtractSummaryText、
                        # FinishWatcher、requestSummary
+  sessionlink.go        # formatSessionRef（session id → opencode web URL）
   poll.go               # pollOnce、processCard
   log.go                # log + writeJSON + SetLogWriter
   *_test.go             # 单测（用 httptest 替 Trello + opencode）
