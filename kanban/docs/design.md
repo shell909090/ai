@@ -20,12 +20,13 @@
 | worktree 分支保留时长 | 28 天，可配置 |
 | 附件命名 | `<card-id>-<stage>-<timestamp>.md` |
 | opencode 集成 | 全局唯一 `opencode serve` HTTP Server；保留 `opencode web` 适配扩展点 |
-| MCP `card_done` | 轻量 Python bridge，转发给 Go 调度器主进程 |
+| 完成检测 | **调度器主动**轮询 `GET /session/{id}/message?limit=1`，发现最后一条 message 的 `info.finish` 字段存在即视为 session 已结束，触发完成流程；agent **不**主动声明完成，无需 webfetch / token / 提示词注入 |
 | session archived 后保留策略 | 保留 7 天审计元数据，可配置；opencode 原始会话由 opencode 自身管理 |
 | 调度器部署 | 初始同机部署，要求可访问 Trello、全局 opencode server 与目标 git 仓库 |
 | 作者与许可 | shell <shell909090@gmail.com>，MIT License |
 | 可执行文件名 | `kanban` |
 | 示例配置 | 提供 `config.example.yaml` |
+| Agent model 选择 | **每个 binding 在 `bindings[].opencode.model` 必填**，自选 provider/model；调度器不内置默认，文档要求必须是 chat/instruct 模型（FIM 模型不调工具，禁用于 doing 卡） |
 
 ## 2. 总体架构
 
@@ -39,9 +40,8 @@ Scheduler Process (Go)
   |-- Concurrency Controller
   |-- Trello Event Source -------- poll / long-poll / webhook adapter
   |-- Trello Gateway
-  |-- Session Event Source ------- opencode server SSE/status adapter
+  |-- Session Event Source ------- opencode server /session/{id}/message?limit=1 polling
   |-- Session Manager ----------- opencode serve HTTP API
-  |-- MCP Bridge (Python) ------- card_done -> Scheduler HTTP callback
   |-- Worktree Manager ---------- git repository
   |-- Verify Runner ------------- build/lint/unittest hooks
   |-- Merge Queue --------------- main branch
@@ -53,7 +53,7 @@ Scheduler Process (Go)
 - Trello 是人机协作界面，卡片列是任务状态来源。
 - 卡片描述是 agent 执行依据，附件只做备查。
 - 每次 todo→doing 可启动或继续一个卡片 session；session 与卡片 1:N，worktree 与卡片 1:1。
-- `card_done` 是 agent 完成信号，不直接移动卡片；调度器验证通过后移动到 done。
+- 完成检测完全由调度器主动探测 session 最后一条 message 的 `info.finish` 字段实现；agent 不主动声明完成，无需 done URL / token / 提示词注入 / 并发锁。
 - done→archived 只由人类触发；调度器只负责触发后的合并、清理和错误卡生成。
 - human-task 卡不启动 AI session，不创建 worktree。
 
@@ -80,9 +80,18 @@ opencode:
 
 bindings:
   - name: "default"
+    opencode:
+      model:                              # 必填：binding 默认 model；card 无 model: label 时用这个
+        providerID: "..."
+        modelID: "..."
+      allowed_models:                      # 可选；card 写 model:X label 时只能从这里挑
+        - model: "opencode-go/minimax-m3"  # 完整 "providerID/modelID" 形式
+          label: "model:minimax-m3"        # card 上的 label name（"model:" 前缀约定）
+        - model: "stepfun/step-3.6"
+          label: "model:step-3.6"
     trello:
-      board_id: "..."          # 非敏感信息写配置
-      board_name: "..."        # 可选
+      board_id: "..."                      # 非敏感信息写配置
+      board_name: "..."                    # 可选
       api_key_env: TRELLO_API_KEY
       token_env: TRELLO_TOKEN
       lists:
@@ -98,9 +107,14 @@ bindings:
         needs_integration_test: "needs-integration-test"
         needs_attention: "needs-attention"
     repo:
-      main_path: "/path/to/repo"
+      main_path: "/path/to/repo"            # binding 默认 repo 根（绝对路径，启动时验证存在性）
       main_branch: "main"
       worktree_root: ".worktrees"
+      allowed_paths:                        # 可选；card 写 proj:X label 时只能从这里挑
+        - path: "/home/shell/nextcloud/agent"
+          label: "proj:agent"               # 前缀 "proj:" 跟 opencode 的 project 术语对齐
+        - path: "/home/shell/src/github.com/shell909090/ai"
+          label: "proj:ai"
 
 verify:
   config_file: ".trello-verify"
@@ -227,7 +241,7 @@ WorkflowEvent {
 }
 ```
 
-WorkflowEvent 是内部事件驱动架构的统一输入。查询循环、long polling、webhook、opencode SSE、MCP bridge 都必须转换为该模型。
+WorkflowEvent 是内部事件驱动架构的统一输入。查询循环、long polling、webhook、opencode `?limit=1` finish 探测、merge queue tick 都必须转换为该模型。
 
 ### 5.6 AuditEvent
 
@@ -296,7 +310,7 @@ TransitionDecision {
 | done | doing | human |
 | done | archived | human |
 
-AI agent 不直接移动到 done，只能调用 `card_done`。
+AI agent 不直接移动到 done。完成检测由调度器通过 `info.finish` 字段被动完成（见 §6.5），agent 不主动调用任何端点。
 
 ### 6.3 Scheduler
 
@@ -307,17 +321,17 @@ handle_board_changes(snapshot: BoardSnapshot) -> void
 handle_card_enter_doing(card: TrelloCard) -> void
 handle_card_leave_doing(card: TrelloCard, to: BoardList) -> void
 handle_done_to_archived(card: TrelloCard) -> void
-handle_idle_sessions(now: datetime) -> void
+run_finish_watcher(now: datetime) -> void
 ```
 
 调度顺序：
 
-1. 事件源采集 Trello 状态变化、opencode session 状态变化、MCP bridge 回调和 merge queue tick。
+1. 事件源采集 Trello 状态变化、opencode session 状态变化（基于 `?limit=1` 探测）和 merge queue tick。
 2. 将外部变化标准化为内部事件并写入 SQLite event store。
 3. 执行状态机校验。
 4. 控制 doing 并发，超限卡移动回 todo 并写 comment。
 5. 对新进入 doing 的 AI 卡启动 session。
-6. 对 idle 且未 `card_done` 的 session 加 `needs-attention`。
+6. Finish watcher 对每个 session 探测 `info.finish` 字段；存在即触发完成流程（见 §6.5）。
 7. 对 archived 卡写入 merge queue。
 8. 串行处理 merge queue。
 
@@ -348,36 +362,45 @@ SessionStatus {
 
 - workspace_path：普通卡为 worktree 路径，`no-worktree`/`human-task` 为主仓库路径或空。
 - history：卡片描述、全部评论摘要、当前 todo、历史 session 事件、worktree 状态。
+- model：从 `bindings[].opencode.model` 读 `providerID` + `modelID`，原样塞进 `POST /session/{id}/prompt_async` 的 `model` 字段；调度器不替用户猜默认，配置缺失则 `check-config` / 启动报错（见第 1 节默认值）。实测：server 端 `opencode.json` 配不配 provider 都行——模型走全局注册表，认证走 `auth.json`，scheduler 只管透传字符串。
 
 第一轮 prompt 不由调度器拼装任务正文；调度器只提供环境变量和工作目录，让 opencode 自行读取卡片上下文。修复 prompt 可由调度器构造，内容包含失败命令和日志摘要。
+### 6.5 完成检测（基于 session finish）
 
-### 6.5 CardDone MCP Tool
+完成检测完全由调度器主动探测实现——**agent 不主动调用任何端点声明结束**，无 done URL、无 token、无提示词注入、无并发锁、无 post-done cool-down。
 
-MCP 由一个轻量 Python bridge 暴露给执行阶段 agent。Python bridge 只负责 MCP 协议适配和参数校验，然后通过本机 HTTP 回调 Go 调度器；业务状态、验证和移动卡片全部在 Go 主进程中完成。
+**原理**：opencode 暴露 `GET /session/{id}/message?limit=1`，返回该 session 最后一条 message；其 `info.finish` 字段语义为"模型本轮是否已结束说话"。**字段存在即 session 已进入静态**，调度器即可触发完成流程。模型 emit `finish` 本身就是 agent 的"完成信号"——不再需要让 agent 多调一次 HTTP。
 
-```text
-tool: card_done
-input:
-  card_id: string
-  session_id: string
-  summary: string
-  todo_state: string
-  dev_url?: string
-output:
-  accepted: bool
-  verify_started: bool
-  message: string
-```
+**`finish` 字段含义**（来自 opencode 源码 `packages/opencode/src/session/message-v2.ts`）：
 
-处理流程：
+| 值 | 含义 | scheduler 动作 |
+|---|---|---|
+| 字段缺失 | 模型仍在流式生成，或只有 user prompt 没有 assistant 回复 | 跳过，等下一轮 |
+| `stop` | 模型本轮正常结束 | 触发完成流程 |
+| `tool-calls` | 模型本轮调用了工具，等工具返回后下一轮再继续 | 触发完成流程（本轮结束） |
+| `length` | 模型达到上下文长度上限 | 触发完成流程 + 标 `needs-attention` |
+| `error` | 模型本轮出错 | 触发完成流程 + 标 `needs-attention` |
 
-1. 校验 `session_id` 属于 `card_id` 且卡片在 doing。
-2. 记录 `completed_signal`。
-3. 追加 `✅ Completed session <id>` comment，包含 summary、todo_state、dev_url。
-4. 调用 VerifyRunner。
-5. 通过：清除 `needs-attention`，移动卡片到 done。
-6. 失败且未超重试上限：向同 session 发送修复 prompt，卡片留在 doing。
-7. 失败且超限：移动回 todo，写失败 comment，保留 worktree。
+watcher 只关心"字段是否存在"——任何值都意味着模型本轮不再说话，统一触发完成流程。`length` / `error` 视为异常 finish，额外标 `needs-attention` 提示人工调查。
+
+**完成流程**（任一 finish 值通用）：
+
+1. 写 `✅ Completed session <id>` comment
+2. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证
+3. 调 VerifyRunner 跑三件套（build / lint / unittest）
+4. **通过**：移动卡片到 done
+5. **失败且未超重试上限**：向同 session 发修复 prompt，卡片留在 doing
+   （修复 prompt 触发新一轮模型响应，新轮 `info.finish` 出现后 watcher 再次触发验证，循环 N 次）
+6. **失败且超限**：移动回 todo，写失败 comment，保留 worktree
+7. 若 `info.finish ∈ {length, error}`：除上述流程外，加 `needs-attention` label + 写错误 comment
+
+**为何不用 `/session/status`**：该端点返 `Map<SessionID, SessionStatus>`，`SessionStatus.set(sessionID, { type: "idle" })` 会从 map 删掉该 session（见 `packages/opencode/src/session/status.ts:67` 与 `run-state.ts:58`）。已完成 session 在该 map 中**不存在**，跟"未启动"无法区分，watcher 无法据此判断"模型停"还是"模型还没开始"。
+
+**为何不用 `/session/{id}` 的 `time.archived`**：opencode 不自动归档 session，`time.archived` 永远为 `null`（需人工 `POST /session/{id}/archive`）。
+
+**为何不需要并发锁**：完成检测唯一通路就是 finish watcher（每张卡一个 `info.finish` 触发点，watcher 单线程串行处理），不再有"agent 主动调端点 vs 调度器被动探测"两条通路，无需串行化。
+
+**为何不需要 post-done cool-down**：旧版担心"handleCardDone 已移卡但 session 还在跑"——新设计里 watcher 检测到 `finish` 存在即视为本轮结束，session 继续在跑是自然状态（agent 准备下一轮或停下来），卡片在 done 列正是预期结果。无需额外 cool-down 阶段 abort session。
 
 ### 6.6 WorktreeManager
 
@@ -497,22 +520,43 @@ PlannedCard {
 - session 异常：调度器拖回 todo，写 `❌ Error in session <id>`；保留 worktree。
 - 三件套超限：拖回 todo，写失败命令、摘要和重试次数。
 
-### 7.3 idle 未完成
+### 7.3 session finish 检测
 
-1. 定期读取 session 状态。
-2. `state=idle` 且未收到 `card_done`，超过阈值后加 `needs-attention`。
-3. 写 `⚠️ Session <id> idle, no completion. 用 opencode attach http://localhost:4096 --session <id> 查看。`
-4. 卡片保持 doing。
-5. 收到 `card_done`、卡片离开 doing 或 session 终止时自动清除 label。
+finish watcher 每 `-idle` 间隔（默认 10s）轮询所有已注册 session，对每个 session 走以下流程。**核心原则：用 `/session/{id}/message?limit=1` 读模型本轮是否已完，判据是 `info.finish` 字段是否存在；不用 `/session/status`（其返回的 map 不包含已完成的 session，语义不对）。**
 
-### 7.4 card_done → done
+1. 在 `sessionCards` 中查 `cardID`。
+2. `GET /session/{id}/message?limit=1`，拿到该 session 最后一条 message。
+3. 判别 `info.finish` 字段：
+   - 字段缺失（流式生成中、或只有 user prompt 没有 assistant 回复）→ 跳过，等下一轮
+   - 字段存在（`stop` / `tool-calls` / `length` / `error` 任一值）→ 触发完成流程（见 §7.4）
 
-1. agent 调 MCP `card_done`。
-2. 调度器写完成 comment。
+`finish` 字段含义（来自 opencode 源码 `packages/opencode/src/session/message-v2.ts`）：
+
+- 字段不存在：模型**仍在生成**（流式输出中），watcher 必须跳过
+- `stop`：模型本轮正常结束
+- `tool-calls`：模型本轮调用了工具，等工具返回后下一轮再继续
+- `length`：模型达到上下文长度上限
+- `error`：模型本轮出错
+
+**任何 finish 值**都意味着"模型本轮不再说话"——这就是 agent 的"完成信号"，watcher 统一触发完成流程。无需 `tool-calls` 跳过逻辑（agent 自己会在工具返回后产生新的 assistant message 和新的 `finish`）。
+
+**为何不用 `/session/status`**：该端点返的是 `Map<SessionID, SessionStatus>`，`SessionStatus.set(sessionID, { type: "idle" })` 会从 map 删掉该 session（见 `packages/opencode/src/session/status.ts:67` 与 `run-state.ts:58`）。已完成 session 在该 map 中**不存在**，跟"未启动"无法区分。
+
+**为何不用 `/session/{id}` 的 `time.archived`**：opencode 不自动归档 session，`time.archived` 永远为 `null`（需人工 `POST /session/{id}/archive`）。
+
+**为何 watcher 唯一通路、无并发锁**：完成检测是单源（finish watcher 单 goroutine 串行处理），不再有"agent 主动调端点 vs 调度器被动探测"两条通路并存。`cardLocks` 已删除（详见 §6.5）。
+
+### 7.4 finish 检测 → 验证 → done
+
+1. finish watcher 检测到 `info.finish` 字段存在。
+2. 写 `✅ Completed session <id>` comment。
 3. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证。
-4. 运行 build、lint、unittest。
-5. 通过则移动到 done。
-6. 失败则给同 session 发送修复 prompt；超过上限则回 todo。
+4. 运行 build、lint、unittest（三件套）。
+5. **通过**：移动卡片到 done。
+6. **失败且未超重试上限**：向同 session 发修复 prompt，卡片留在 doing；
+   watcher 在新轮 `info.finish` 出现后再次触发验证，循环 N 次。
+7. **失败且超限**：移动回 todo，写失败 comment，保留 worktree。
+8. 若 `info.finish ∈ {length, error}`：除上述流程外，加 `needs-attention` label + 写错误 comment，提示人类 attach session 调查。
 
 ### 7.5 done → archived
 
@@ -563,6 +607,15 @@ Todo：<todo_state>
 - 合并队列串行执行，避免多个卡同时修改 main。
 - worktree 路径由 cardId 规范化生成，禁止路径穿越字符。
 - `human-task` 由人类处理；调度器除完成态处理外忽略它，避免 AI 越权介入人工任务。
+- **Card-driven 配置走 allowlist + fail-fast**：card 可在 label 声明 `proj:X`（路径） / `model:X`（model），但调度器严格按以下规则：
+  - 无 label：binding 默认（`repo.main_path` / `opencode.model`）
+  - 单 label 命中 allowlist：用该值
+  - 单 label 不在 allowlist：**FAIL**（不静默回退）
+  - 同类型多 label（多 `proj:*` 或多 `model:*`）：**FAIL**
+  - FAIL 动作：写 comment 到卡说明（具体 label 值 + 冲突原因）+ 加 `needs-attention` label + **不启动 session**。卡留在 doing 等人修。
+- 调度器**绝不**从 card description / comment 文本里读路径或 model——只有 `labels[]` 字段是配置源。
+- 路径 / model 字符串启动时验证：路径必须 `filepath.Abs` 通过且 `os.Stat` 存在；model 必须是 `<providerID>/<modelID>` 形式（`/` 分隔，无路径分隔符）。
+- 即使 allowlist 命中，路径再过 `filepath.Clean` + `..` 检测——防 allowlist 配置被改坏。
 
 ## 10. 测试设计要点
 
@@ -570,7 +623,7 @@ Todo：<todo_state>
 
 - 状态机合法/非法转移。
 - label 行为：`human-task`、`no-worktree`、`needs-attention`、`needs-integration-test`。
-- `card_done` 成功、失败重试、超限回 todo。
+- finish 检测触发完成、verify 失败重试、超限回 todo；error/length finish 加 needs-attention。
 - worktree 创建/复用/rebase/清理命令编排。
 - `.trello-verify` 读取、钩子失败 fallback、三件套失败摘要。
 - merge queue 串行、冲突 human-task 创建内容。
@@ -618,24 +671,24 @@ smoke test 覆盖：
 
 | 需求验收 | 设计位置 |
 |---|---|
-| 1 | 5.2、6.1、6.4、6.5 |
-| 2 | 4.2、5.4、6.2、6.6 |
-| 3 | 5.3、5.6、6.1 |
-| 4 | 5.5、6.4 |
-| 5 | 4.2、5.4、5.5 |
-| 6 | 5.8、6.5 |
-| 7 | 5.6、6.1、5.8 |
-| 8 | 6.3 |
-| 9 | 5.1、7 |
-| 10 | 5.9 |
-| 11 | 6.6 |
-| 12 | 5.2、6.5 |
-| 13 | 2、5.3 |
-| 14 | 5.5 |
-| 15 | 5.7 |
-| 16 | 4.3、5.6 |
-| 17 | 5.8 |
-| 18 | 5.6 |
-| 19 | 6.5 |
-| 20 | 5.7、6.1 |
-| 21 | 5.8、6.5 |
+| 1 | 5.2、6.1、6.4、6.5、7.1、7.4 |
+| 2 | 5.2、6.2、6.6、7.2 |
+| 3 | 5.3、6.1、6.6 |
+| 4 | 6.5、6.7、7.4 |
+| 5 | 5.2、6.4、7.1 |
+| 6 | 5.4、6.5、6.8 |
+| 7 | 5.4、6.1、6.8 |
+| 8 | 6.5、7.3 |
+| 9 | 5.1、5.6、8 |
+| 10 | 5.9、6.9 |
+| 11 | 6.6、7.6 |
+| 12 | 5.2、6.2 |
+| 13 | 2、6.3 |
+| 14 | 1、6.5 |
+| 15 | 6.7 |
+| 16 | 5.3、6.6 |
+| 17 | 5.4、6.8 |
+| 18 | 5.3、6.6 |
+| 19 | 6.2、7.5 |
+| 20 | 6.6、6.7 |
+| 21 | 5.4、6.8 |

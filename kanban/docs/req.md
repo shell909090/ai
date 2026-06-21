@@ -152,20 +152,36 @@ agent 在 session 中：
 
 ### 5.4 Session 结束 / 暂停
 
-#### 5.4.1 正常完成（card_done + 验证）
+#### 5.4.1 正常完成（session finish + 验证）
 
-**核心约定**：agent 通过调 trello MCP 的 `card_done` tool 声明"我干完了，请验证"。session 不会因此结束——整个卡片生命周期复用同一个 session。
+**核心约定**：完成检测完全由调度器主动探测实现——**agent 不主动调用任何端点声明结束**，无 done URL、无 token、无提示词注入。
 
-- agent 在 worktree 中完成代码改动。
-- agent 调 `card_done` tool（trello MCP 暴露）。
-- agent 写完成 comment：`✅ Completed`，含最终 todo 状态与完成摘要。
-- session 进入 idle（但 session 本身持续存在）。
-- 调度器跑三件套（build + lint + unittest）：
-  - **通过**：调度器保持卡片在 done 状态，等人类验证。
-  - **失败**：调度器对**同一个 session** 发修复 prompt：`三件套失败，错误如下：<log>。请修复并重试。`
-    - agent 看到自己之前的代码 + 失败原因
-    - agent 继续工作，可能再次调 `card_done`，循环验证
-    - 超过重试上限 → 调度器拖回 todo，写 comment
+**原理**：opencode 暴露 `GET /session/{id}/message?limit=1`，返回该 session 最后一条 message；其 `info.finish` 字段语义为"模型本轮是否已结束说话"。**字段存在即 session 已进入静态**，调度器即可触发完成流程。模型 emit `finish` 本身就是 agent 的"完成信号"——无需再让 agent 多调一次 HTTP，也无需 MCP 桥接 / webfetch。
+
+**`finish` 字段含义**（来自 opencode 源码）：
+
+| 值 | 含义 |
+|---|---|
+| 字段缺失 | 模型仍在流式生成（watcher 跳过） |
+| `stop` | 模型本轮正常结束 |
+| `tool-calls` | 模型调用工具后等返回（本轮结束） |
+| `length` | 上下文长度上限 |
+| `error` | 模型本轮出错 |
+
+**为何不依赖 agent 主动信号**：模型在 `info.finish` 处的 emit 本身就是 agent 的"完成信号"。让 agent 主动调 webfetch / HTTP endpoint 是重复劳动——也带来 token 校验、一次性消费、并发锁、post-done cool-down 等一整套复杂度，去掉之后机制更干净。
+
+**流程**：
+- 调度器后台 finish watcher 每 10s 拉一次 `?limit=1` 探测每个 doing 卡片的 session。
+- 检测到 `info.finish` 字段存在：
+  1. 写 `✅ Completed session <id>` comment。
+  2. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证。
+  3. 调度器跑三件套（build + lint + unittest）：
+     - **通过**：卡片移到 done。
+     - **失败**：调度器对**同一个 session** 发修复 prompt：`三件套失败，错误如下：<log>。请修复并重试。`
+       - agent 看到自己之前的代码 + 失败原因
+       - agent 继续工作，新一轮 `info.finish` 触发 watcher 再次验证
+       - 超过重试上限 → 调度器拖回 todo，写 comment
+- 若 `info.finish ∈ {error, length}`：除上述流程外，额外加 `needs-attention` label + 写错误 comment（`❌ Error in session <id>`），提示人类 attach session 调查。
 - **session 持续存在**直到：
   - 卡片 archived（合并成功后清理）
   - 卡片永久回 todo
@@ -188,40 +204,39 @@ agent 在 session 中：
 - worktree 保留。
 - session 终止。
 
-**B. session idle 但未调 card_done**（agent 问问题、卡住、放弃、思考中等）：
+**B. session 在异常 finish 上结束**（`info.finish = error` 或 `length`）：
 
-- 调度器加 `needs-attention` label（见 5.5）。
-- 写 comment：`⚠️ Session <id> idle, no completion signal. 用 opencode attach 查看。`
-- 卡片保持在 doing 状态。
-- session 不结束。
-- 等人类干预。
+- 调度器 finish watcher 检测到异常 finish（详见 5.4.1）。
+- 写 `✅ Completed session <id>` comment + 异常 finish 错误 comment。
+- 加 `needs-attention` label（详见 5.5）。
+- 跑三件套 + 走完成流程（同 5.4.1）。
+- 等人类 attach session 调查。
 
 ---
 
 ### 5.5 needs-attention 机制
 
-session idle 但未调 `card_done` 时，调度器标记 `needs-attention`。
+session 在 `info.finish = error` 或 `length` 等异常 finish 上结束，调度器标记 `needs-attention`（"agent 异常退出 / 上下文耗尽，需人类调查"）。
 
 **标记方式**：
 - **Label**：`needs-attention`
-- **Comment**：`⚠️ Session <id> idle, no completion. 用 opencode attach http://localhost:4096 --session <id> 查看。`
+- **Comment**：`❌ Error in session <id>`（异常 finish 的原因 + attach 命令）
 
 **人类处理路径**：
 
-- **接 session 推 agent 继续**：agent 可能调 `card_done` → 走正常验证流程
+- **接 session 看上下文**：用 `opencode attach http://localhost:4096 --session <id>` 查看 session，决策是否继续
 - **人类决定 abort**：手动把卡片拖回 todo
 - **人类决定改描述重做**：拖回 todo，编辑描述
 
 **label 自动清除时机**：
 
-- 检测到 `card_done` 被调用（人类 push 之后）
 - 卡片离开 doing 列（archived 或回 todo）
 - session 被终止
 
 **核心原则**：
 
-- AI 表现千变万化，调度器不枚举所有异常情况
-- 简单的"idle + 无 card_done = 标记"足够
+- `info.finish ∈ {error, length}` 视为"agent 异常退出"信号，统一打 `needs-attention`
+- 简单、单源触发（一个字段值），不依赖 agent 主动行为
 - 人类 attach session 后可看到完整上下文，自己判断怎么处理
 - kanban 不是 AI 与人类对话的唯一渠道
 
@@ -297,11 +312,11 @@ hooks:
 
 | 触发点 | 验证者 | 失败后果 |
 |---|---|---|
-| agent 调 `card_done` 后 | **调度器** | 对同 session 发修复 prompt |
-| 修复 prompt 后 agent 再次调 `card_done` | 调度器 | 同上，循环 N 次 |
+| finish watcher 检测到 `info.finish` 字段存在 | **调度器** | 对同 session 发修复 prompt |
+| 修复 prompt 后 watcher 再次检测到新 finish | 调度器 | 同上，循环 N 次 |
 | 超过重试上限 | 调度器 | 拖回 todo，写 comment |
 
-**核心原则**：验证由调度器主导，不依赖 agent 自报。`card_done` 是触发信号，三件套是质量门。
+**核心原则**：验证由调度器主导，不依赖 agent 自报。`info.finish` 是触发信号，三件套是质量门。
 
 ### 6.5 合并队列
 
@@ -439,7 +454,7 @@ done 列的卡片若带 `needs-integration-test` label：
 | `human-task` | 调度器 | 不建 session，不创建 worktree |
 | `no-worktree` | 调度器 | 跳过 worktree 创建/合并/清理 |
 | `needs-integration-test` | 人类 | archived 前必须跑集成测试 |
-| `needs-attention` | 调度器 | session idle 无 card_done，需人类干预 |
+| `needs-attention` | 调度器 | session 异常 finish（`error` / `length`），需人类 attach session 调查 |
 
 ---
 
@@ -447,7 +462,7 @@ done 列的卡片若带 `needs-integration-test` label：
 
 ### 7.1 调度器验证通过 → done
 
-- agent 调 `card_done` tool 声明完成。
+- finish watcher 检测到 session 最后一条 message 的 `info.finish` 字段存在（见 5.4.1）。
 - 调度器跑三件套（见 6.4.3）。
 - **验证通过**：调度器将卡片移到 done。
 - **验证失败**：调度器对同 session 发修复 prompt，agent 继续（不进入 done）。
@@ -477,7 +492,7 @@ done 列的卡片若带 `needs-integration-test` label：
 **Dev server**
 
 - 项目自管：agent 启动 dev server，自己知道端口
-- agent 调 `card_done` 时或之前，通过 trello MCP 的 comment 工具报告 URL：`🌐 Dev URL: http://localhost:<port>`
+- agent 通过 trello MCP 的 comment 工具报告 URL：`🌐 Dev URL: http://localhost:<port>`（与完成信号独立——完成由调度器检测 `info.finish` 字段，Dev URL 是 agent 自报的运行入口）
 - 调度器**不**做端口分配
 - 多 worktree 并行时端口冲突由项目自己处理
 
@@ -635,7 +650,7 @@ agent 再次进入该卡片时，从评论中读取这些要求，并在现有 w
 以下情况视为失败：
 
 - **session 异常**：LLM API 错误、网络问题、agent 主动 abort
-- **session 异常超时**：超过阈值未调 `card_done`（30 分钟 idle，建议值）
+- **session 异常 finish**：`info.finish = error` 或 `length`（上下文耗尽）
 - **三件套反复失败**：超过重试上限（3 次，建议值）后 agent 仍修不好
 - **needs-attention 长期无人工**：label 加上后长时间无人干预
 
@@ -656,7 +671,7 @@ agent 再次进入该卡片时，从评论中读取这些要求，并在现有 w
 |---|---|
 | **人类** | 创建初始方向；触发苏格拉底对话；批准 / 修改 / 抛弃 icebox 卡片；将卡片从 todo 拖到 doing；从 done 验证后归档或拖回 doing；处理 human-task 卡；处理 needs-attention；attach session 调查；处理合并冲突 |
 | **AI agent (苏格拉底阶段)** | 在普通会话中与人类对话；拆解任务；调用 trello 工具创建 icebox 卡片 |
-| **AI agent (执行阶段)** | 在 doing 卡片对应的 session 中执行任务；调 `card_done` 声明完成；调其他工具改卡片 |
+| **AI agent (执行阶段)** | 在 doing 卡片对应的 session 中执行任务；调其他工具改卡片；agent **不**主动声明完成——由调度器通过 `info.finish` 字段被动检测 |
 | **调度器** | 监听 Trello；建/终止 session；管理 worktree；写生命周期 comment；跑三件套；处理并发与失败；处理合并；标记 needs-attention |
 
 ### 11.1 不可越权
@@ -664,7 +679,7 @@ agent 再次进入该卡片时，从评论中读取这些要求，并在现有 w
 - AI 不可将卡片从 doing 移到 archived（只有人类可）
 - AI 不可将卡片从 done 移走（只有人类可）
 - 调度器不可将卡片从 done 移走
-- AI **不**自行移卡片到 done：调 `card_done` 工具**只是信号**，由调度器验证通过后移卡片
+- AI **不**自行移卡片到 done；完成由调度器通过 `info.finish` 字段检测后由调度器验证通过再移卡片
 - human-task 卡不可触发 AI session
 
 ---
@@ -676,17 +691,17 @@ agent 再次进入该卡片时，从评论中读取这些要求，并在现有 w
 1. 人类可在 Trello 上完成 icebox → todo → doing → done → archived 完整流转。
 2. 卡片 todo→doing→todo（暂停）→doing（恢复）循环中，agent 能从评论历史重建上下文。
 3. 多个 doing 卡片可并行执行，并发数量受控，每个有 worktree 的卡有独立 worktree。
-4. **agent 调 `card_done` 后，调度器主导跑三件套；通过则移 done；失败则发修复 prompt 给同 session**。
-5. session 持续存在，可多轮调 `card_done` 触发验证。
+4. **finish watcher 检测到 session `info.finish` 字段存在后，调度器主导跑三件套；通过则移 done；失败则发修复 prompt 给同 session**。
+5. session 持续存在，可多轮 `info.finish` 触发验证循环。
 6. archived 后 worktree 自动合并到 main，合并冲突时 AI 尝试 merge，失败则创建 `human-task` 卡。
 7. `human-task` 卡由人类在主仓库直接处理，调度器不建 AI session、不创建 worktree。
-8. session idle 但未调 `card_done` → 加 `needs-attention` label + comment，人类 attach session 调查。
+8. session 异常 finish（`error` / `length`）→ 加 `needs-attention` label + comment，人类 attach session 调查。
 9. 评论同时承载 AI 事件日志与人类补充信息，agent 后续 session 能同时读到。
 10. 苏格拉底过程以 markdown 附件形式归档（仅创建时一次），卡片描述不含过程噪音。
 11. 人类可从 done 拖回 doing，agent 再次进入时能读到反馈意见。
 12. AI 不可直接归档卡片；归档必须由人类操作。
 13. 调度器为独立进程，不依赖 opencode 自身实现 Trello 事件循环。
-14. opencode 与 Trello 的桥接通过 MCP（不通过插件重载内置机制）。
+14. agent **不**主动声明完成；调度器通过 `info.finish` 字段被动检测 session 结束，无需 MCP 桥接 / webfetch / done URL / token / 提示词注入。
 15. 项目要求配置 linter 和 unittest 验证命令；未定义的项目合并后果自负。
 16. worktree 与卡片 1:1 绑定，跨 session 复用；archived 合并成功后 worktree 立即删除，分支保留 4 周。
 17. 合并队列串行执行，当前卡失败时创建 `human-task` 卡插入队列头部。
@@ -703,7 +718,7 @@ agent 再次进入该卡片时，从评论中读取这些要求，并在现有 w
 
 1. **并发上限的具体数值**（建议初始为 3，可配置）
 2. **三件套失败重试上限**（建议初始为 3）
-3. **session 异常超时的具体阈值**（建议 30 分钟 idle）
+3. **finish watcher 轮询间隔**（建议 10s，可配置）
 4. **附件 markdown 命名规范**（建议：`<card-id>-<stage>.md`）
 5. **worktree 分支保留时长**（建议 4 周后清理）
 6. **`worktree_init` 钩子超时**（建议 10 分钟）
