@@ -158,6 +158,9 @@ func (s *Server) pollOnce(ctx context.Context) {
 // the card from in-memory state, and moves the card to icebox — the
 // icebox is the "needs re-review" zone, distinct from todo so the
 // auto-promotion feature does not pick it back up.
+//
+// If the card was waiting for the post-completion summary, the
+// summary is abandoned and an audit log line is emitted.
 func (s *Server) handleDragOut(ctx context.Context, cardID string) {
 	s.mu.Lock()
 	info, ok := s.cardSessions[cardID]
@@ -166,11 +169,16 @@ func (s *Server) handleDragOut(ctx context.Context, cardID string) {
 		return
 	}
 	sessionID := info.sessionID
+	wasSummarizing := info.status == statusSummarizing
 	delete(s.cardSessions, cardID)
 	if sessionID != "" {
 		delete(s.sessionCards, sessionID)
 	}
 	s.mu.Unlock()
+
+	if wasSummarizing {
+		s.log("finish.summary.aborted", fmt.Sprintf("card=%s session=%s reason=drag-out", cardID, sessionID))
+	}
 
 	if sessionID != "" {
 		if err := s.ocAbortSession(ctx, sessionID); err != nil {

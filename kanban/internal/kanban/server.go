@@ -20,12 +20,24 @@ type sessionInfo struct {
 	project   string
 	status    string
 	startedAt time.Time
+	// summaryStartedAt is set when the scheduler sends the
+	// post-completion summary prompt. Used to enforce the timeout in
+	// §7.7 of design.md.
+	summaryStartedAt time.Time
+	// lastFinish remembers the finish value of the first final
+	// assistant message so MarkCardFinished can decide whether to
+	// escalate to needs-attention based on the work's actual
+	// outcome, not on the summary response's outcome. The summary
+	// round's abnormal finish (error / length) is informational
+	// only — the work is already done at that point.
+	lastFinish string
 }
 
 // Status values for sessionInfo.status.
 const (
-	statusStarted   = "started"
-	statusCompleted = "completed"
+	statusStarted     = "started"
+	statusSummarizing = "summarizing"
+	statusCompleted   = "completed"
 )
 
 // Trello HTTP API shapes we consume.

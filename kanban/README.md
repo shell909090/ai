@@ -18,9 +18,18 @@ Currently shipped:
 
 - `kanband` — long-running scheduler (CLI wrapper around `internal/kanban`).
 - `internal/kanban` — library: Trello + opencode clients, finish watcher,
-  state machine, config loading.
+  state machine, post-completion summary on `info.finish=stop`, config
+  loading.
 - `scripts/connectivity-test.py` — Python smoke test for Trello and opencode
   HTTP API reachability.
+
+When a card's opencode session finishes with `stop` (the only value that
+means "the model is really done"), the scheduler asks the same session
+for a 140-character summary and posts it as a `📝 Summary: <text>` comment
+on the card before moving it to `done`. Any other finish value
+(`length` / `tool-calls` / `content-filter` / `error` / `unknown`) skips
+the summary round, posts a `❌ Error in session <id>` comment, adds the
+`needs-attention` label, and moves the card to `done` for human review.
 
 ## Requirements
 
@@ -79,7 +88,8 @@ cmd/kanband/            # thin CLI wrapper (~80 lines)
 internal/kanban/        # business logic library
   config.go             # Config, LoadConfig, .env parsing
   api.go                # Trello + opencode HTTP client methods
-  finish.go             # extractFinish, isAbnormalFinish, FinishWatcher
+  finish.go             # extractFinish, isAbnormalFinish, ExtractSummaryText,
+                       # FinishWatcher, requestSummary
   poll.go               # pollOnce, processCard
   log.go                # log + writeJSON + SetLogWriter
   *_test.go             # unit tests (httptest fakes for Trello + opencode)

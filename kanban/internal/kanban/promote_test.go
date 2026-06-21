@@ -90,6 +90,36 @@ func TestHandleDragOut(t *testing.T) {
 	}
 }
 
+func TestHandleDragOutAbandonsSummary(t *testing.T) {
+	trello := newFakeTrello()
+	trURL := httptest.NewServer(trello.handler())
+	defer trURL.Close()
+	oc := &fakeOpencode{}
+	ocURL := httptest.NewServer(oc.handler())
+	defer ocURL.Close()
+
+	s, _ := newTestServerWithFake(t, trURL.URL, ocURL.URL)
+	s.cardSessions["c1"] = &sessionInfo{
+		cardID: "c1", sessionID: "ses1", project: "agent",
+		status: statusSummarizing, summaryStartedAt: time.Now(),
+	}
+	s.sessionCards["ses1"] = "c1"
+
+	log := &drainLog{}
+	withLogWriter(t, log)
+	s.handleDragOut(context.Background(), "c1")
+
+	if _, ok := s.cardSessions["c1"]; ok {
+		t.Error("c1 should be removed from cardSessions")
+	}
+	if !strings.Contains(log.String(), "finish.summary.aborted") {
+		t.Errorf("expected finish.summary.aborted log, got %s", log.String())
+	}
+	if !strings.Contains(log.String(), "reason=drag-out") {
+		t.Errorf("expected reason=drag-out in log, got %s", log.String())
+	}
+}
+
 func TestHandleDragOutAbortFailure(t *testing.T) {
 	trello := newFakeTrello()
 	trURL := httptest.NewServer(trello.handler())

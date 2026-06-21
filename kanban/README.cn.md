@@ -16,9 +16,15 @@ AI agent 在隔离的 git worktree 中执行任务，跑过三件套验证后，
 
 - `kanband` —— 长跑调度器（`internal/kanban` 库的 thin CLI 包装）
 - `internal/kanban` —— 业务逻辑库：Trello + opencode 客户端、finish watcher、
-  状态机、配置加载
+  状态机、`info.finish=stop` 后的 140 字总结、配置加载
 - `scripts/connectivity-test.py` —— Python smoke test，验证 Trello / opencode
   HTTP API 可达性
+
+卡片 opencode session 收到 `stop`（唯一表示"模型真干完了"的值）时，
+调度器会向同 session 发 140 字总结 prompt，把返回文本以 `📝 Summary: <text>`
+comment 写到卡片，再移到 `done`。其他 5 个 finish 值（`length` / `tool-calls`
+/ `content-filter` / `error` / `unknown`）跳过总结、发 `❌ Error in session <id>`
+comment、加 `needs-attention` label，移到 `done` 等人介入。
 
 ## 依赖
 
@@ -75,7 +81,8 @@ cmd/kanband/            # thin CLI 包装（~80 行）
 internal/kanban/        # 业务逻辑库
   config.go             # Config、LoadConfig、.env 解析
   api.go                # Trello + opencode HTTP 客户端方法
-  finish.go             # extractFinish、isAbnormalFinish、FinishWatcher
+  finish.go             # extractFinish、isAbnormalFinish、ExtractSummaryText、
+                       # FinishWatcher、requestSummary
   poll.go               # pollOnce、processCard
   log.go                # log + writeJSON + SetLogWriter
   *_test.go             # 单测（用 httptest 替 Trello + opencode）

@@ -371,19 +371,27 @@ SessionStatus {
 
 **原理**：opencode 暴露 `GET /session/{id}/message?limit=1`，返回该 session 最后一条 message；其 `info.finish` 字段语义为"模型本轮是否已结束说话"。**字段存在即 session 已进入静态**，调度器即可触发完成流程。模型 emit `finish` 本身就是 agent 的"完成信号"——不再需要让 agent 多调一次 HTTP。
 
-**`finish` 字段含义**（来自 opencode 源码 `packages/opencode/src/session/message-v2.ts`）：
+**`finish` 字段含义**（完整枚举来自 opencode 源码 `packages/llm/src/schema/ids.ts:36` 与 `packages/opencode/src/session/llm/ai-sdk.ts:21`）：
+
+```ts
+FinishReason = ["stop", "length", "tool-calls", "content-filter", "error", "unknown"]
+```
+
+`ai-sdk.ts:21` 的 `finishReason` helper 把任何不在上述枚举里的值规范化为 `"unknown"`，所以 `info.finish` 永远是这 6 个值之一。
 
 | 值 | 含义 | scheduler 动作 |
 |---|---|---|
 | 字段缺失 | 模型仍在流式生成，或只有 user prompt 没有 assistant 回复 | 跳过，等下一轮 |
-| `stop` | 模型本轮正常结束 | 触发完成流程 |
-| `tool-calls` | 模型本轮调用了工具，等工具返回后下一轮再继续 | 触发完成流程（本轮结束） |
-| `length` | 模型达到上下文长度上限 | 触发完成流程 + 标 `needs-attention` |
-| `error` | 模型本轮出错 | 触发完成流程 + 标 `needs-attention` |
+| `stop` | 模型本轮正常结束 | **正常完成**：先发总结 prompt（§7.7），等总结回来再走完成流程 |
+| `tool-calls` | 模型本轮调用了工具，等工具返回后下一轮再继续 | **异常完成**：跳过后续总结，直接 done + 标 `needs-attention` |
+| `length` | 模型达到上下文长度上限 | **异常完成**：跳过后续总结，直接 done + 标 `needs-attention` |
+| `content-filter` | provider 内容过滤拒绝输出 | **异常完成**：跳过后续总结，直接 done + 标 `needs-attention` |
+| `error` | 模型本轮出错 | **异常完成**：跳过后续总结，直接 done + 标 `needs-attention` |
+| `unknown` | 未识别的 finish 值（`ai-sdk.ts:22` 规范化的兜底） | **异常完成**：跳过后续总结，直接 done + 标 `needs-attention` |
 
-watcher 只关心"字段是否存在"——任何值都意味着模型本轮不再说话，统一触发完成流程。`length` / `error` 视为异常 finish，额外标 `needs-attention` 提示人工调查。
+**关键决策**：只有 `stop` 是"模型真的干完了"信号。其他 5 个值都意味着"这一轮不正常"——`tool-calls` / `unknown` 明确表示模型还会继续（opencode 在 `packages/opencode/src/session/prompt.ts:1341` 自己也把这两个值判定为"未完成"），`length` / `content-filter` / `error` 则是异常结束。向还在跑的模型（`tool-calls`）发总结 prompt 是无意义操作，对其他异常值发总结也是浪费 token 且不会得到有用信息。所以异常 finish 全部跳过后续总结，直接 done + needs-attention，让人介入调查。
 
-**完成流程**（任一 finish 值通用）：
+**完成流程**（`stop` 走 7.7 总结 + 7.4 主体；其他 5 个值只走 7.4 主体且加 needs-attention）：
 
 1. 写 `✅ Completed session <id>` comment
 2. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证
@@ -549,14 +557,16 @@ finish watcher 每 `-idle` 间隔（默认 10s）轮询所有已注册 session�
 ### 7.4 finish 检测 → 验证 → done
 
 1. finish watcher 检测到 `info.finish` 字段存在。
-2. 写 `✅ Completed session <id>` comment。
-3. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证。
-4. 运行 build、lint、unittest（三件套）。
-5. **通过**：移动卡片到 done。
-6. **失败且未超重试上限**：向同 session 发修复 prompt，卡片留在 doing；
+2. **finish == "stop"**（模型本轮正常结束）：走 §7.7 完成后总结流程。
+3. **finish ∈ {tool-calls, length, content-filter, error, unknown}**（异常 finish，详见 §6.5）：跳过后续总结，直接走 7.4 主体流程 + 标 `needs-attention`。
+4. 写 `✅ Completed session <id>` comment。
+5. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证。
+6. 运行 build、lint、unittest（三件套）。
+7. **通过**：移动卡片到 done。
+8. **失败且未超重试上限**：向同 session 发修复 prompt，卡片留在 doing；
    watcher 在新轮 `info.finish` 出现后再次触发验证，循环 N 次。
-7. **失败且超限**：移动回 todo，写失败 comment，保留 worktree。
-8. 若 `info.finish ∈ {length, error}`：除上述流程外，加 `needs-attention` label + 写错误 comment，提示人类 attach session 调查。
+9. **失败且超限**：移动回 todo，写失败 comment，保留 worktree。
+10. 若 `info.finish ≠ "stop"`：除上述流程外，加 `needs-attention` label + 写错误 comment，提示人类 attach session 调查。
 
 ### 7.5 done → archived
 
@@ -572,6 +582,75 @@ finish watcher 每 `-idle` 间隔（默认 10s）轮询所有已注册 session�
 2. 调度器检测 done→doing 后复用现有 worktree/session。
 3. 新 session/继续 session 读取全部评论和历史，按反馈继续。
 
+### 7.7 完成后总结（summary on stop）
+
+本轮 `info.finish = "stop"` 出现后、卡片移 done 之前，调度器向**同一个 session** 发一个固定中文 prompt，要求模型用 140 字以内简要描述本次工作。等下一轮 `info.finish` 出现后，从最后一条 message 的 text part 提取文本，作为一条独立 comment 写入 Trello，再走原完成流程。
+
+**作用域**：仅当首个 finish 是 `"stop"` 时触发。任何其他 finish 值（`tool-calls` / `length` / `content-filter` / `error` / `unknown`，详见 §6.5）都直接走 7.4 主体流程并加 `needs-attention`，**不**发总结 prompt——异常 finish 下模型要么还在跑（`tool-calls`），要么本轮已经不正常（`length` / `content-filter` / `error` / `unknown`），向其发总结 prompt 没有意义。
+
+需求来源 `req.md §5.4.4`。
+
+**目的**：人类做 done 验证时，能在 Trello 上一眼看到 agent 自述的工作内容，不必 attach 到 opencode。
+
+**接口**：
+
+```text
+request_summary(card_id, session_id) -> error
+extract_summary_text(last_message, char_limit) -> string
+mark_card_finished(card_id, session_id, finish, summary) -> void
+```
+
+`sessionInfo.status` 增加 `statusSummarizing`，与现有 `statusStarted` / `statusCompleted` 并列。`statusSummarizing` 表示"已发总结 prompt，等下一轮 finish"。
+
+**完整流程**：
+
+1. finish watcher 检测到 `info.finish = "stop"`（其他 5 个异常值都不进总结流程，详见 §6.5）。
+2. 调度器调 `ocSendPromptAsync` 发中文 prompt：
+   ```
+   请用 140 个字以内简短总结本次工作。仅输出总结本身，不要任何前缀、解释或 Markdown 标记。
+   ```
+3. 发送成功：把 `sessionInfo.status` 切到 `statusSummarizing`，记录 `summary_started_at = time.Now()` 与 `last_finish = "stop"`。
+4. watcher 在后续轮询命中 `statusSummarizing` + 新 `info.finish`：
+   a. 拉 session 最后一条 message
+   b. 调 `extract_summary_text` 拿到 summary 字符串
+   c. 调 `mark_card_finished(cardID, sessionID, last_finish, summary)` 走原完成流程
+5. watcher 不会再次触发"发总结 prompt"——`statusSummarizing` 视为"等待总结"的稳定状态。
+
+**`extract_summary_text` 纯函数**：
+
+- 输入 `last map[string]any`（来自 `/session/{id}/message?limit=1` 的最后一条 message），`charLimit int`（`<= 0` 视为 140）。
+- 遍历 `last["parts"]`：仅取 `type == "text"` 的 part 的 `text` 字段，按出现顺序拼接。
+- `strings.TrimSpace` 后取前 `charLimit` 个 rune；超出末尾追加 `…`。
+- 空字符串返回 `（本次会话未产生可读总结）`。
+- 单独 export（`ExtractSummaryText`），便于单测与将来挪到独立文件。
+
+**失败与边界**：
+
+| 情形 | 调度器动作 |
+|---|---|
+| 首个 finish 是 `stop` 之外的任何值 | 跳过整个 §7.7 流程；走 7.4 主体 + needs-attention（详见 §6.5） |
+| `request_summary` 失败（网络 / opencode 4xx/5xx） | log `finish.summary.skip reason=send-fail`；按原 7.4 流程直接 done，**不**写 Summary comment |
+| 总结 prompt 收到 `info.finish ∈ {error, length, content-filter, unknown}` | summary 取 `（总结生成失败: finish=<value>）` 写 comment；走原 7.4 流程 done，**不**额外加 `needs-attention`（首个 finish 是 `stop`，任务本身已完成） |
+| 总结 prompt 收到 `info.finish = tool-calls` | 视为异常（模型对总结 prompt 也调了工具），按上一行处理 |
+| 等待期间 drag-out | `handle_drag_out` 沿用原 abort + icebox 路径；增 log `finish.summary.aborted reason=drag-out` |
+| 等待超时（`summary_started_at` 后 ≥ 1 分钟） | log `finish.summary.timeout`；按原 7.4 流程直接 done |
+| `extract_summary_text` 拿到空 | comment 写 `📝 Summary: （本次会话未产生可读总结）` |
+
+**comment 格式**：
+
+```text
+📝 Summary: <text>
+```
+
+`<text>` 为 `extract_summary_text` 返回的字符串（≤ 140 rune + 可选 `…`，或固定失败文案）。
+
+**与原 7.4 流程的衔接**：
+
+- `mark_card_finished` 签名扩展为 `(cardID, sessionID, finish, summary string)`。
+- `summary != ""` 时先写 `📝 Summary: <summary>` comment，再写 `✅ Completed session <id>` comment。
+- 幂等性保持：状态机仍按"status != statusStarted && status != statusSummarizing → no-op"判定；同一卡片不会被双写。
+- needs-attention 升级由首个 finish 值决定（`last_finish` 字段），与总结 prompt 的 finish 解耦。首个 finish 若是 `stop` 之外的任何值，调度器在第一次 `checkOneSession` 就直接走 `mark_card_finished` 并升级 needs-attention，不会进入 `statusSummarizing` 中间态。
+
 ## 8. 评论与事件格式
 
 调度器/AI 事件 comment 采用固定前缀：
@@ -580,6 +659,8 @@ finish watcher 每 `-idle` 间隔（默认 10s）轮询所有已注册 session�
 ▶️ Started session <session-id>
 目标：<summary>
 Workspace：<path-or-main>
+
+📝 Summary: <text>
 
 ✅ Completed session <session-id>
 摘要：<summary>

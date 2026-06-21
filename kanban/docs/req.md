@@ -158,21 +158,29 @@ agent 在 session 中：
 
 **原理**：opencode 暴露 `GET /session/{id}/message?limit=1`，返回该 session 最后一条 message；其 `info.finish` 字段语义为"模型本轮是否已结束说话"。**字段存在即 session 已进入静态**，调度器即可触发完成流程。模型 emit `finish` 本身就是 agent 的"完成信号"——无需再让 agent 多调一次 HTTP，也无需 MCP 桥接 / webfetch。
 
-**`finish` 字段含义**（来自 opencode 源码）：
+**`finish` 字段含义**（来自 opencode 源码 `packages/llm/src/schema/ids.ts:36` 与 `packages/opencode/src/session/llm/ai-sdk.ts:21`，完整枚举）：
 
-| 值 | 含义 |
-|---|---|
-| 字段缺失 | 模型仍在流式生成（watcher 跳过） |
-| `stop` | 模型本轮正常结束 |
-| `tool-calls` | 模型调用工具后等返回（本轮结束） |
-| `length` | 上下文长度上限 |
-| `error` | 模型本轮出错 |
+| 值 | 含义 | scheduler 处理 |
+|---|---|---|
+| 字段缺失 | 模型仍在流式生成 | watcher 跳过 |
+| `stop` | 模型本轮正常结束 | 触发完成流程 + 完成后总结（5.4.4） |
+| `tool-calls` | 模型调用工具后等返回 | **异常 finish**：跳过总结，直接完成 + 加 `needs-attention` |
+| `length` | 上下文长度上限 | **异常 finish**：跳过总结，直接完成 + 加 `needs-attention` |
+| `content-filter` | provider 内容过滤拒绝输出 | **异常 finish**：跳过总结，直接完成 + 加 `needs-attention` |
+| `error` | 模型本轮出错 | **异常 finish**：跳过总结，直接完成 + 加 `needs-attention` |
+| `unknown` | 未识别的 finish 值 | **异常 finish**：跳过总结，直接完成 + 加 `needs-attention` |
+
+`ai-sdk.ts:22` 的 `finishReason` helper 把任何不在上述枚举里的值规范化为 `"unknown"`，所以 `info.finish` 永远是这 6 个值之一。
+
+**关键决策**：只有 `stop` 是"模型真的干完了"信号。其他 5 个值都意味着"这一轮不正常"——`tool-calls` 明确表示模型还会继续，opencode 自己在 `packages/opencode/src/session/prompt.ts:1341` 也把 `tool-calls` 判定为"未完成"。向还在跑的模型发总结 prompt 是无意义操作，对其他异常值发总结也是浪费 token 且不会得到有用信息。所以异常 finish 全部跳过后续总结，直接完成 + needs-attention。
 
 **为何不依赖 agent 主动信号**：模型在 `info.finish` 处的 emit 本身就是 agent 的"完成信号"。让 agent 主动调 webfetch / HTTP endpoint 是重复劳动——也带来 token 校验、一次性消费、并发锁、post-done cool-down 等一整套复杂度，去掉之后机制更干净。
 
 **流程**：
 - 调度器后台 finish watcher 每 10s 拉一次 `?limit=1` 探测每个 doing 卡片的 session。
 - 检测到 `info.finish` 字段存在：
+  - **`stop`**：先走完成后总结（5.4.4），拿到 summary 后再走 1-4。
+  - **其他 5 个值**：跳过后续总结，直接走 1-4。
   1. 写 `✅ Completed session <id>` comment。
   2. 若需要 worktree，确认 main 是否变化；变化则 rebase 后再验证。
   3. 调度器跑三件套（build + lint + unittest）：
@@ -181,11 +189,47 @@ agent 在 session 中：
        - agent 看到自己之前的代码 + 失败原因
        - agent 继续工作，新一轮 `info.finish` 触发 watcher 再次验证
        - 超过重试上限 → 调度器拖回 todo，写 comment
-- 若 `info.finish ∈ {error, length}`：除上述流程外，额外加 `needs-attention` label + 写错误 comment（`❌ Error in session <id>`），提示人类 attach session 调查。
+  4. 若 `info.finish ≠ "stop"`：除上述流程外，额外加 `needs-attention` label + 写错误 comment（`❌ Error in session <id>`），提示人类 attach session 调查。
 - **session 持续存在**直到：
   - 卡片 archived（合并成功后清理）
   - 卡片永久回 todo
   - session 异常终止
+- **完成后总结（详见 5.4.4）**：仅当首个 finish 是 `stop` 时触发。其他 finish 值都不发总结。
+
+#### 5.4.4 完成后总结（summary on stop）
+
+session 本轮 `info.finish = "stop"`（模型正常结束）后、卡片移 done 之前，调度器向**同一个 session** 发一个总结 prompt，要求模型用 140 个字以内简要描述本次工作。调度器等模型下一轮 `info.finish` 出现后，从最后一条 message 的 text part 提取文本，作为一条独立 comment 写入 Trello。
+
+**作用域**：仅当首个 finish 是 `stop` 时触发。异常 finish（`tool-calls` / `length` / `content-filter` / `error` / `unknown`，详见 5.4.1）都跳过本节流程，直接完成 + 加 `needs-attention`，不发总结 prompt。
+
+目的：人类做 done 验证时，能在 Trello 上一眼看到 agent 自述的工作内容，不必 attach 到 opencode。
+
+**调整后的完成流程**：
+
+1. finish watcher 检测到 `info.finish` 存在。
+2. **不**立即写 `✅ Completed`；改为向同 session 发总结 prompt（固定中文）：
+   ```
+   请用 140 个字以内简短总结本次工作。仅输出总结本身，不要任何前缀、解释或 Markdown 标记。
+   ```
+3. 等下一轮 `info.finish`：
+   - 拉取 session 最后一条 message 的 `parts`
+   - 找到第一个 `type=text` 的 part；拼接所有 text part 的内容，`strings.TrimSpace` 后取前 140 个 rune
+   - 若被截断，末尾加 `…`；若结果为空，comment 文案为 `（本次会话未产生可读总结）`
+   - 写一条 `📝 Summary: <text>` comment
+4. 继续 5.4.1 原流程：`✅ Completed session <id>` comment、异常 finish 处理、移 done。
+
+**失败与边界**：
+
+- 总结 prompt 发送失败（`ocSendPromptAsync` 返回 error）：跳过总结步骤，按 5.4.1 原流程直接 done，log `finish.summary.skip reason=send-fail`。
+- 总结 prompt 的 `info.finish = error` 或 `length`：comment 写 `（总结生成失败: finish=<value>）`，仍走原流程 done，**不**额外打 `needs-attention`（已完成任务，失败提示仅作信息）。
+- 等待总结期间卡片被拖出 doing：drag-out 处理仍按原逻辑清掉 in-memory 状态并 abort session；总结 prompt 视为失效，log `finish.summary.aborted reason=drag-out`。
+- 等待超时：若总结 prompt 发出后超过 1 分钟（≥6 个 IdleInterval）仍未出现下一轮 `info.finish`，跳过总结、按 5.4.1 原流程直接 done，log `finish.summary.timeout`。
+
+**核心原则**：
+
+- 复用同一个 session 发总结 prompt，不开新 session（省 token、保上下文）。
+- 总结是软指标：发不出去 / 模型不答 / 模型答得不好，都不应阻塞卡片完成。
+- 140 字上限是面向人类阅读的硬性要求，模型写超 140 字会被截断（加 `…`），不重试。
 
 #### 5.4.2 暂停（卡片被拖回 todo）
 

@@ -158,11 +158,15 @@ func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
 
 // fakeOpencode is a minimal opencode stand-in. It serves /session and
 // /session/* from canned responses so we can test the scheduler
-// without a real opencode server.
+// without a real opencode server. The /session/{id}/message endpoint
+// pulls from messagesQueue first (FIFO) and falls back to message
+// when the queue is empty, so tests can drive multi-step flows like
+// "first finish → summary prompt → summary response".
 type fakeOpencode struct {
-	sessionID string
-	message   map[string]any
-	mu        sync.Mutex
+	sessionID     string
+	message       map[string]any
+	messagesQueue []map[string]any
+	mu            sync.Mutex
 }
 
 func (f *fakeOpencode) handler() http.Handler {
@@ -191,7 +195,13 @@ func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.mu.Lock()
-		last := f.message
+		var last map[string]any
+		if len(f.messagesQueue) > 0 {
+			last = f.messagesQueue[0]
+			f.messagesQueue = f.messagesQueue[1:]
+		} else {
+			last = f.message
+		}
 		f.mu.Unlock()
 		if last == nil {
 			_, _ = w.Write([]byte(`[]`))
