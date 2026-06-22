@@ -72,8 +72,10 @@ func TestEnvOr(t *testing.T) {
 func TestLoadConfigMissingEnv(t *testing.T) {
 	dir := t.TempDir()
 	prev, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(prev)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
 	_, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error when .env missing")
@@ -83,8 +85,10 @@ func TestLoadConfigMissingEnv(t *testing.T) {
 func TestLoadConfigWithYAML(t *testing.T) {
 	dir := t.TempDir()
 	prev, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(prev)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -99,61 +103,78 @@ func TestLoadConfigWithYAML(t *testing.T) {
 	}, "\n")), 0644))
 	must(os.WriteFile("config.yaml", []byte(`
 trello:
-  board_id: "B"
+  board_id: "B1"
   lists:
-    icebox: "L1"
-    todo: "L2"
-    doing: "L3"
-    done: "L4"
-    archived: "L5"
+    todo: "L1"
+    doing: "L2"
+    done: "L3"
   labels:
-    human_task: "human-task"
-    no_worktree: "no-worktree"
-    needs_attention: "needs-attention"
-    needs_integration_test: "needs-integration-test"
-    ai_task: "ai-task"
+    human: "human"
+    attention: "attention"
 opencode:
   base_url: "http://127.0.0.1:8567"
   default_model:
-    providerID: "opencode-go"
-    modelID: "minimax-m3"
+    providerID: "test-provider"
+    modelID: "test-model"
   allowed_models:
-    - label: "model:minimax-m3"
-      providerID: "opencode-go"
-      modelID: "minimax-m3"
-repo:
-  main_path: "/tmp"
-  main_branch: "main"
-  allowed_paths:
+    - label: "model:test"
+      providerID: "test-provider"
+      modelID: "test-model"
+projects:
+  default: "mydefault"
+  allowed:
     - label: "proj:agent"
-      path: "/tmp"
+      name: "agent"
+capacity:
+  total: 5
+  per_project: 2
+timer:
+  interval: 10s
+  abort_timeout: 120s
+  summary_timeout: 90s
 `), 0644))
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DefaultModel.ProviderID != "opencode-go" || cfg.DefaultModel.ModelID != "minimax-m3" {
+	if cfg.DefaultModel.ProviderID != "test-provider" || cfg.DefaultModel.ModelID != "test-model" {
 		t.Errorf("DefaultModel=%+v", cfg.DefaultModel)
 	}
-	if len(cfg.AllowedModels) != 1 || cfg.AllowedModels[0].Label != "model:minimax-m3" {
+	if len(cfg.AllowedModels) != 1 || cfg.AllowedModels[0].Label != "model:test" {
 		t.Errorf("AllowedModels=%+v", cfg.AllowedModels)
 	}
-	if cfg.TrelloLists["todo"] != "L2" {
+	if cfg.TrelloLists["todo"] != "L1" {
 		t.Errorf("TrelloLists[todo]=%q", cfg.TrelloLists["todo"])
 	}
-	if cfg.TrelloLists["archived"] != "L5" {
-		t.Errorf("TrelloLists[archived]=%q", cfg.TrelloLists["archived"])
+	if cfg.TrelloBoardID != "B1" {
+		t.Errorf("TrelloBoardID=%q, want B1", cfg.TrelloBoardID)
 	}
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("Validate: %v", err)
+	if cfg.DefaultProj != "mydefault" {
+		t.Errorf("DefaultProj=%q, want mydefault", cfg.DefaultProj)
+	}
+	if len(cfg.AllowedProjects) != 1 || cfg.AllowedProjects[0].Name != "agent" {
+		t.Errorf("AllowedProjects=%+v", cfg.AllowedProjects)
+	}
+	if cfg.MaxDoingTotal != 5 {
+		t.Errorf("MaxDoingTotal=%d, want 5", cfg.MaxDoingTotal)
+	}
+	if cfg.MaxDoingPerProject != 2 {
+		t.Errorf("MaxDoingPerProject=%d, want 2", cfg.MaxDoingPerProject)
+	}
+	if cfg.PollInterval != 10*time.Second {
+		t.Errorf("PollInterval=%v, want 10s", cfg.PollInterval)
+	}
+	if cfg.AbortTimeout != 120*time.Second {
+		t.Errorf("AbortTimeout=%v, want 120s", cfg.AbortTimeout)
+	}
+	if cfg.SummaryTimeout != 90*time.Second {
+		t.Errorf("SummaryTimeout=%v, want 90s", cfg.SummaryTimeout)
 	}
 }
 
 func TestValidateMissingDefaultModel(t *testing.T) {
 	c := Config{
-		TrelloLists: map[string]string{
-			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
-		},
+		TrelloLists: map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 	}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for missing DefaultModel")
@@ -163,32 +184,17 @@ func TestValidateMissingDefaultModel(t *testing.T) {
 func TestValidateMissingTrelloList(t *testing.T) {
 	c := Config{
 		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
-		TrelloLists:  map[string]string{"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4"},
+		TrelloLists:  map[string]string{"todo": "L1", "doing": "L2"},
 	}
 	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for missing archived list")
-	}
-}
-
-func TestValidateAllowedPathNotDir(t *testing.T) {
-	c := Config{
-		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
-		TrelloLists: map[string]string{
-			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
-		},
-		AllowedPaths: []AllowedPath{{Label: "proj:x", Path: "/nonexistent/path/xyz"}},
-	}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for nonexistent allowed path")
+		t.Fatal("expected error for missing done list")
 	}
 }
 
 func TestValidateAllowedModelEmpty(t *testing.T) {
 	c := Config{
-		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
-		TrelloLists: map[string]string{
-			"icebox": "L1", "todo": "L2", "doing": "L3", "done": "L4", "archived": "L5",
-		},
+		DefaultModel:  ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:   map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 		AllowedModels: []AllowedModel{{Label: "model:x", ProviderID: "", ModelID: "m"}},
 	}
 	if err := c.Validate(); err == nil {
@@ -196,11 +202,24 @@ func TestValidateAllowedModelEmpty(t *testing.T) {
 	}
 }
 
+func TestValidateAllowedProjectMissingName(t *testing.T) {
+	c := Config{
+		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
+		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: ""}},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for allowed project missing name")
+	}
+}
+
 func TestLoadConfigOK(t *testing.T) {
 	dir := t.TempDir()
 	prev, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(prev)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -229,30 +248,33 @@ func TestLoadConfigOK(t *testing.T) {
 	if cfg.OpenCodeBaseURL == "" {
 		t.Error("OpenCodeBaseURL should default")
 	}
-}
-
-func TestNewRejectsEmptyWorkdir(t *testing.T) {
-	if _, err := New(Config{}); err == nil {
-		t.Fatal("expected error for empty workdir")
+	if cfg.DefaultProj != "default" {
+		t.Errorf("DefaultProj=%q, want default", cfg.DefaultProj)
 	}
 }
 
 func TestNewAppliesDefaults(t *testing.T) {
-	s, err := New(Config{WorkDir: "/tmp"})
+	s, err := New(Config{DefaultProj: "default"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.cfg.PollInterval != 5*time.Second {
 		t.Errorf("PollInterval=%v", s.cfg.PollInterval)
 	}
-	if s.cfg.IdleInterval != 10*time.Second {
-		t.Errorf("IdleInterval=%v", s.cfg.IdleInterval)
-	}
 	if s.cfg.HTTPTimeout != 15*time.Second {
 		t.Errorf("HTTPTimeout=%v", s.cfg.HTTPTimeout)
 	}
 	if s.cfg.HTTPListen != "127.0.0.1:8087" {
 		t.Errorf("HTTPListen=%v", s.cfg.HTTPListen)
+	}
+	if s.cfg.AbortTimeout != 60*time.Second {
+		t.Errorf("AbortTimeout=%v", s.cfg.AbortTimeout)
+	}
+	if s.cfg.SummaryTimeout != 60*time.Second {
+		t.Errorf("SummaryTimeout=%v", s.cfg.SummaryTimeout)
+	}
+	if s.cfg.MaxDoingTotal != 3 {
+		t.Errorf("MaxDoingTotal=%d, want 3", s.cfg.MaxDoingTotal)
 	}
 }
 
@@ -264,5 +286,128 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"k":"v"`) {
 		t.Errorf("body=%q", w.Body.String())
+	}
+}
+
+// ---------- parse_proj tests ----------
+
+func TestParseProj(t *testing.T) {
+	cfg := Config{
+		DefaultProj: "default",
+		AllowedProjects: []AllowedProject{
+			{Label: "proj:agent", Name: "agent"},
+			{Label: "proj:ai", Name: "ai"},
+		},
+	}
+	cases := []struct {
+		name    string
+		labels  []trelloLabel
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "no proj label uses default",
+			want: "default",
+		},
+		{
+			name:   "known proj:agent",
+			labels: []trelloLabel{{Name: "proj:agent"}},
+			want:   "agent",
+		},
+		{
+			name:   "unrelated label uses default",
+			labels: []trelloLabel{{Name: "human"}},
+			want:   "default",
+		},
+		{
+			name:    "unknown proj label",
+			labels:  []trelloLabel{{Name: "proj:unknown"}},
+			wantErr: true,
+		},
+		{
+			name:    "multiple proj labels",
+			labels:  []trelloLabel{{Name: "proj:agent"}, {Name: "proj:ai"}},
+			wantErr: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			card := trelloCard{Labels: c.labels}
+			got, err := parseProj(card, cfg)
+			if c.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got proj=%q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("parseProj = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// ---------- parse_model tests ----------
+
+func TestParseModel(t *testing.T) {
+	defaultModel := ModelRef{ProviderID: "test", ModelID: "default-model"}
+	cfg := Config{
+		DefaultModel: defaultModel,
+		AllowedModels: []AllowedModel{
+			{Label: "model:sonnet", ProviderID: "anthropic", ModelID: "claude-sonnet-4"},
+			{Label: "model:gpt", ProviderID: "openai", ModelID: "gpt-5"},
+		},
+	}
+	cases := []struct {
+		name    string
+		labels  []trelloLabel
+		want    ModelRef
+		wantErr bool
+	}{
+		{
+			name: "no model label uses default",
+			want: defaultModel,
+		},
+		{
+			name:   "known model:sonnet",
+			labels: []trelloLabel{{Name: "model:sonnet"}},
+			want:   ModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4"},
+		},
+		{
+			name:   "unrelated label uses default",
+			labels: []trelloLabel{{Name: "proj:agent"}},
+			want:   defaultModel,
+		},
+		{
+			name:    "unknown model label",
+			labels:  []trelloLabel{{Name: "model:unknown"}},
+			wantErr: true,
+		},
+		{
+			name:    "multiple model labels",
+			labels:  []trelloLabel{{Name: "model:sonnet"}, {Name: "model:gpt"}},
+			wantErr: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			card := trelloCard{Labels: c.labels}
+			got, err := parseModel(card, cfg)
+			if c.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got model=%+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("parseModel = %+v, want %+v", got, c.want)
+			}
+		})
 	}
 }

@@ -3,7 +3,6 @@ package kanban
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,81 +11,54 @@ import (
 )
 
 // ModelRef identifies an opencode model as a (provider, model) pair.
-// Both fields are non-empty.
 type ModelRef struct {
 	ProviderID string
 	ModelID    string
 }
 
-// AllowedModel is one entry in cfg.AllowedModels: a card's "model:X"
-// label can pick this entry if X matches Label.
+// AllowedModel is one entry in AllowedModels: a card's "model:X" label
+// can pick this entry if X matches Label.
 type AllowedModel struct {
 	Label      string
 	ProviderID string
 	ModelID    string
 }
 
-// AllowedPath is one entry in cfg.AllowedPaths: a card's "proj:X"
+// AllowedProject is one entry in AllowedProjects: a card's "proj:X"
 // label can pick this entry if X matches Label.
-type AllowedPath struct {
+type AllowedProject struct {
 	Label string
-	Path  string
+	Name  string
 }
 
-// Config holds the runtime configuration. Fields are exported because
-// callers (cmd/kanband) assemble the struct from flags + LoadConfig().
-// Secrets (Trello / opencode credentials) come from .env via
-// readDotenv; non-sensitive binding config comes from config.yaml via
-// LoadYAMLConfig.
+// Config holds the runtime configuration. Secrets come from .env;
+// non-sensitive binding config comes from config.yaml.
 type Config struct {
-	TrelloKey       string
-	TrelloToken     string
-	OpenCodeUser    string
-	OpenCodePass    string
-	OpenCodeBaseURL string
-	WorkDir         string
-	PollInterval    time.Duration
-	HTTPTimeout     time.Duration
-	HTTPListen      string
-	IdleInterval    time.Duration
-
-	// MaxDoingTotal is the global cap on cards in doing across all
-	// projects. Auto-promotion from todo stops when this is reached.
-	MaxDoingTotal int
-	// MaxDoingPerProject is the per-project cap. Project is read from
-	// the card's "proj:X" label (X is the project name; "default" if
-	// no such label). Auto-promotion stops when the target project's
-	// count reaches this.
+	TrelloKey          string
+	TrelloToken        string
+	TrelloBoardID      string
+	OpenCodeUser       string
+	OpenCodePass       string
+	OpenCodeBaseURL    string
+	WorkDir            string
+	PollInterval       time.Duration
+	HTTPTimeout        time.Duration
+	HTTPListen         string
+	MaxDoingTotal      int
 	MaxDoingPerProject int
-
-	// DefaultModel is the binding's default opencode model, used when
-	// a card has no "model:X" label. Required; check-config fails if
-	// ProviderID or ModelID is empty.
-	DefaultModel ModelRef
-	// AllowedModels is the allowlist of models a card can pick via
-	// "model:X" label. Optional; when empty, cards cannot override.
-	AllowedModels []AllowedModel
-	// AllowedPaths is the allowlist of repo paths a card can pick
-	// via "proj:X" label. Optional; when empty, cards cannot override
-	// the binding default.
-	AllowedPaths []AllowedPath
-	// TrelloLists maps the binding's logical list names (icebox /
-	// todo / doing / done / archived) to Trello list IDs. Required
-	// for every key.
+	AbortTimeout       time.Duration
+	SummaryTimeout     time.Duration
+	DefaultModel       ModelRef
+	AllowedModels      []AllowedModel
+	DefaultProj        string
+	AllowedProjects    []AllowedProject
+	// TrelloLists maps logical list names (todo/doing/done) to Trello list IDs.
 	TrelloLists map[string]string
-	// TrelloLabels maps the binding's logical label names
-	// (human-task / no-worktree / needs-attention /
-	// needs-integration-test) to Trello label IDs. Optional; absent
-	// entries fall back to "find or create by name" behaviour.
+	// TrelloLabels maps logical label keys (human/attention) to Trello label names.
 	TrelloLabels map[string]string
 }
 
-// LoadConfig reads ./.env (if present) and ./config.yaml (if present),
-// then returns a Config populated from both. Secrets only come from
-// .env; non-sensitive binding config only comes from config.yaml.
-// Defaults are applied for intervals, the listen address, and the
-// cap. The caller is expected to override WorkDir (typically via a
-// -workdir flag) before calling New.
+// LoadConfig reads ./.env and ./config.yaml, returning a merged Config.
 func LoadConfig() (Config, error) {
 	c := Config{
 		OpenCodeBaseURL:    envOr("KANBAN_OPENCODE_URL", "http://127.0.0.1:4096"),
@@ -94,9 +66,11 @@ func LoadConfig() (Config, error) {
 		HTTPTimeout:        15 * time.Second,
 		PollInterval:       5 * time.Second,
 		HTTPListen:         "127.0.0.1:8087",
-		IdleInterval:       10 * time.Second,
-		MaxDoingTotal:      envInt("KANBAN_MAX_DOING_TOTAL", 2),
+		AbortTimeout:       60 * time.Second,
+		SummaryTimeout:     60 * time.Second,
+		MaxDoingTotal:      envInt("KANBAN_MAX_DOING_TOTAL", 3),
 		MaxDoingPerProject: envInt("KANBAN_MAX_DOING_PER_PROJECT", 1),
+		DefaultProj:        "default",
 	}
 	env, err := readDotenv(".env")
 	if err != nil {
@@ -112,9 +86,6 @@ func LoadConfig() (Config, error) {
 	if c.OpenCodeUser == "" || c.OpenCodePass == "" {
 		return c, fmt.Errorf("OPENCODE_SERVER_USERNAME or OPENCODE_SERVER_PASSWORD missing in .env")
 	}
-	if c.OpenCodeBaseURL == "" {
-		c.OpenCodeBaseURL = "http://127.0.0.1:4096"
-	}
 	yamlCfg, err := loadYAMLConfig("config.yaml")
 	if err != nil {
 		return c, fmt.Errorf("read config.yaml: %w", err)
@@ -123,32 +94,34 @@ func LoadConfig() (Config, error) {
 	return c, nil
 }
 
-// yamlConfig mirrors the on-disk config.yaml structure. Field names
-// use snake_case to match the YAML; the mapping into Config happens
-// in mergeYAMLIntoConfig. Lives in this file so the disk format and
-// the merge step are reviewed together.
+// yamlConfig mirrors the on-disk config.yaml structure.
 type yamlConfig struct {
 	Trello struct {
-		BoardID   string            `yaml:"board_id"`
-		BoardName string            `yaml:"board_name"`
-		APIKeyEnv string            `yaml:"api_key_env"`
-		TokenEnv  string            `yaml:"token_env"`
-		Lists     map[string]string `yaml:"lists"`
-		Labels    map[string]string `yaml:"labels"`
+		BoardID string            `yaml:"board_id"`
+		Lists   map[string]string `yaml:"lists"`
+		Labels  map[string]string `yaml:"labels"`
 	} `yaml:"trello"`
 	Opencode struct {
 		BaseURL       string         `yaml:"base_url"`
+		WorkDir       string         `yaml:"workdir"`
 		UsernameEnv   string         `yaml:"username_env"`
 		PasswordEnv   string         `yaml:"password_env"`
 		DefaultModel  yamlModel      `yaml:"default_model"`
 		AllowedModels []yamlModelRow `yaml:"allowed_models"`
 	} `yaml:"opencode"`
-	Repo struct {
-		MainPath     string        `yaml:"main_path"`
-		MainBranch   string        `yaml:"main_branch"`
-		WorktreeRoot string        `yaml:"worktree_root"`
-		AllowedPaths []yamlPathRow `yaml:"allowed_paths"`
-	} `yaml:"repo"`
+	Projects struct {
+		Default string        `yaml:"default"`
+		Allowed []yamlProjRow `yaml:"allowed"`
+	} `yaml:"projects"`
+	Capacity struct {
+		Total      int `yaml:"total"`
+		PerProject int `yaml:"per_project"`
+	} `yaml:"capacity"`
+	Timer struct {
+		Interval       string `yaml:"interval"`
+		AbortTimeout   string `yaml:"abort_timeout"`
+		SummaryTimeout string `yaml:"summary_timeout"`
+	} `yaml:"timer"`
 }
 
 type yamlModel struct {
@@ -162,14 +135,11 @@ type yamlModelRow struct {
 	ModelID    string `yaml:"modelID"`
 }
 
-type yamlPathRow struct {
+type yamlProjRow struct {
 	Label string `yaml:"label"`
-	Path  string `yaml:"path"`
+	Name  string `yaml:"name"`
 }
 
-// loadYAMLConfig reads ./config.yaml if present, returning an empty
-// yamlConfig when the file is missing. Other read errors are
-// returned. Decoded fields not in the file remain zero-valued.
 func loadYAMLConfig(path string) (yamlConfig, error) {
 	var yc yamlConfig
 	data, err := os.ReadFile(path)
@@ -185,16 +155,27 @@ func loadYAMLConfig(path string) (yamlConfig, error) {
 	return yc, nil
 }
 
-// mergeYAMLIntoConfig copies non-secret binding values from the YAML
-// representation into the runtime Config. Secret-related fields in
-// the YAML (api_key_env, token_env, username_env, password_env) are
-// intentionally not consumed here — secrets only flow through .env.
 func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
-	c.TrelloLists = yc.Trello.Lists
-	c.TrelloLabels = yc.Trello.Labels
-	c.DefaultModel = ModelRef{
-		ProviderID: yc.Opencode.DefaultModel.ProviderID,
-		ModelID:    yc.Opencode.DefaultModel.ModelID,
+	if yc.Trello.BoardID != "" {
+		c.TrelloBoardID = yc.Trello.BoardID
+	}
+	if len(yc.Trello.Lists) > 0 {
+		c.TrelloLists = yc.Trello.Lists
+	}
+	if len(yc.Trello.Labels) > 0 {
+		c.TrelloLabels = yc.Trello.Labels
+	}
+	if yc.Opencode.BaseURL != "" {
+		c.OpenCodeBaseURL = yc.Opencode.BaseURL
+	}
+	if yc.Opencode.WorkDir != "" {
+		c.WorkDir = yc.Opencode.WorkDir
+	}
+	if yc.Opencode.DefaultModel.ProviderID != "" {
+		c.DefaultModel = ModelRef{
+			ProviderID: yc.Opencode.DefaultModel.ProviderID,
+			ModelID:    yc.Opencode.DefaultModel.ModelID,
+		}
 	}
 	for _, m := range yc.Opencode.AllowedModels {
 		c.AllowedModels = append(c.AllowedModels, AllowedModel{
@@ -203,23 +184,38 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 			ModelID:    m.ModelID,
 		})
 	}
-	for _, p := range yc.Repo.AllowedPaths {
-		c.AllowedPaths = append(c.AllowedPaths, AllowedPath{
+	if yc.Projects.Default != "" {
+		c.DefaultProj = yc.Projects.Default
+	}
+	for _, p := range yc.Projects.Allowed {
+		c.AllowedProjects = append(c.AllowedProjects, AllowedProject{
 			Label: p.Label,
-			Path:  p.Path,
+			Name:  p.Name,
 		})
+	}
+	if yc.Capacity.Total > 0 {
+		c.MaxDoingTotal = yc.Capacity.Total
+	}
+	if yc.Capacity.PerProject > 0 {
+		c.MaxDoingPerProject = yc.Capacity.PerProject
+	}
+	if d, err := time.ParseDuration(yc.Timer.Interval); err == nil && d > 0 {
+		c.PollInterval = d
+	}
+	if d, err := time.ParseDuration(yc.Timer.AbortTimeout); err == nil && d > 0 {
+		c.AbortTimeout = d
+	}
+	if d, err := time.ParseDuration(yc.Timer.SummaryTimeout); err == nil && d > 0 {
+		c.SummaryTimeout = d
 	}
 }
 
-// Validate enforces the requirements documented in design.md §3 and
-// req.md §11.2: a working Config must have a DefaultModel, sensible
-// TrelloLists, and well-formed allowlist entries. Returns the first
-// violation found; callers should fail-fast at startup.
+// Validate enforces config requirements at startup.
 func (c Config) Validate() error {
 	if c.DefaultModel.ProviderID == "" || c.DefaultModel.ModelID == "" {
 		return fmt.Errorf("config: opencode.default_model is required (providerID + modelID)")
 	}
-	for _, l := range []string{"icebox", "todo", "doing", "done", "archived"} {
+	for _, l := range []string{"todo", "doing", "done"} {
 		if c.TrelloLists[l] == "" {
 			return fmt.Errorf("config: trello.lists.%s is required", l)
 		}
@@ -232,23 +228,65 @@ func (c Config) Validate() error {
 			return fmt.Errorf("config: opencode.allowed_models[%d] (%s) needs providerID + modelID", i, m.Label)
 		}
 	}
-	for i, p := range c.AllowedPaths {
+	for i, p := range c.AllowedProjects {
 		if p.Label == "" {
-			return fmt.Errorf("config: repo.allowed_paths[%d].label is required", i)
+			return fmt.Errorf("config: projects.allowed[%d].label is required", i)
 		}
-		abs, err := filepath.Abs(p.Path)
-		if err != nil {
-			return fmt.Errorf("config: repo.allowed_paths[%d] (%s) abs: %w", i, p.Label, err)
-		}
-		info, err := os.Stat(abs)
-		if err != nil {
-			return fmt.Errorf("config: repo.allowed_paths[%d] (%s) stat %s: %w", i, p.Label, abs, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("config: repo.allowed_paths[%d] (%s) %s is not a directory", i, p.Label, abs)
+		if p.Name == "" {
+			return fmt.Errorf("config: projects.allowed[%d] (%s).name is required", i, p.Label)
 		}
 	}
 	return nil
+}
+
+// parseProj extracts the project name from a card's labels.
+// Returns (defaultProj, nil) if no proj:* label is present.
+// Returns ("", error) if parsing fails (multiple or unknown label).
+func parseProj(card trelloCard, cfg Config) (string, error) {
+	var matches []string
+	for _, l := range card.Labels {
+		if strings.HasPrefix(l.Name, "proj:") {
+			matches = append(matches, l.Name)
+		}
+	}
+	if len(matches) == 0 {
+		return cfg.DefaultProj, nil
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple proj labels: %s", strings.Join(matches, ", "))
+	}
+	labelName := matches[0]
+	for _, p := range cfg.AllowedProjects {
+		if p.Label == labelName {
+			return p.Name, nil
+		}
+	}
+	return "", fmt.Errorf("unknown proj label: %s", labelName)
+}
+
+// parseModel extracts the model from a card's labels.
+// Returns (defaultModel, nil) if no model:* label is present.
+// Returns (ModelRef{}, error) if parsing fails (multiple or unknown label).
+func parseModel(card trelloCard, cfg Config) (ModelRef, error) {
+	var matches []string
+	for _, l := range card.Labels {
+		if strings.HasPrefix(l.Name, "model:") {
+			matches = append(matches, l.Name)
+		}
+	}
+	if len(matches) == 0 {
+		return cfg.DefaultModel, nil
+	}
+	if len(matches) > 1 {
+		return ModelRef{}, fmt.Errorf("multiple model labels: %s", strings.Join(matches, ", "))
+	}
+	labelName := matches[0]
+	for _, m := range cfg.AllowedModels {
+		if m.Label == labelName {
+			return ModelRef{ProviderID: m.ProviderID, ModelID: m.ModelID}, nil
+		}
+	}
+	return ModelRef{}, fmt.Errorf("unknown model label: %s", labelName)
 }
 
 func envInt(key string, def int) int {

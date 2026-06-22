@@ -6,18 +6,26 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
-// fakeTrello is a minimal Trello stand-in for tests. It records every
-// call and returns canned responses. cardsByList separates the canned
-// card sets per Trello list id so a test can pre-load doing and todo
-// independently.
+// Test list and label IDs used consistently across all tests.
+const (
+	testTodoID        = "list_todo"
+	testDoingID       = "list_doing"
+	testDoneID        = "list_done"
+	testBoardID       = "board_test"
+	testAttentionName = "attention"
+	testHumanName     = "human"
+	testAttentionID   = "lbl_attention"
+)
+
+// fakeTrello is a minimal Trello stand-in for tests.
 type fakeTrello struct {
 	mu          sync.Mutex
 	comments    []string
 	labelAdds   []string
 	moves       []moveRec
-	labelExists map[string]string
 	cardsByList map[string][]trelloCard
 }
 
@@ -28,13 +36,10 @@ type moveRec struct {
 
 func newFakeTrello() *fakeTrello {
 	return &fakeTrello{
-		labelExists: map[string]string{},
 		cardsByList: map[string][]trelloCard{},
 	}
 }
 
-// setCards pre-loads a list id with the given cards. Use this in
-// tests instead of touching the unexported cardsByList directly.
 func (f *fakeTrello) setCards(listID string, cards []trelloCard) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -44,7 +49,6 @@ func (f *fakeTrello) setCards(listID string, cards []trelloCard) {
 func (f *fakeTrello) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/1/cards/", f.cardsHandler)
-	mux.HandleFunc("/1/labels", f.labelsHandler)
 	mux.HandleFunc("/1/boards/", f.boardsHandler)
 	mux.HandleFunc("/1/lists/", f.listsHandler)
 	return mux
@@ -95,60 +99,29 @@ func (f *fakeTrello) cardsHandler(w http.ResponseWriter, r *http.Request) {
 	_ = cardID
 }
 
-func (f *fakeTrello) labelsHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		out := []map[string]string{}
-		for name, id := range f.labelExists {
-			out = append(out, map[string]string{"id": id, "name": name, "color": "red", "idBoard": "b1"})
-		}
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(out)
-	case http.MethodPost:
-		var body struct{ Name, Color, IDBoard string }
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		id := "lbl_" + body.Name
-		f.mu.Lock()
-		f.labelExists[body.Name] = id
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "name": body.Name, "color": body.Color, "idBoard": body.IDBoard})
-	}
-}
-
 func (f *fakeTrello) boardsHandler(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasSuffix(r.URL.Path, "/labels") {
+	if !strings.HasSuffix(r.URL.Path, "/labels") || r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+	// Return the attention label so resolveLabelID can find it.
+	labels := []map[string]string{
+		{"id": testAttentionID, "name": testAttentionName, "color": "red", "idBoard": testBoardID},
+		{"id": "lbl_human", "name": testHumanName, "color": "green", "idBoard": testBoardID},
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := []map[string]string{}
-	for name, id := range f.labelExists {
-		out = append(out, map[string]string{"id": id, "name": name, "color": "red", "idBoard": "b1"})
-	}
-	_ = json.NewEncoder(w).Encode(out)
+	_ = json.NewEncoder(w).Encode(labels)
 }
 
 func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/cards") {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if !strings.HasSuffix(r.URL.Path, "/cards") {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	// URL is /1/lists/{listID}/cards
 	path := strings.TrimPrefix(r.URL.Path, "/1/lists/")
 	listID := strings.TrimSuffix(path, "/cards")
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	cards := f.cardsByList[listID]
+	f.mu.Unlock()
 	if cards == nil {
 		_, _ = w.Write([]byte(`[]`))
 		return
@@ -156,30 +129,20 @@ func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(cards)
 }
 
-// fakeOpencode is a minimal opencode stand-in. It serves /session and
-// renameCall records a single PATCH /session/{id} request handled by
-// the fake opencode, so tests can assert that the scheduler issued
-// the rename and used the right body.
-type renameCall struct {
-	SessionID string
-	Title     string
-	Directory string
+// fakeOpencode is a minimal opencode stand-in for tests.
+type fakeOpencode struct {
+	mu            sync.Mutex
+	sessionID     string
+	message       map[string]any
+	messagesQueue []map[string]any
+	abortCalls    []string
+	promptCalls   []promptCall
 }
 
-// /session/* from canned responses so we can test the scheduler
-// without a real opencode server. The /session/{id}/message endpoint
-// pulls from messagesQueue first (FIFO) and falls back to message
-// when the queue is empty, so tests can drive multi-step flows like
-// "first finish → summary prompt → summary response". The PATCH
-// /session/{id} (rename) endpoint records into renames and responds
-// 200 by default; tests can set renameStatusCode to simulate failure.
-type fakeOpencode struct {
-	sessionID        string
-	message          map[string]any
-	messagesQueue    []map[string]any
-	renames          []renameCall
-	renameStatusCode int // default 200 when 0
-	mu               sync.Mutex
+type promptCall struct {
+	SessionID string
+	Prompt    string
+	Model     string
 }
 
 func (f *fakeOpencode) handler() http.Handler {
@@ -195,18 +158,62 @@ func (f *fakeOpencode) sessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"id":"` + f.sessionID + `","directory":"/tmp","projectID":"p1"}`))
+	id := f.sessionID
+	if id == "" {
+		id = "ses_fake"
+	}
+	_, _ = w.Write([]byte(`{"id":"` + id + `","directory":"/tmp","projectID":"p1"}`))
 }
 
 func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case strings.HasSuffix(r.URL.Path, "/prompt_async"):
-		w.WriteHeader(http.StatusNoContent)
-	case strings.HasSuffix(r.URL.Path, "/message"):
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
+	case strings.HasSuffix(r.URL.Path, "/prompt_async") && r.Method == http.MethodPost:
+		var body struct {
+			Model struct {
+				ProviderID string `json:"providerID"`
+				ModelID    string `json:"modelID"`
+			} `json:"model"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
 		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		parts := strings.Split(r.URL.Path, "/")
+		sessionID := ""
+		for i, p := range parts {
+			if p == "session" && i+1 < len(parts) {
+				sessionID = parts[i+1]
+				break
+			}
+		}
+		prompt := ""
+		if len(body.Parts) > 0 {
+			prompt = body.Parts[0].Text
+		}
+		f.mu.Lock()
+		f.promptCalls = append(f.promptCalls, promptCall{
+			SessionID: sessionID,
+			Prompt:    prompt,
+			Model:     body.Model.ProviderID + "/" + body.Model.ModelID,
+		})
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+
+	case strings.HasSuffix(r.URL.Path, "/abort") && r.Method == http.MethodPost:
+		parts := strings.Split(r.URL.Path, "/")
+		sessionID := ""
+		for i, p := range parts {
+			if p == "session" && i+1 < len(parts) {
+				sessionID = parts[i+1]
+				break
+			}
+		}
+		f.mu.Lock()
+		f.abortCalls = append(f.abortCalls, sessionID)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+
+	case strings.HasSuffix(r.URL.Path, "/message") && r.Method == http.MethodGet:
 		f.mu.Lock()
 		var last map[string]any
 		if len(f.messagesQueue) > 0 {
@@ -222,38 +229,14 @@ func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		data, _ := json.Marshal(last)
 		_, _ = w.Write([]byte("[" + string(data) + "]"))
-	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/session/"):
-		// PATCH /session/{id}?directory=... (rename)
-		var body struct {
-			Title string `json:"title"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/session/"), "/")
-		f.mu.Lock()
-		f.renames = append(f.renames, renameCall{
-			SessionID: parts[0],
-			Title:     body.Title,
-			Directory: r.URL.Query().Get("directory"),
-		})
-		code := f.renameStatusCode
-		f.mu.Unlock()
-		if code == 0 {
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if code >= 300 {
-			_, _ = w.Write([]byte(`{"error":"simulated"}`))
-		} else {
-			_, _ = w.Write([]byte(`{"id":"` + parts[0] + `","title":"` + body.Title + `"}`))
-		}
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
 
 // rewriteTransport intercepts requests to https://api.trello.com and
-// rewrites the host to a test server. Other hosts pass through
-// unchanged.
+// rewrites the host to the fake test server.
 type rewriteTransport struct {
 	base   http.RoundTripper
 	target string
@@ -270,7 +253,7 @@ func (r *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return r.base.RoundTrip(req)
 }
 
-// drainLog captures everything written to it for later assertion.
+// drainLog captures log output for assertions.
 type drainLog struct {
 	mu  sync.Mutex
 	buf strings.Builder
@@ -288,7 +271,6 @@ func (d *drainLog) String() string {
 	return d.buf.String()
 }
 
-// withLogWriter swaps defaultLogWriter for the duration of the test.
 func withLogWriter(t testingTB, w interface{ Write([]byte) (int, error) }) {
 	t.Helper()
 	old := defaultLogWriter
@@ -296,9 +278,52 @@ func withLogWriter(t testingTB, w interface{ Write([]byte) (int, error) }) {
 	t.Cleanup(func() { defaultLogWriter = old })
 }
 
-// testingTB is the minimal interface satisfied by *testing.T and
-// *testing.B.
 type testingTB interface {
 	Helper()
 	Cleanup(func())
+}
+
+// newTestServer builds a Server wired to the given fake Trello and opencode URLs.
+func newTestServer(t interface {
+	testingTB
+	Fatal(...any)
+}, trelloURL, ocURL string) *Server {
+	t.Helper()
+	httpc := &http.Client{
+		Timeout:   2 * time.Second,
+		Transport: &rewriteTransport{base: http.DefaultTransport, target: trelloURL},
+	}
+	cfg := Config{
+		TrelloKey:          "k",
+		TrelloToken:        "t",
+		TrelloBoardID:      testBoardID,
+		OpenCodeUser:       "u",
+		OpenCodePass:       "p",
+		OpenCodeBaseURL:    ocURL,
+		WorkDir:            "/tmp",
+		HTTPTimeout:        2 * time.Second,
+		HTTPListen:         "127.0.0.1:0",
+		PollInterval:       time.Second,
+		AbortTimeout:       60 * time.Second,
+		SummaryTimeout:     60 * time.Second,
+		DefaultModel:       ModelRef{ProviderID: "test", ModelID: "model"},
+		DefaultProj:        "default",
+		MaxDoingTotal:      2,
+		MaxDoingPerProject: 1,
+		TrelloLists: map[string]string{
+			"todo":  testTodoID,
+			"doing": testDoingID,
+			"done":  testDoneID,
+		},
+		TrelloLabels: map[string]string{
+			"human":     testHumanName,
+			"attention": testAttentionName,
+		},
+	}
+	s, err := New(cfg)
+	if err != nil {
+		t.Fatal("New failed:", err)
+	}
+	s.httpc = httpc
+	return s
 }

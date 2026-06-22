@@ -1,43 +1,29 @@
-# Trello Kanban Agent — local config (T013 prototype)
+# Trello Kanban Agent — config
 #
-# One config per file = one binding. If multi-binding is needed later
-# (design.md §3 留了 bindings 列表结构作为扩展点), T002 会换 loader。
-# Sensitive values stay in .env (gitignored). This file is non-sensitive
-# and goes into git.
-#
-# Card-driven config (allowlist + fail-fast, design.md §9):
-#   - card label `proj:X`    → match against repo.allowed_paths
-#   - card label `model:X`    → match against opencode.allowed_models
-#   - no label                → use repo.main_path / opencode.default_model
-#   - label not in list       → FAIL (comment + needs-attention, no session)
-#   - multiple of same prefix → FAIL
+# Sensitive values (TRELLO_API_KEY, TRELLO_TOKEN, OPENCODE_SERVER_USERNAME,
+# OPENCODE_SERVER_PASSWORD) stay in .env and are never written here.
 
 trello:
-  board_id: "6a369a37d68f530666bce32e"          # kanban board
-  board_name: "kanban"
-  api_key_env: TRELLO_API_KEY                    # .env var name, not the value
-  token_env: TRELLO_TOKEN
+  board_id: "6a369a37d68f530666bce32e"
+  # Map logical list names to Trello list IDs.
   lists:
-    icebox: "icebox"
-    todo: "todo"
-    doing: "doing"
-    done: "done"
-    archived: "archived"
+    todo: "todo"       # replace with actual Trello list ID
+    doing: "doing"     # replace with actual Trello list ID
+    done: "done"       # replace with actual Trello list ID
+  # Map logical label keys to Trello label names.
   labels:
-    ai_task: "ai-task"
-    human_task: "human-task"
-    no_worktree: "no-worktree"
-    needs_integration_test: "needs-integration-test"
-    needs_attention: "needs-attention"
+    human: "human"
+    attention: "attention"
 
 opencode:
   base_url: "http://127.0.0.1:8567"
+  workdir: "/home/shell/tmp/kanban"    # default working directory for sessions
   username_env: OPENCODE_SERVER_USERNAME
   password_env: OPENCODE_SERVER_PASSWORD
-  default_model:                                  # binding default; card 无 model: label 时用
+  default_model:
     providerID: "opencode-go"
     modelID: "minimax-m3"
-  allowed_models:                                 # card `model:X` label 只能从这里挑
+  allowed_models:
     - label: "model:minimax-m3"
       providerID: "opencode-go"
       modelID: "minimax-m3"
@@ -45,14 +31,19 @@ opencode:
       providerID: "stepfun"
       modelID: "step-3.6"
 
-repo:
-  main_path: "/home/shell/tmp/kanban"             # binding default workdir
-  main_branch: "main"
-  worktree_root: ".worktrees"
-  allowed_paths:                                  # card `proj:X` label 只能从这里挑
+projects:
+  default: "default"
+  allowed:
     - label: "proj:agent"
-      path: "/home/shell/nextcloud/agent"
-    - label: "proj:ai"
-      path: "/home/shell/src/github.com/shell909090/ai"
+      name: "agent"
     - label: "proj:kanban"
-      path: "/home/shell/tmp/kanban"
+      name: "kanban"
+
+capacity:
+  total: 3
+  per_project: 1
+
+timer:
+  interval: 5s
+  abort_timeout: 60s
+  summary_timeout: 60s

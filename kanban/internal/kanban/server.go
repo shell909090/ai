@@ -1,6 +1,4 @@
-// Package kanban is the long-running scheduler library. The cmd/kanband
-// binary is a thin wrapper around it. See design.md §6 for the
-// interfaces exposed here.
+// Package kanban is the long-running scheduler library.
 package kanban
 
 import (
@@ -12,33 +10,15 @@ import (
 	"time"
 )
 
-// sessionInfo is the per-card state held in cardSessions.
-type sessionInfo struct {
-	cardID    string
-	cardName  string
-	sessionID string
-	project   string
-	status    string
-	startedAt time.Time
-	// summaryStartedAt is set when the scheduler sends the
-	// post-completion summary prompt. Used to enforce the timeout in
-	// §7.7 of design.md.
-	summaryStartedAt time.Time
-	// lastFinish remembers the finish value of the first final
-	// assistant message so MarkCardFinished can decide whether to
-	// escalate to needs-attention based on the work's actual
-	// outcome, not on the summary response's outcome. The summary
-	// round's abnormal finish (error / length) is informational
-	// only — the work is already done at that point.
-	lastFinish string
+// Task tracks an in-flight opencode session paired with a Trello card.
+type Task struct {
+	CardID    string
+	SessionID string
+	Proj      string
+	Model     ModelRef
+	Abort     *time.Time // set when abort was requested
+	Summary   *time.Time // set when summary prompt was sent
 }
-
-// Status values for sessionInfo.status.
-const (
-	statusStarted     = "started"
-	statusSummarizing = "summarizing"
-	statusCompleted   = "completed"
-)
 
 // Trello HTTP API shapes we consume.
 type trelloCard struct {
@@ -57,7 +37,7 @@ type trelloLabel struct {
 	IDBoard string `json:"idBoard"`
 }
 
-// Opencode HTTP API shape for POST /session.
+// ocSession is the response from POST /session.
 type ocSession struct {
 	ID        string `json:"id"`
 	Slug      string `json:"slug"`
@@ -65,50 +45,31 @@ type ocSession struct {
 	ProjectID string `json:"projectID"`
 }
 
-// logRec is the JSON shape of every line the server writes to its log
-// writer.
+// logRec is the JSON shape written to the log writer.
 type logRec struct {
 	Time   string `json:"time"`
 	Event  string `json:"event"`
 	Detail string `json:"detail,omitempty"`
 }
 
-// Board + list IDs from the active Trello board. Constants in one place
-// so tests and production share them.
-const (
-	boardID  = "6a369a37d68f530666bce32e"
-	iceboxID = "6a36a461229793dd1a9e8d28"
-	todoID   = "6a36a462ff3d43852d8c4ad4"
-	doingID  = "6a36a4625fe4a561ecc34bc6"
-	doneID   = "6a36a4630e0cee0f90d16394"
-)
-
 // Server is the kanban scheduler. One Server per process; it owns the
-// Trello poll loop, the opencode session registry, the finish watcher,
-// and the HTTP /health endpoint. State is in-memory; restart loses
-// in-flight session mappings.
+// Trello poll loop, the opencode session registry, and the HTTP /health
+// endpoint. State is in-memory; restart loses in-flight session mappings.
 type Server struct {
-	cfg          Config
-	mu           sync.Mutex
-	cardSessions map[string]*sessionInfo
-	sessionCards map[string]string
-	labels       map[string]string
-	httpc        *http.Client
+	cfg        Config
+	mu         sync.Mutex
+	tasks      map[string]*Task // keyed by card_id
+	totalCount int
+	projCount  map[string]int
+	labelIDs   map[string]string // Trello label name → Trello label ID (cached)
+	httpc      *http.Client
 }
 
 // New constructs a Server. It does not start any background goroutines;
-// call Run for that. New validates only the workdir; deeper checks
-// (Trello credentials, opencode reachability) happen in the first poll
-// cycle and are logged.
+// call Run for that.
 func New(cfg Config) (*Server, error) {
-	if cfg.WorkDir == "" {
-		return nil, errors.New("workdir is required")
-	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 5 * time.Second
-	}
-	if cfg.IdleInterval <= 0 {
-		cfg.IdleInterval = 10 * time.Second
 	}
 	if cfg.HTTPTimeout <= 0 {
 		cfg.HTTPTimeout = 15 * time.Second
@@ -117,36 +78,41 @@ func New(cfg Config) (*Server, error) {
 		cfg.HTTPListen = "127.0.0.1:8087"
 	}
 	if cfg.MaxDoingTotal <= 0 {
-		cfg.MaxDoingTotal = 2
+		cfg.MaxDoingTotal = 3
 	}
 	if cfg.MaxDoingPerProject <= 0 {
 		cfg.MaxDoingPerProject = 1
 	}
+	if cfg.AbortTimeout <= 0 {
+		cfg.AbortTimeout = 60 * time.Second
+	}
+	if cfg.SummaryTimeout <= 0 {
+		cfg.SummaryTimeout = 60 * time.Second
+	}
+	if cfg.DefaultProj == "" {
+		cfg.DefaultProj = "default"
+	}
 	return &Server{
-		cfg:          cfg,
-		cardSessions: make(map[string]*sessionInfo),
-		sessionCards: make(map[string]string),
-		labels:       make(map[string]string),
-		httpc:        &http.Client{Timeout: cfg.HTTPTimeout},
+		cfg:       cfg,
+		tasks:     make(map[string]*Task),
+		projCount: make(map[string]int),
+		labelIDs:  make(map[string]string),
+		httpc:     &http.Client{Timeout: cfg.HTTPTimeout},
 	}, nil
 }
 
-// Run starts the HTTP server, finish watcher and poll ticker and blocks
-// until ctx is cancelled or one of the long-running components returns
-// a non-Shutdown error. The first error is returned; a clean shutdown
-// (ctx cancel) returns nil.
+// Run starts the HTTP server and the single timer loop, blocking until
+// ctx is cancelled or the HTTP server returns a non-shutdown error.
 func (s *Server) Run(ctx context.Context) error {
 	httpErrCh := make(chan error, 1)
 	go func() {
 		httpErrCh <- s.serveHTTP(ctx)
 	}()
 
-	go s.runFinishWatcher(ctx)
-
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
 
-	s.pollOnce(ctx)
+	s.tick(ctx, time.Now())
 
 	for {
 		select {
@@ -157,18 +123,62 @@ func (s *Server) Run(ctx context.Context) error {
 				return fmt.Errorf("http: %w", err)
 			}
 			return nil
-		case <-ticker.C:
-			s.pollOnce(ctx)
+		case now := <-ticker.C:
+			s.tick(ctx, now)
 		}
 	}
 }
 
-// HTTPHandler returns the HTTP handler for /health. Exposed for tests
-// that want to drive the handler without going through Run.
+// HTTPHandler returns the HTTP handler for /health.
 func (s *Server) HTTPHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	return mux
+}
+
+// listIDFor returns the Trello list ID for a logical list name (todo/doing/done).
+func (s *Server) listIDFor(name string) string {
+	return s.cfg.TrelloLists[name]
+}
+
+// labelNameFor returns the Trello label name for a logical key (human/attention).
+func (s *Server) labelNameFor(key string) string {
+	return s.cfg.TrelloLabels[key]
+}
+
+// hasLabel reports whether a card has a label with the given name.
+func hasLabel(card trelloCard, name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, l := range card.Labels {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// destroyTask removes a task and decrements capacity counters.
+// Counters are guarded to never go negative.
+func (s *Server) destroyTask(cardID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.tasks[cardID]
+	if !ok {
+		return
+	}
+	delete(s.tasks, cardID)
+	s.totalCount--
+	if s.totalCount < 0 {
+		s.log("error.count.negative", fmt.Sprintf("totalCount went negative card=%s, resetting to 0", cardID))
+		s.totalCount = 0
+	}
+	s.projCount[task.Proj]--
+	if s.projCount[task.Proj] < 0 {
+		s.log("error.count.negative", fmt.Sprintf("projCount[%s] went negative card=%s, resetting to 0", task.Proj, cardID))
+		s.projCount[task.Proj] = 0
+	}
 }

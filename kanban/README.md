@@ -1,120 +1,152 @@
-# Kanban — Trello Kanban Agent Workflow
+# Trello Kanban Agent
 
-A scheduler-driven workflow system that uses a Trello board as the human/AI
-collaboration surface. AI agents execute tasks in isolated git worktrees, run
-the three verification checks, and queue merges back to `main` on archival.
+A coordinator that uses a Trello board to drive [opencode](https://opencode.ai/) sessions.
+Humans express tasks as Trello cards; the coordinator starts, monitors, and summarises
+opencode sessions automatically.
 
-> 中文说明见 [README.cn.md](README.cn.md).
+**中文说明：** [README.cn.md](README.cn.md)
 
-## Status
+## Overview
 
-**v0 — finish-watcher scheduler shipped.** The scheduler polls the Trello
-`doing` list, starts an opencode session per card, and detects session
-completion by polling `info.finish` on each session's last message — no agent
-signal, no done URL, no per-card locks. See `docs/tasks.md` and
-`docs/design.md` for the full plan.
-
-Currently shipped:
-
-- `kanband` — long-running scheduler (CLI wrapper around `internal/kanban`).
-- `internal/kanban` — library: Trello + opencode clients, finish watcher,
-  state machine, post-completion summary on `info.finish=stop`, config
-  loading.
-- `scripts/connectivity-test.py` — Python smoke test for Trello and opencode
-  HTTP API reachability.
-
-When a card's opencode session finishes with `stop` (the only value that
-means "the model is really done"), the scheduler asks the same session
-for a 140-character summary and posts it as a `📝 Summary: <text>` comment
-on the card before moving it to `done`. Any other finish value
-(`length` / `tool-calls` / `content-filter` / `error` / `unknown`) skips
-the summary round, posts a `❌ Error in session <id>` comment, adds the
-`needs-attention` label, and moves the card to `done` for human review.
-
-The summary prompt asks the model to describe the *result* of the run
-(what was done, what was produced) rather than restating the task
-description.
-
-Every `▶️ Started` / `✅ Completed` / `❌ Error` comment includes the opencode
-session id as a markdown link to the opencode web session URL, so humans
-can click through from Trello. The URL is built as
-`<base_url>/<base64url(workdir)>/session/<id>` — no extra config needed,
-the encoding matches opencode web's own. When the scheduler creates the
-session it also renames it to the Trello card title, so the opencode web
-session list mirrors the Trello board.
+- Cards in the **todo** list are picked up automatically when capacity allows.
+- The coordinator starts an opencode session for each card, sends the card description
+  as the initial prompt, and writes progress comments back to Trello.
+- When the session finishes, the coordinator requests a brief summary and moves the card
+  to **done**.
+- Humans can drag cards out of **doing** at any time; the coordinator aborts the session.
+- Labels control routing: `proj:*` selects the project (for capacity accounting),
+  `model:*` selects the opencode model. The `human` label marks cards the coordinator
+  should ignore entirely.
 
 ## Requirements
 
-- Go 1.26+
-- Python 3 (for the smoke test)
-- Trello API key + token (or OAuth 1.0a access token)
-- An `opencode serve` instance reachable from this host
+- Go 1.21+
+- A Trello account with API key and OAuth token
+- An opencode server (`opencode serve`)
 
-## Build
-
-```sh
-make build          # produces bin/kanband
-```
-
-## Test
-
-`make test` runs unit tests plus the connectivity smoke test.
+## Installation
 
 ```sh
-make test                                    # unit tests only
-KANBAN_OPENCODE_URL=http://localhost:4096 \
-OPENCODE_SERVER_USERNAME=user \
-OPENCODE_SERVER_PASSWORD=... \
-  make test                                 # unit + smoke (opencode)
+git clone <repo>
+cd kanban
+make build
 ```
 
-The smoke test SKIPs any step whose credentials are missing, so it always
-exits 0 in a clean checkout. With Trello creds in `.env` it exercises
-`/members/me/boards`; with the opencode env vars it polls `/global/health`
-until 200 or 30 s timeout.
+The binary is written to `bin/kanband`.
 
-## Run
+## Configuration
+
+### `.env` (secrets — never committed to git)
+
+```
+TRELLO_API_KEY=<your-api-key>
+TRELLO_TOKEN=<your-oauth-token>
+OPENCODE_SERVER_USERNAME=<username>
+OPENCODE_SERVER_PASSWORD=<password>
+```
+
+### `config.yaml` (non-sensitive — committed to git)
+
+```yaml
+trello:
+  board_id: "<board-id>"
+  lists:
+    todo: "<list-id>"       # Trello list ID for the todo column
+    doing: "<list-id>"      # Trello list ID for the doing column
+    done: "<list-id>"       # Trello list ID for the done column
+  labels:
+    human: "human"          # Trello label name the coordinator ignores
+    attention: "attention"  # Trello label name added when human review is needed
+
+opencode:
+  base_url: "http://127.0.0.1:8567"
+  workdir: "/path/to/repo"    # working directory for opencode sessions
+  default_model:
+    providerID: "opencode-go"
+    modelID: "minimax-m3"
+  allowed_models:
+    - label: "model:sonnet"
+      providerID: "anthropic"
+      modelID: "claude-sonnet-4"
+
+projects:
+  default: "default"
+  allowed:
+    - label: "proj:agent"
+      name: "agent"
+
+capacity:
+  total: 3
+  per_project: 1
+
+timer:
+  interval: 5s
+  abort_timeout: 60s
+  summary_timeout: 60s
+```
+
+## Card labels
+
+| Label | Meaning |
+|---|---|
+| `human` | Human task — coordinator ignores this card. |
+| `attention` | Needs human review — added by coordinator on errors or timeouts. |
+| `proj:NAME` | Project for capacity accounting. Uses config default if absent. |
+| `model:NAME` | opencode model for this card. Uses config default if absent. |
+
+Unknown or ambiguous `proj:*` / `model:*` labels move the card to **done** with the
+`attention` label and a comment explaining the reason.
+
+## Running
 
 ```sh
-cp .env.example .env
-# edit .env: TRELLO_API_KEY, TRELLO_TOKEN, OPENCODE_SERVER_*
-./bin/kanband -workdir /path/to/repo
+# Default settings from config.yaml
+./bin/kanband
+
+# Override poll interval and capacity
+./bin/kanband -poll 10s -max-total 5 -max-per-project 2
+
+# Write logs to a file
+./bin/kanband -log /var/log/kanband.log
+
+# Custom HTTP listen address (for /health)
+./bin/kanband -http 0.0.0.0:8087
 ```
 
-Flags:
+Press Ctrl+C or send SIGTERM to shut down cleanly.
 
-- `-workdir` (required) — absolute path to the git workdir; the opencode
-  session is created here.
-- `-poll` (default `5s`) — Trello poll interval.
-- `-idle` (default `10s`) — finish-watcher poll interval.
-- `-http` (default `127.0.0.1:8087`) — bind address for `/health`.
-- `-log` — log file path (default stderr).
+## Health check
 
-`SIGINT` / `SIGTERM` trigger a clean shutdown: the HTTP server is stopped,
-the finish watcher exits, and the main loop returns.
-
-## Layout
-
-```
-cmd/kanband/            # thin CLI wrapper (~80 lines)
-internal/kanban/        # business logic library
-  config.go             # Config, LoadConfig, .env parsing
-  api.go                # Trello + opencode HTTP client methods
-  finish.go             # extractFinish, isAbnormalFinish, ExtractSummaryText,
-                       # FinishWatcher, requestSummary
-  sessionlink.go        # formatSessionRef (session id → opencode web URL)
-  poll.go               # pollOnce, processCard
-  log.go                # log + writeJSON + SetLogWriter
-  *_test.go             # unit tests (httptest fakes for Trello + opencode)
-scripts/
-  connectivity-test.py  # smoke test
-docs/                   # requirements, design, tasks, review, log
-Makefile
-go.mod
-.env.example
+```sh
+curl http://127.0.0.1:8087/health
+# {"status":"ok"}
 ```
 
-## Author & License
+## Development
 
-Author: shell <shell909090@gmail.com>
-License: MIT
+```sh
+make fmt        # format code
+make lint       # run go vet
+make build      # build binary
+make unittest   # run unit tests
+make test       # unittest + smoke test
+```
+
+Test coverage target: 75% overall, 50% minimum per module.
+
+## Scheduler loop
+
+Each timer tick runs four steps in order:
+
+1. **check session finish** — poll every tracked session for a finish event; handle normal completion, abort confirmation, and abnormal finishes.
+2. **reconcile doing** — compare task state with Trello's doing list; send abort for cards that left, start sessions for cards that arrived.
+3. **check timeouts** — enforce abort and summary timeouts.
+4. **promote todo** — move eligible cards from todo to doing up to the configured capacity.
+
+## Author
+
+Shell.Xu
+
+## License
+
+MIT

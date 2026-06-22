@@ -2,22 +2,19 @@ package kanban
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 )
 
 func TestTrelloListCards(t *testing.T) {
 	trello := newFakeTrello()
-	trello.setCards(doingID, []trelloCard{{ID: "c1", Name: "first"}})
+	trello.setCards(testDoingID, []trelloCard{{ID: "c1", Name: "first"}})
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	got, err := s.trelloListCards(context.Background(), doingID)
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	got, err := s.trelloListCards(context.Background(), testDoingID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,11 +26,10 @@ func TestTrelloListCards(t *testing.T) {
 func TestTrelloListCardsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("boom"))
 	}))
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	_, err := s.trelloListCards(context.Background(), doingID)
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	_, err := s.trelloListCards(context.Background(), testDoingID)
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
@@ -43,7 +39,7 @@ func TestTrelloAddComment(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
 	if err := s.trelloAddComment(context.Background(), "c1", "hi"); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +55,7 @@ func TestTrelloAddCommentError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
 	if err := s.trelloAddComment(context.Background(), "c1", "hi"); err == nil {
 		t.Error("expected error on 500")
 	}
@@ -69,14 +65,14 @@ func TestTrelloMoveCard(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	if err := s.trelloMoveCard(context.Background(), "c1", doneID); err != nil {
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	if err := s.trelloMoveCard(context.Background(), "c1", testDoneID); err != nil {
 		t.Fatal(err)
 	}
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
-	if len(trello.moves) != 1 || trello.moves[0] != (moveRec{cardID: "c1", listID: doneID}) {
-		t.Errorf("moves=%v, want [{c1 %s}]", trello.moves, doneID)
+	if len(trello.moves) != 1 || trello.moves[0] != (moveRec{cardID: "c1", listID: testDoneID}) {
+		t.Errorf("moves=%v, want [{c1 %s}]", trello.moves, testDoneID)
 	}
 }
 
@@ -85,8 +81,8 @@ func TestTrelloMoveCardError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	if err := s.trelloMoveCard(context.Background(), "c1", doneID); err == nil {
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	if err := s.trelloMoveCard(context.Background(), "c1", testDoneID); err == nil {
 		t.Error("expected error on 500")
 	}
 }
@@ -95,7 +91,7 @@ func TestTrelloAddLabel(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
 	if err := s.trelloAddLabel(context.Background(), "c1", "lbl_x"); err != nil {
 		t.Fatal(err)
 	}
@@ -106,77 +102,75 @@ func TestTrelloAddLabel(t *testing.T) {
 	}
 }
 
-func TestTrelloListAndCreateLabel(t *testing.T) {
+func TestTrelloListBoardLabels(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	got, err := s.trelloListLabels(context.Background())
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	got, err := s.trelloListBoardLabels(context.Background(), testBoardID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Errorf("expected empty list, got %v", got)
-	}
-	id, err := s.trelloCreateLabel(context.Background(), "foo", "red")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id == "" {
-		t.Error("expected non-empty id")
+	// fakeTrello always returns human + attention labels
+	if len(got) != 2 {
+		t.Errorf("len=%d, want 2", len(got))
 	}
 }
 
-func TestTrelloListLabelsError(t *testing.T) {
+func TestTrelloListBoardLabelsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	if _, err := s.trelloListLabels(context.Background()); err == nil {
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+	if _, err := s.trelloListBoardLabels(context.Background(), testBoardID); err == nil {
 		t.Error("expected error on 500")
 	}
 }
 
-func TestTrelloCreateLabelError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	if _, err := s.trelloCreateLabel(context.Background(), "foo", "red"); err == nil {
-		t.Error("expected error on 500")
-	}
-}
-
-func TestLoadLabels(t *testing.T) {
+func TestResolveLabelID(t *testing.T) {
 	trello := newFakeTrello()
-	trello.labelExists["needs-attention"] = "pre_existing"
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, srv.URL, "http://opencode.invalid")
-	if err := s.loadLabels(context.Background()); err != nil {
-		t.Fatal(err)
+	s := newTestServer(t, srv.URL, "http://opencode.invalid")
+
+	id, err := s.resolveLabelID(context.Background(), testAttentionName)
+	if err != nil {
+		t.Fatalf("resolveLabelID: %v", err)
 	}
-	if s.labels["needs-attention"] != "pre_existing" {
-		t.Errorf("labels=%v", s.labels)
+	if id != testAttentionID {
+		t.Errorf("id=%q, want %q", id, testAttentionID)
 	}
-	if _, ok := s.labels["no-worktree"]; !ok {
-		t.Errorf("no-worktree should be created, labels=%v", s.labels)
+	// Second call uses cache.
+	id2, err := s.resolveLabelID(context.Background(), testAttentionName)
+	if err != nil {
+		t.Fatalf("resolveLabelID (cached): %v", err)
+	}
+	if id2 != id {
+		t.Errorf("cached id=%q, want %q", id2, id)
 	}
 }
 
-func TestOcCreateSession(t *testing.T) {
+func TestResolveLabelIDNoBoardID(t *testing.T) {
+	s := newTestServer(t, "http://api.trello.invalid", "http://opencode.invalid")
+	s.cfg.TrelloBoardID = ""
+	_, err := s.resolveLabelID(context.Background(), "attention")
+	if err == nil {
+		t.Error("expected error when board_id not configured")
+	}
+}
+
+func TestOcCreateSessionReturnsSessionID(t *testing.T) {
 	oc := &fakeOpencode{sessionID: "ses_xyz"}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", srv.URL)
-	sess, err := s.ocCreateSession(context.Background())
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
+	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sess.ID != "ses_xyz" {
-		t.Errorf("id=%q, want ses_xyz", sess.ID)
+	if id != "ses_xyz" {
+		t.Errorf("id=%q, want ses_xyz", id)
 	}
 }
 
@@ -184,8 +178,8 @@ func TestOcCreateSessionBadID(t *testing.T) {
 	oc := &fakeOpencode{sessionID: "not-prefixed"}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", srv.URL)
-	_, err := s.ocCreateSession(context.Background())
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
+	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
 	if err == nil {
 		t.Fatal("expected error for bad session id prefix")
 	}
@@ -196,8 +190,8 @@ func TestOcCreateSessionError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", srv.URL)
-	_, err := s.ocCreateSession(context.Background())
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
+	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -207,7 +201,7 @@ func TestOcGetLastMessageEmpty(t *testing.T) {
 	oc := &fakeOpencode{}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", srv.URL)
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
 	last, err := s.ocGetLastMessage(context.Background(), "ses1")
 	if err != nil {
 		t.Fatal(err)
@@ -219,11 +213,11 @@ func TestOcGetLastMessageEmpty(t *testing.T) {
 
 func TestOcGetLastMessageWithFinish(t *testing.T) {
 	oc := &fakeOpencode{message: map[string]any{
-		"info": map[string]any{"role": "assistant", "finish": "stop"},
+		"info": map[string]any{"finish": "stop"},
 	}}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", srv.URL)
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
 	last, err := s.ocGetLastMessage(context.Background(), "ses1")
 	if err != nil {
 		t.Fatal(err)
@@ -233,46 +227,59 @@ func TestOcGetLastMessageWithFinish(t *testing.T) {
 	}
 }
 
-func TestOcSendPromptAsync(t *testing.T) {
+func TestOcSendPromptBody(t *testing.T) {
 	var receivedBody string
-	oc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := make([]byte, 4096)
 		n, _ := r.Body.Read(body)
 		receivedBody = string(body[:n])
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer oc.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", oc.URL)
-	if err := s.ocSendPromptAsync(context.Background(), "ses1", "hello"); err != nil {
+	defer ocSrv.Close()
+	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
+	model := ModelRef{ProviderID: "my-prov", ModelID: "my-model"}
+	if err := s.ocSendPrompt(context.Background(), "ses1", model, "hello world"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(receivedBody, "hello") {
+	if !strings.Contains(receivedBody, "hello world") {
 		t.Errorf("body should contain prompt, got %q", receivedBody)
 	}
-	// Body must carry the binding's DefaultModel so opencode can route
-	// the prompt to the right provider/model.
-	if !strings.Contains(receivedBody, `"providerID":"opencode-go"`) {
+	if !strings.Contains(receivedBody, `"providerID":"my-prov"`) {
 		t.Errorf("body missing providerID, got %q", receivedBody)
 	}
-	if !strings.Contains(receivedBody, `"modelID":"minimax-m3"`) {
+	if !strings.Contains(receivedBody, `"modelID":"my-model"`) {
 		t.Errorf("body missing modelID, got %q", receivedBody)
 	}
 }
 
-func TestOcSendPromptAsyncError(t *testing.T) {
-	oc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestOcSendPromptError(t *testing.T) {
+	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("boom"))
 	}))
-	defer oc.Close()
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", oc.URL)
-	if err := s.ocSendPromptAsync(context.Background(), "ses1", "hello"); err == nil {
+	defer ocSrv.Close()
+	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
+	if err := s.ocSendPrompt(context.Background(), "ses1", ModelRef{}, "hi"); err == nil {
 		t.Fatal("expected error on 500")
 	}
 }
 
+func TestOcAbortSession(t *testing.T) {
+	oc := &fakeOpencode{}
+	srv := httptest.NewServer(oc.handler())
+	defer srv.Close()
+	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
+	if err := s.ocAbortSession(context.Background(), "ses1"); err != nil {
+		t.Fatal(err)
+	}
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if len(oc.abortCalls) != 1 {
+		t.Errorf("expected 1 abort call, got %d", len(oc.abortCalls))
+	}
+}
+
 func TestHTTPHandler(t *testing.T) {
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", "http://opencode.invalid")
+	s := newTestServer(t, "http://api.trello.invalid", "http://opencode.invalid")
 	h := s.HTTPHandler()
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
@@ -282,81 +289,5 @@ func TestHTTPHandler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"status":"ok"`) {
 		t.Errorf("body=%q", rec.Body.String())
-	}
-}
-
-// --- T017: ocRenameSession ---
-
-func TestOcRenameSessionSuccess(t *testing.T) {
-	var (
-		gotPath     string
-		gotQuery    url.Values
-		gotTitle    string
-		gotMethod   string
-		gotUser     string
-		gotPass     string
-		gotAuthHdr  string
-		gotCTHeader string
-	)
-	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotQuery = r.URL.Query()
-		gotMethod = r.Method
-		gotUser, gotPass, _ = r.BasicAuth()
-		gotAuthHdr = r.Header.Get("Authorization")
-		gotCTHeader = r.Header.Get("Content-Type")
-		body, _ := io.ReadAll(r.Body)
-		var parsed struct {
-			Title string `json:"title"`
-		}
-		_ = json.Unmarshal(body, &parsed)
-		gotTitle = parsed.Title
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"ses_x","title":"` + parsed.Title + `"}`))
-	}))
-	defer ocSrv.Close()
-
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", ocSrv.URL)
-	if err := s.ocRenameSession(context.Background(), "ses_x", "新标题"); err != nil {
-		t.Fatalf("ocRenameSession: %v", err)
-	}
-
-	if gotMethod != http.MethodPatch {
-		t.Errorf("method=%q, want PATCH", gotMethod)
-	}
-	if gotPath != "/session/ses_x" {
-		t.Errorf("path=%q, want /session/ses_x", gotPath)
-	}
-	if gotQuery.Get("directory") != "/tmp" {
-		t.Errorf("directory query=%q, want /tmp", gotQuery.Get("directory"))
-	}
-	if gotTitle != "新标题" {
-		t.Errorf("title=%q, want 新标题", gotTitle)
-	}
-	if gotCTHeader != "application/json" {
-		t.Errorf("Content-Type=%q, want application/json", gotCTHeader)
-	}
-	if !strings.Contains(gotAuthHdr, "Basic ") {
-		t.Errorf("Authorization=%q, want Basic prefix", gotAuthHdr)
-	}
-	if gotUser != "u" || gotPass != "p" {
-		t.Errorf("BasicAuth user=%q pass=%q, want u/p", gotUser, gotPass)
-	}
-}
-
-func TestOcRenameSessionFailure(t *testing.T) {
-	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":"boom"}`))
-	}))
-	defer ocSrv.Close()
-
-	s, _ := newTestServerWithFake(t, "http://api.trello.invalid", ocSrv.URL)
-	err := s.ocRenameSession(context.Background(), "ses_x", "新标题")
-	if err == nil {
-		t.Fatal("expected error on 500, got nil")
-	}
-	if !strings.Contains(err.Error(), "500") {
-		t.Errorf("error=%q, want 500 mentioned", err.Error())
 	}
 }
