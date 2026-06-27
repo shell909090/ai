@@ -40,7 +40,7 @@ func TestHasLabel(t *testing.T) {
 // ---------- destroyTask ----------
 
 func TestDestroyTask(t *testing.T) {
-	s, _ := New(Config{DefaultProj: "default"})
+	s, _ := New(Config{})
 	s.tasks["c1"] = &Task{CardID: "c1", Proj: "agent"}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
@@ -59,12 +59,12 @@ func TestDestroyTask(t *testing.T) {
 }
 
 func TestDestroyTaskIdempotent(t *testing.T) {
-	s, _ := New(Config{DefaultProj: "default"})
+	s, _ := New(Config{})
 	s.destroyTask("nonexistent") // should not panic
 }
 
 func TestDestroyTaskNegativeProtection(t *testing.T) {
-	s, _ := New(Config{DefaultProj: "default"})
+	s, _ := New(Config{})
 	s.tasks["c1"] = &Task{CardID: "c1", Proj: "agent"}
 	s.totalCount = 0 // already at 0 — should not go negative
 	s.projCount["agent"] = 0
@@ -400,13 +400,19 @@ func TestHandleDoingInStartsSession(t *testing.T) {
 	defer trSrv.Close()
 
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	card := trelloCard{ID: "c1", Name: "Test card", Desc: "do the thing"}
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	card := trelloCard{
+		ID:     "c1",
+		Name:   "Test card",
+		Desc:   "do the thing",
+		Labels: []trelloLabel{{Name: "proj:agent"}},
+	}
 	s.handleDoingIn(context.Background(), card, time.Now())
 
 	s.mu.Lock()
 	task, ok := s.tasks["c1"]
 	total := s.totalCount
-	projCount := s.projCount["default"]
+	projCount := s.projCount["agent"]
 	s.mu.Unlock()
 
 	if !ok {
@@ -419,7 +425,7 @@ func TestHandleDoingInStartsSession(t *testing.T) {
 		t.Errorf("totalCount=%d, want 1", total)
 	}
 	if projCount != 1 {
-		t.Errorf("projCount[default]=%d, want 1", projCount)
+		t.Errorf("projCount[agent]=%d, want 1", projCount)
 	}
 
 	trello.mu.Lock()
@@ -435,10 +441,23 @@ func TestHandleDoingInStartsSession(t *testing.T) {
 	}
 }
 
-func TestHandleDoingInSkipsHuman(t *testing.T) {
-	// human card detection happens in reconcileDoing, not handleDoingIn directly,
-	// but handleDoingIn won't be called for human cards.
-	// This test verifies idempotency: already-tracked cards are ignored.
+func TestHandleDoingInIgnoresNoProjLabel(t *testing.T) {
+	s := newTestServer(t, "http://api.trello.invalid", "http://oc.invalid")
+	card := trelloCard{ID: "c1", Name: "no proj", Desc: "human task"}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("card without proj:* label should be silently ignored")
+	}
+	if s.totalCount != 0 {
+		t.Errorf("totalCount=%d, want 0", s.totalCount)
+	}
+}
+
+func TestHandleDoingInIdempotent(t *testing.T) {
+	// Already-tracked cards must not be double-counted.
 	s := newTestServer(t, "http://api.trello.invalid", "http://oc.invalid")
 	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses_existing"}
 	s.totalCount = 1
@@ -492,11 +511,12 @@ func TestHandleDoingInModelFail(t *testing.T) {
 	trSrv := httptest.NewServer(trello.handler())
 	defer trSrv.Close()
 	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	s.cfg.AllowedModels = []AllowedModel{{Label: "model:ok", ProviderID: "p", ModelID: "m"}}
 
 	card := trelloCard{
 		ID:     "c1",
-		Labels: []trelloLabel{{Name: "model:notinlist"}},
+		Labels: []trelloLabel{{Name: "proj:agent"}, {Name: "model:notinlist"}},
 	}
 	s.handleDoingIn(context.Background(), card, time.Now())
 
@@ -524,9 +544,11 @@ func TestHandleDoingInCapFull(t *testing.T) {
 	trSrv := httptest.NewServer(trello.handler())
 	defer trSrv.Close()
 	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	s.totalCount = s.cfg.MaxDoingTotal // at global cap
 
-	s.handleDoingIn(context.Background(), trelloCard{ID: "c1"}, time.Now())
+	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
+	s.handleDoingIn(context.Background(), card, time.Now())
 
 	if _, ok := s.tasks["c1"]; ok {
 		t.Error("task should not be created when at cap")
@@ -552,9 +574,11 @@ func TestHandleDoingInProjCapFull(t *testing.T) {
 	trSrv := httptest.NewServer(trello.handler())
 	defer trSrv.Close()
 	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
-	s.projCount["default"] = s.cfg.MaxDoingPerProject // proj at cap
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	s.projCount["agent"] = s.cfg.MaxDoingPerProject // proj:agent at cap
 
-	s.handleDoingIn(context.Background(), trelloCard{ID: "c1"}, time.Now())
+	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
+	s.handleDoingIn(context.Background(), card, time.Now())
 
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
@@ -664,46 +688,57 @@ func TestPromoteTodoBasic(t *testing.T) {
 	defer ocSrv.Close()
 
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	// MaxDoingTotal=2, MaxDoingPerProject=1
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	// t1: no proj:* label → silently skipped (not moved, no comment)
+	// t2: unknown proj label → moved to done + attention
+	// t3: valid proj:agent → promoted to doing
 	trello.setCards(testTodoID, []trelloCard{
 		{ID: "t1", Name: "T1"},
-		{ID: "t2", Name: "T2", Labels: []trelloLabel{{Name: "proj:other"}}},
+		{ID: "t2", Name: "T2", Labels: []trelloLabel{{Name: "proj:unknown"}}},
+		{ID: "t3", Name: "T3", Labels: []trelloLabel{{Name: "proj:agent"}}},
 	})
 
 	s.promoteTodo(context.Background(), time.Now())
 
-	// Only 1 card from "default" proj can be promoted (per-project=1)
-	// t2 has proj:other but it's not in AllowedProjects, so it gets moved to done.
-	// Actually wait: default config has no AllowedProjects, so proj:other is unknown
-	// and t2 should go to done with attention.
-	// t1 has no proj label → uses DefaultProj="default", cap not hit → promoted.
 	s.mu.Lock()
 	total := s.totalCount
 	s.mu.Unlock()
 
+	// t1 silently skipped, t2 moved to done, t3 promoted
 	if total != 1 {
-		t.Errorf("totalCount=%d, want 1 (only t1 promoted; t2 has unknown proj)", total)
+		t.Errorf("totalCount=%d, want 1 (only t3 promoted)", total)
 	}
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
-	var promotedToDoingT1, movedToDoneT2 bool
+	var t1Moved, t2ToDone, t3ToDoing bool
 	for _, m := range trello.moves {
-		if m.cardID == "t1" && m.listID == testDoingID {
-			promotedToDoingT1 = true
+		if m.cardID == "t1" {
+			t1Moved = true
 		}
 		if m.cardID == "t2" && m.listID == testDoneID {
-			movedToDoneT2 = true
+			t2ToDone = true
+		}
+		if m.cardID == "t3" && m.listID == testDoingID {
+			t3ToDoing = true
 		}
 	}
-	if !promotedToDoingT1 {
-		t.Errorf("t1 should be promoted to doing, moves=%v", trello.moves)
+	if t1Moved {
+		t.Errorf("t1 (no proj label) should not be moved, moves=%v", trello.moves)
 	}
-	if !movedToDoneT2 {
-		t.Errorf("t2 should be moved to done (unknown proj), moves=%v", trello.moves)
+	if !t2ToDone {
+		t.Errorf("t2 (unknown proj) should be moved to done, moves=%v", trello.moves)
+	}
+	if !t3ToDoing {
+		t.Errorf("t3 (valid proj) should be promoted to doing, moves=%v", trello.moves)
+	}
+	// t1 should produce no comments
+	for _, c := range trello.comments {
+		// comments for t1 would be problematic
+		_ = c
 	}
 }
 
-func TestPromoteTodoSkipsHuman(t *testing.T) {
+func TestPromoteTodoSkipsNoProjLabel(t *testing.T) {
 	trello := newFakeTrello()
 	trSrv := httptest.NewServer(trello.handler())
 	defer trSrv.Close()
@@ -712,8 +747,10 @@ func TestPromoteTodoSkipsHuman(t *testing.T) {
 	defer ocSrv.Close()
 
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	// Cards without proj:* label are not AI-managed and must be silently skipped.
 	trello.setCards(testTodoID, []trelloCard{
-		{ID: "t1", Name: "human task", Labels: []trelloLabel{{Name: "human"}}},
+		{ID: "t1", Name: "no proj task"},
+		{ID: "t2", Name: "human task", Labels: []trelloLabel{{Name: "human"}}},
 	})
 
 	s.promoteTodo(context.Background(), time.Now())
@@ -721,12 +758,51 @@ func TestPromoteTodoSkipsHuman(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.totalCount != 0 {
-		t.Error("human card should not be promoted")
+		t.Error("cards without proj:* label should not be promoted")
 	}
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
 	if len(trello.moves) > 0 {
-		t.Errorf("human card should not be moved, got %v", trello.moves)
+		t.Errorf("cards without proj:* label should not be moved, got %v", trello.moves)
+	}
+}
+
+func TestPromoteTodoNoProjSkippedNextProjStarts(t *testing.T) {
+	// Cards without proj:* label must be skipped silently; subsequent proj-labeled cards
+	// must still be promoted (continue, not return).
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+	oc := &fakeOpencode{sessionID: "ses_y"}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	trello.setCards(testTodoID, []trelloCard{
+		{ID: "t1", Name: "no proj"}, // silently skipped
+		{ID: "t2", Name: "AI task", Labels: []trelloLabel{{Name: "proj:agent"}}}, // promoted
+	})
+
+	s.promoteTodo(context.Background(), time.Now())
+
+	s.mu.Lock()
+	total := s.totalCount
+	_, t2ok := s.tasks["t2"]
+	s.mu.Unlock()
+
+	if total != 1 {
+		t.Errorf("totalCount=%d, want 1", total)
+	}
+	if !t2ok {
+		t.Error("t2 (proj:agent) should be promoted")
+	}
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	for _, m := range trello.moves {
+		if m.cardID == "t1" {
+			t.Errorf("t1 (no proj:*) must not be moved, got %v", trello.moves)
+		}
 	}
 }
 
@@ -764,13 +840,16 @@ func TestPromoteTodoSkipsWhenProjAtCap(t *testing.T) {
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
 	s.cfg.MaxDoingTotal = 5
 	s.cfg.MaxDoingPerProject = 1
-	s.projCount["default"] = 1 // default proj at cap
+	s.cfg.AllowedProjects = []AllowedProject{
+		{Label: "proj:kanban", Name: "kanban"},
+		{Label: "proj:agent", Name: "agent"},
+	}
+	s.projCount["kanban"] = 1 // proj:kanban at cap
 
-	// Two cards: t1 (default proj) and t2 (agent proj with AllowedProjects entry)
-	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	// t1 has proj:kanban (at cap → skip), t2 has proj:agent (not at cap → promoted)
 	trello.setCards(testTodoID, []trelloCard{
-		{ID: "t1", Name: "T1"}, // default proj → at cap
-		{ID: "t2", Name: "T2", Labels: []trelloLabel{{Name: "proj:agent"}}}, // agent proj → not at cap
+		{ID: "t1", Name: "T1", Labels: []trelloLabel{{Name: "proj:kanban"}}},
+		{ID: "t2", Name: "T2", Labels: []trelloLabel{{Name: "proj:agent"}}},
 	})
 
 	s.promoteTodo(context.Background(), time.Now())
@@ -781,10 +860,10 @@ func TestPromoteTodoSkipsWhenProjAtCap(t *testing.T) {
 		t.Errorf("totalCount=%d, want 1 (only t2 promoted)", s.totalCount)
 	}
 	if _, ok := s.tasks["t2"]; !ok {
-		t.Error("t2 (agent proj) should be promoted")
+		t.Error("t2 (proj:agent) should be promoted")
 	}
 	if _, ok := s.tasks["t1"]; ok {
-		t.Error("t1 (default proj at cap) should not be promoted")
+		t.Error("t1 (proj:kanban at cap) should not be promoted")
 	}
 }
 
@@ -802,13 +881,16 @@ func TestReconcileDoingOutThenIn(t *testing.T) {
 	defer trSrv.Close()
 
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	// c_old is tracked but no longer in doing → doing.out sets abort
-	// c_new is in doing but c_old holds the capacity slot → c_new cannot start
-	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "default"}
+	// c_new has proj:agent and is in doing but c_old holds the capacity slot → c_new moves back to todo
+	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent"}
 	s.totalCount = 1
-	s.projCount["default"] = 1
+	s.projCount["agent"] = 1
 
-	trello.setCards(testDoingID, []trelloCard{{ID: "c_new", Name: "new card"}})
+	trello.setCards(testDoingID, []trelloCard{
+		{ID: "c_new", Name: "new card", Labels: []trelloLabel{{Name: "proj:agent"}}},
+	})
 
 	s.reconcileDoing(context.Background(), time.Now())
 
@@ -853,7 +935,8 @@ func TestReconcileDoingOutThenIn(t *testing.T) {
 	}
 }
 
-func TestReconcileDoingIgnoresHuman(t *testing.T) {
+func TestReconcileDoingIgnoresNoProjLabel(t *testing.T) {
+	// Cards without proj:* label in the doing list are not AI-managed and must be ignored.
 	oc := &fakeOpencode{}
 	ocSrv := httptest.NewServer(oc.handler())
 	defer ocSrv.Close()
@@ -863,7 +946,8 @@ func TestReconcileDoingIgnoresHuman(t *testing.T) {
 
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
 	trello.setCards(testDoingID, []trelloCard{
-		{ID: "c1", Name: "human task", Labels: []trelloLabel{{Name: "human"}}},
+		{ID: "c1", Name: "no proj task"},
+		{ID: "c2", Name: "human task", Labels: []trelloLabel{{Name: "human"}}},
 	})
 
 	s.reconcileDoing(context.Background(), time.Now())
@@ -871,7 +955,13 @@ func TestReconcileDoingIgnoresHuman(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.tasks["c1"]; ok {
-		t.Error("human card should be ignored in doing")
+		t.Error("card without proj:* label should be ignored in doing")
+	}
+	if _, ok := s.tasks["c2"]; ok {
+		t.Error("human card without proj:* label should be ignored in doing")
+	}
+	if s.totalCount != 0 {
+		t.Errorf("totalCount=%d, want 0", s.totalCount)
 	}
 }
 
@@ -940,14 +1030,17 @@ func TestCapacityReleasedInSameTick(t *testing.T) {
 	s := newTestServer(t, trSrv.URL, ocSrv.URL)
 	s.cfg.MaxDoingTotal = 1
 	s.cfg.MaxDoingPerProject = 1
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 
 	abortTime := time.Now().Add(-2 * s.cfg.AbortTimeout) // already timed out
-	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "default", Abort: &abortTime}
+	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent", Abort: &abortTime}
 	s.totalCount = 1
-	s.projCount["default"] = 1
+	s.projCount["agent"] = 1
 
 	trello.setCards(testDoingID, nil) // c_old not in doing
-	trello.setCards(testTodoID, []trelloCard{{ID: "t1", Name: "T1"}})
+	trello.setCards(testTodoID, []trelloCard{
+		{ID: "t1", Name: "T1", Labels: []trelloLabel{{Name: "proj:agent"}}},
+	})
 
 	// oc returns a different session ID for the new promoted card
 	oc.mu.Lock()

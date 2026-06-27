@@ -124,10 +124,10 @@ func (s *Server) reconcileDoing(ctx context.Context, now time.Time) {
 		return
 	}
 
-	humanLabel := s.labelNameFor("human")
+	// Only cards with a proj:* label are AI-managed; all others are ignored.
 	doingSet := make(map[string]trelloCard, len(doing))
 	for _, c := range doing {
-		if hasLabel(c, humanLabel) {
+		if !hasProjLabel(c) {
 			continue
 		}
 		doingSet[c.ID] = c
@@ -198,6 +198,11 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	_, exists := s.tasks[card.ID]
 	s.mu.Unlock()
 	if exists {
+		return
+	}
+
+	// Cards without proj:* label are not AI-managed; silently ignore.
+	if !hasProjLabel(card) {
 		return
 	}
 
@@ -324,7 +329,6 @@ func (s *Server) promoteTodo(ctx context.Context, now time.Time) {
 		return
 	}
 
-	humanLabel := s.labelNameFor("human")
 	promoted := 0
 	for _, card := range todo {
 		s.mu.Lock()
@@ -334,7 +338,8 @@ func (s *Server) promoteTodo(ctx context.Context, now time.Time) {
 		}
 		s.mu.Unlock()
 
-		if hasLabel(card, humanLabel) {
+		// Cards without proj:* label are not AI-managed; skip silently.
+		if !hasProjLabel(card) {
 			continue
 		}
 

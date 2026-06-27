@@ -89,9 +89,6 @@ func New(cfg Config) (*Server, error) {
 	if cfg.SummaryTimeout <= 0 {
 		cfg.SummaryTimeout = 60 * time.Second
 	}
-	if cfg.DefaultProj == "" {
-		cfg.DefaultProj = "default"
-	}
 	return &Server{
 		cfg:       cfg,
 		tasks:     make(map[string]*Task),

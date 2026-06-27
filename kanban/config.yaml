@@ -12,7 +12,6 @@ trello:
     done: "done"       # replace with actual Trello list ID
   # Map logical label keys to Trello label names.
   labels:
-    human: "human"
     attention: "attention"
 
 opencode:
@@ -32,7 +31,6 @@ opencode:
       modelID: "step-3.6"
 
 projects:
-  default: "default"
   allowed:
     - label: "proj:agent"
       name: "agent"

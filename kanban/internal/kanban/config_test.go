@@ -109,7 +109,6 @@ trello:
     doing: "L2"
     done: "L3"
   labels:
-    human: "human"
     attention: "attention"
 opencode:
   base_url: "http://127.0.0.1:8567"
@@ -121,7 +120,6 @@ opencode:
       providerID: "test-provider"
       modelID: "test-model"
 projects:
-  default: "mydefault"
   allowed:
     - label: "proj:agent"
       name: "agent"
@@ -148,9 +146,6 @@ timer:
 	}
 	if cfg.TrelloBoardID != "B1" {
 		t.Errorf("TrelloBoardID=%q, want B1", cfg.TrelloBoardID)
-	}
-	if cfg.DefaultProj != "mydefault" {
-		t.Errorf("DefaultProj=%q, want mydefault", cfg.DefaultProj)
 	}
 	if len(cfg.AllowedProjects) != 1 || cfg.AllowedProjects[0].Name != "agent" {
 		t.Errorf("AllowedProjects=%+v", cfg.AllowedProjects)
@@ -248,13 +243,10 @@ func TestLoadConfigOK(t *testing.T) {
 	if cfg.OpenCodeBaseURL == "" {
 		t.Error("OpenCodeBaseURL should default")
 	}
-	if cfg.DefaultProj != "default" {
-		t.Errorf("DefaultProj=%q, want default", cfg.DefaultProj)
-	}
 }
 
 func TestNewAppliesDefaults(t *testing.T) {
-	s, err := New(Config{DefaultProj: "default"})
+	s, err := New(Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,11 +281,34 @@ func TestWriteJSON(t *testing.T) {
 	}
 }
 
+// ---------- hasProjLabel tests ----------
+
+func TestHasProjLabel(t *testing.T) {
+	cases := []struct {
+		name   string
+		labels []trelloLabel
+		want   bool
+	}{
+		{"no labels", nil, false},
+		{"attention only", []trelloLabel{{Name: "attention"}}, false},
+		{"proj:agent", []trelloLabel{{Name: "proj:agent"}}, true},
+		{"proj:agent + attention", []trelloLabel{{Name: "proj:agent"}, {Name: "attention"}}, true},
+		{"multiple proj", []trelloLabel{{Name: "proj:a"}, {Name: "proj:b"}}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			card := trelloCard{Labels: c.labels}
+			if got := hasProjLabel(card); got != c.want {
+				t.Errorf("hasProjLabel = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 // ---------- parse_proj tests ----------
 
 func TestParseProj(t *testing.T) {
 	cfg := Config{
-		DefaultProj: "default",
 		AllowedProjects: []AllowedProject{
 			{Label: "proj:agent", Name: "agent"},
 			{Label: "proj:ai", Name: "ai"},
@@ -306,8 +321,8 @@ func TestParseProj(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "no proj label uses default",
-			want: "default",
+			name:    "no proj label is error",
+			wantErr: true,
 		},
 		{
 			name:   "known proj:agent",
@@ -315,9 +330,9 @@ func TestParseProj(t *testing.T) {
 			want:   "agent",
 		},
 		{
-			name:   "unrelated label uses default",
-			labels: []trelloLabel{{Name: "human"}},
-			want:   "default",
+			name:    "unrelated label is error (no proj:*)",
+			labels:  []trelloLabel{{Name: "attention"}},
+			wantErr: true,
 		},
 		{
 			name:    "unknown proj label",

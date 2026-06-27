@@ -307,7 +307,6 @@ func newTestServer(t interface {
 		AbortTimeout:       60 * time.Second,
 		SummaryTimeout:     60 * time.Second,
 		DefaultModel:       ModelRef{ProviderID: "test", ModelID: "model"},
-		DefaultProj:        "default",
 		MaxDoingTotal:      2,
 		MaxDoingPerProject: 1,
 		TrelloLists: map[string]string{

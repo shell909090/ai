@@ -50,11 +50,10 @@ type Config struct {
 	SummaryTimeout     time.Duration
 	DefaultModel       ModelRef
 	AllowedModels      []AllowedModel
-	DefaultProj        string
 	AllowedProjects    []AllowedProject
 	// TrelloLists maps logical list names (todo/doing/done) to Trello list IDs.
 	TrelloLists map[string]string
-	// TrelloLabels maps logical label keys (human/attention) to Trello label names.
+	// TrelloLabels maps logical label keys (attention) to Trello label names.
 	TrelloLabels map[string]string
 }
 
@@ -70,7 +69,6 @@ func LoadConfig() (Config, error) {
 		SummaryTimeout:     60 * time.Second,
 		MaxDoingTotal:      envInt("KANBAN_MAX_DOING_TOTAL", 3),
 		MaxDoingPerProject: envInt("KANBAN_MAX_DOING_PER_PROJECT", 1),
-		DefaultProj:        "default",
 	}
 	env, err := readDotenv(".env")
 	if err != nil {
@@ -110,7 +108,6 @@ type yamlConfig struct {
 		AllowedModels []yamlModelRow `yaml:"allowed_models"`
 	} `yaml:"opencode"`
 	Projects struct {
-		Default string        `yaml:"default"`
 		Allowed []yamlProjRow `yaml:"allowed"`
 	} `yaml:"projects"`
 	Capacity struct {
@@ -184,9 +181,6 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 			ModelID:    m.ModelID,
 		})
 	}
-	if yc.Projects.Default != "" {
-		c.DefaultProj = yc.Projects.Default
-	}
 	for _, p := range yc.Projects.Allowed {
 		c.AllowedProjects = append(c.AllowedProjects, AllowedProject{
 			Label: p.Label,
@@ -239,9 +233,20 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// parseProj extracts the project name from a card's labels.
-// Returns (defaultProj, nil) if no proj:* label is present.
-// Returns ("", error) if parsing fails (multiple or unknown label).
+// hasProjLabel reports whether a card has at least one proj:* label.
+// Cards without a proj:* label are not AI-managed and must be ignored by the scheduler.
+func hasProjLabel(card trelloCard) bool {
+	for _, l := range card.Labels {
+		if strings.HasPrefix(l.Name, "proj:") {
+			return true
+		}
+	}
+	return false
+}
+
+// parseProj extracts the project name from a card's proj:* label.
+// Callers must check hasProjLabel first; cards without a proj:* label are not AI-managed.
+// Returns ("", error) if no proj:* label is present, or if there are multiple or unknown labels.
 func parseProj(card trelloCard, cfg Config) (string, error) {
 	var matches []string
 	for _, l := range card.Labels {
@@ -250,7 +255,7 @@ func parseProj(card trelloCard, cfg Config) (string, error) {
 		}
 	}
 	if len(matches) == 0 {
-		return cfg.DefaultProj, nil
+		return "", fmt.Errorf("no proj:* label")
 	}
 	if len(matches) > 1 {
 		return "", fmt.Errorf("multiple proj labels: %s", strings.Join(matches, ", "))

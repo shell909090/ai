@@ -14,9 +14,8 @@ opencode sessions automatically.
 - When the session finishes, the coordinator requests a brief summary and moves the card
   to **done**.
 - Humans can drag cards out of **doing** at any time; the coordinator aborts the session.
-- Labels control routing: `proj:*` selects the project (for capacity accounting),
-  `model:*` selects the opencode model. The `human` label marks cards the coordinator
-  should ignore entirely.
+- Labels control routing: only cards with a `proj:*` label are managed by the coordinator;
+  cards without one are left untouched. `model:*` selects the opencode model.
 
 ## Requirements
 
@@ -55,7 +54,6 @@ trello:
     doing: "<list-id>"      # Trello list ID for the doing column
     done: "<list-id>"       # Trello list ID for the done column
   labels:
-    human: "human"          # Trello label name the coordinator ignores
     attention: "attention"  # Trello label name added when human review is needed
 
 opencode:
@@ -70,7 +68,6 @@ opencode:
       modelID: "claude-sonnet-4"
 
 projects:
-  default: "default"
   allowed:
     - label: "proj:agent"
       name: "agent"
@@ -89,10 +86,12 @@ timer:
 
 | Label | Meaning |
 |---|---|
-| `human` | Human task — coordinator ignores this card. |
-| `attention` | Needs human review — added by coordinator on errors or timeouts. |
-| `proj:NAME` | Project for capacity accounting. Uses config default if absent. |
+| `proj:NAME` | Marks a card as AI-managed and assigns it to a named project for capacity accounting. Cards without this label are not touched by the coordinator. |
 | `model:NAME` | opencode model for this card. Uses config default if absent. |
+| `attention` | Needs human review — added by coordinator on errors or timeouts. |
+
+Only cards that carry a `proj:*` label are managed by the coordinator. Cards without one
+are left untouched regardless of which list they are in.
 
 Unknown or ambiguous `proj:*` / `model:*` labels move the card to **done** with the
 `attention` label and a comment explaining the reason.

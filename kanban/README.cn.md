@@ -11,7 +11,7 @@
 - 协调器为每张卡启动一个 opencode session，将卡片描述作为初始 prompt 发送，并把进度 comment 写回 Trello。
 - Session 结束后，协调器请求简短总结，并将卡片移到 **done**。
 - 人类可以随时把卡片从 **doing** 拖走，协调器会 abort 对应 session。
-- 标签控制路由：`proj:*` 指定项目（用于容量计数），`model:*` 指定 opencode 模型，`human` 标签表示该卡由人类处理、协调器忽略。
+- 标签控制路由：只有带 `proj:*` 标签的卡片才由协调器管理，无此标签的卡片保持不动。`model:*` 指定 opencode 模型。
 
 ## 环境要求
 
@@ -50,7 +50,6 @@ trello:
     doing: "<list-id>"      # Trello list ID，doing 列
     done: "<list-id>"       # Trello list ID，done 列
   labels:
-    human: "human"          # 协调器忽略的 label 名称
     attention: "attention"  # 需要人工关注时添加的 label 名称
 
 opencode:
@@ -65,7 +64,6 @@ opencode:
       modelID: "claude-sonnet-4"
 
 projects:
-  default: "default"
   allowed:
     - label: "proj:agent"
       name: "agent"
@@ -84,10 +82,11 @@ timer:
 
 | 标签 | 含义 |
 |---|---|
-| `human` | 人工任务，协调器完全忽略。 |
-| `attention` | 需要人工关注，在异常或超时时由协调器添加。 |
-| `proj:NAME` | 指定项目，用于容量计数，无标签时使用默认项目。 |
+| `proj:NAME` | 将卡片标记为 AI 管理，并指定所属项目（用于容量计数）。没有此标签的卡片协调器不会触碰。 |
 | `model:NAME` | 指定 opencode 模型，无标签时使用配置默认。 |
+| `attention` | 需要人工关注，在异常或超时时由协调器添加。 |
+
+只有带 `proj:*` 标签的卡片才归协调器管理。没有 `proj:*` 标签的卡片无论在哪个列表，协调器均不移动、不写 comment、不占用容量。
 
 `proj:*` 或 `model:*` 标签未知或有多个时，卡片移到 **done** 并加 `attention`，comment 说明原因。
 
