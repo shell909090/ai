@@ -4,6 +4,7 @@
 - session id
 - proj
 - model
+- workdir
 - abort
 - summary
 
@@ -27,9 +28,9 @@
 finish状态来自/session/:session_id/message?limit=1返回的最后一条消息的info.finish，有6个合法值：stop，tool-calls，length，content-filter，error，unknown。如果info.finish没有值，那么说明任务仍在继续。
 
 1. 如果没有info.finish，或者info.finish = tool-calls，那么跳过当前session。当前session还在活跃。
-2. 检查 task.abort。 如果有，给 card 增加 comment 说明 abort 成功。销毁 task，总 task 计数-1，对应 proj task 计数-1。（此条隐含默认，如果有task.abort，那么当前card不在doing，且用户不在乎任务是否成功）
+2. 检查 task.abort。 如果有，给 card 增加 comment 说明 abort 成功。运行abort钩子。销毁 task，总 task 计数-1，对应 proj task 计数-1。（此条隐含默认，如果有task.abort，那么当前card不在doing，且用户不在乎任务是否成功）
 3. 如果没有 task.abort，检查info.finish。如果info.finish != stop，把对应 card 拖去 done，增加attention标签。追加 comment，说任务执行异常结束。销毁 task，总 task 计数-1，对应 proj task 计数-1。（此条隐含，即使在summary途中出了错，也属于任务执行出错）
-4. 如果info.finish = stop，检查 task.summary 属性。如果有，追加 comment 说执行完成，并把 session 最后一条消息一起写到 comments 里。把对应 card 拖去 done。销毁 task，总 task 计数-1，对应 proj task 计数-1。
+4. 如果info.finish = stop，检查 task.summary 属性。如果有，追加 comment 说执行完成，并把 session 最后一条消息一起写到 comments 里。同步执行 session.finish 钩子。无论是否成功，把对应 card 拖去 done。销毁 task，总 task 计数-1，对应 proj task 计数-1。
 5. 如果没有 task.summary，给 session 发 summary prompt。并设置 task.summary = time。
 
 # doing 检查
@@ -42,7 +43,7 @@ finish状态来自/session/:session_id/message?limit=1返回的最后一条消�
 1. 拿 proj 信息。没有 proj:* label 时跳过卡片。
 2. 拿 model 信息。没有 model:* label 时用默认 model；model 解析失败时，把 card 转去 done，标 attention，追加 comment。
 3. 做容量检查。如果容量超了，把 card 转去 todo。
-4. 如果容量没超。使用指定 model 建立对应 session，建立 task 结构追踪，总 task 计数+1，对应 proj task 计数+1。
+4. 如果容量没超。建立 task 结构追踪并立刻占用容量，总 task 计数+1，对应 proj task 计数+1。运行 session.new 钩子。session.new 钩子运行结束且成功之后，使用指定 model 建立对应 session；如果钩子失败，销毁 task 并释放容量，把 card 转去 done，标 attention，追加 comment。
 
 # doing.out
 
