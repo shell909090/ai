@@ -20,7 +20,7 @@
 3. 做 timeout 检查。
     - 如果有 task 满足 now > task.abort+timeout，那么给 card 标 attention。增加 comment 说明 abort 超时。销毁 task，总 task 计数-1，对应 proj task 计数-1。
     - 如果有 task 满足 now > task.summary+timeout，那么把 card 拖去 done，并标 attention。追加 comment 说执行完成但总结超时。销毁 task，总 task 计数-1，对应 proj task 计数-1。
-4. 如果 task 容量限制未满，去拉 todo list。过滤掉标了 human 的 card。检查第一条 card 对应的 proj 是否满足容量限制要求。如果满足，拖去 doing。随后走 doing.in 流程。如果不满足，继续向下检查。model 不影响容量，只影响启动 session 时选择的模型。
+4. 如果 task 容量限制未满，去拉 todo list。过滤掉没有标 proj 的 card。检查第一条 card 对应的 proj 是否满足容量限制要求。如果满足，拖去 doing。随后走 doing.in 流程。如果不满足，继续向下检查。model 不影响容量，只影响启动 session 时选择的模型。
 
 # session.finish
 
@@ -34,12 +34,12 @@ finish状态来自/session/:session_id/message?limit=1返回的最后一条消�
 
 # doing 检查
 
-1. 过滤 card。判定card是否有 human 标签。如果有的话忽略，这张卡不该AI管。
+1. 过滤 card。判定card是否有 proj 标签。如果没有的话忽略，这张卡不该AI管。
 2. task 结构和 doing list 做差。只在 task 结构里的是 doing.out。只在 card list 里的是 doing.in。注意先做 out 再做 in，不然会有错误的容量限制。
 
 # doing.in
 
-1. 拿 proj 信息。没有 proj:* label 时用默认 proj；proj 解析失败时，把 card 转去 done，标 attention，追加 comment。
+1. 拿 proj 信息。没有 proj:* label 时跳过卡片。
 2. 拿 model 信息。没有 model:* label 时用默认 model；model 解析失败时，把 card 转去 done，标 attention，追加 comment。
 3. 做容量检查。如果容量超了，把 card 转去 todo。
 4. 如果容量没超。使用指定 model 建立对应 session，建立 task 结构追踪，总 task 计数+1，对应 proj task 计数+1。

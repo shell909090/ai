@@ -72,7 +72,6 @@ trello:
     doing: "doing"
     done: "done"
   labels:
-    human: "human"
     attention: "attention"
 
 opencode:
@@ -93,7 +92,6 @@ models:
       model: "gpt-5"
 
 projects:
-  default: "default"
   allowed:
     - label: "proj:default"
       name: "default"
@@ -112,7 +110,7 @@ timer:
 
 规则：
 
-- 无 `proj:*` label 时使用 `projects.default`。
+- 无 `proj:*` label 时卡片不归协调器处理，调度流程必须忽略该卡片。
 - 存在一个可识别 `proj:*` label 时使用对应 proj。
 - 解析失败、多个 proj label 或 label 不在 allowlist 中，都视为 proj 解析失败。
 - proj 解析失败时，卡片移到 `done`，添加 `attention`，写 comment，不启动 session。
@@ -221,13 +219,13 @@ summary prompt 固定由协调器发送。目标是让 opencode 用简短文本�
 ### 7.1 输入
 
 - 当前 task 集合。
-- Trello `doing` list 中所有非 `human` 卡片。
+- Trello `doing` list 中所有带 `proj:*` label 的卡片。
 
 ### 7.2 算法
 
 ```text
 reconcile_doing(now):
-  doing_cards = cards in doing without human label
+  doing_cards = cards in doing with proj label
   task_cards = keys(tasks)
 
   for card_id in task_cards - doing_cards:
@@ -244,6 +242,9 @@ reconcile_doing(now):
 ```text
 handle_doing_in(card, now):
   proj = parse_proj(card)
+  if proj missing:
+    return
+
   if proj invalid:
     move card to done
     add attention
@@ -316,7 +317,7 @@ promote_todo(now):
     return
 
   for card in todo list order:
-    if card has human label:
+    if card has no proj label:
       continue
 
     proj = parse_proj(card)
@@ -385,9 +386,9 @@ Cannot start task now: capacity is full for project <proj>.
 
 单元测试建议覆盖：
 
-- `parse_proj`：默认 proj、合法 proj、未知 proj、多个 proj。
+- `parse_proj`：无 proj 时跳过、合法 proj、未知 proj、多个 proj。
 - `parse_model`：默认 model、合法 model、未知 model、多个 model。
-- capacity：全局满、项目满、可启动、跳过 human。
+- capacity：全局满、项目满、可启动、跳过无 proj 卡片。
 - `session.finish`：缺失、`tool-calls`、`stop` 首次、`stop` summary 完成、4 种异常 finish。
 - doing 对账：先 out 后 in，容量释放后可启动新卡。
 - timeout：abort 超时、summary 超时、未超时不处理。

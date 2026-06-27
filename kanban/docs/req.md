@@ -39,12 +39,12 @@
 
 | label | 行为 |
 |---|---|
-| `human` | 人工任务。协调器忽略，不启动 opencode session，不占用容量。 |
 | `attention` | 需要人工关注。协调器在异常 finish、abort 超时、summary 超时、proj/model 解析失败等情况下添加。 |
-| `proj:*` | 指定任务所属项目，用于选择配置中的项目和项目容量计数。 |
+| `proj:*` | 指定任务归 AI 协调器处理，并声明所属项目，用于选择配置中的项目和项目容量计数。 |
 | `model:*` | 指定这张卡使用的模型。必须匹配配置中的模型 allowlist。 |
 
-如果卡片没有 `proj:*` label，使用配置中的默认项目。
+看板由人类和 AI 共享；只有带 `proj:*` label 的卡片归 AI 协调器处理。
+如果卡片没有 `proj:*` label，协调器忽略该卡片，不启动 opencode session，不移动卡片，不占用容量。
 如果 `proj:*` 解析失败，协调器把卡片移到 `done`，添加 `attention` label，并写 comment 说明原因。
 如果卡片没有 `model:*` label，使用配置中的默认模型；如果 `model:*` 解析失败，同样移到 `done` 并添加 `attention`。
 
@@ -72,7 +72,7 @@
 1. 检查所有 task 对应 session 是否产生 `session.finish`。
 2. 检查 Trello `doing` list 和 task 结构是否一致。
 3. 检查 abort 和 summary 是否超时。
-4. 如果容量未满，从 `todo` list 拉取可启动卡片，跳过 `human` 卡片，按容量限制启动符合条件的卡片。
+4. 如果容量未满，从 `todo` list 拉取可启动卡片，跳过没有 `proj:*` label 的卡片，按容量限制启动符合条件的卡片。
 
 `docs/events.md` 是上述流程的精确规则来源。
 
@@ -109,16 +109,16 @@ summary message 默认由 prompt 控制在 140 字以内，但协调器不限制
 
 协调器周期性比较 task 结构和 Trello `doing` list：
 
-- `doing` 里带 `human` label 的卡片忽略。
+- `doing` 里没有 `proj:*` label 的卡片忽略。
 - 只在 task 结构里的卡片视为 `doing.out`。
 - 只在 Trello `doing` list 里的卡片视为 `doing.in`。
 - 必须先处理 `doing.out`，再处理 `doing.in`，避免容量计数错误。
 
 ## 8. doing.in
 
-当一张非 `human` 卡片进入 `doing` 且不在 task 结构中：
+当一张带 `proj:*` label 的卡片进入 `doing` 且不在 task 结构中：
 
-1. 解析 proj；无 `proj:*` 时使用默认 proj，解析失败则移到 `done` 并加 `attention`。
+1. 解析 proj；无 `proj:*` 时忽略，解析失败则移到 `done` 并加 `attention`。
 2. 解析 model；无 `model:*` 时使用默认模型，解析失败则移到 `done` 并加 `attention`。
 3. 检查总容量和该 proj 容量。
 4. 容量超限：把卡移回 `todo`，写 comment 说明。
@@ -147,7 +147,6 @@ abort 完成由后续 `session.finish` 处理。如果 abort 超时，协调器�
 - opencode server 地址和认证方式。
 - 默认模型。
 - 允许的 `model:*` 映射。
-- 默认 proj。
 - 允许的 `proj:*` 映射。
 - 全局 task 容量上限。
 - 每个 proj 的 task 容量上限。
