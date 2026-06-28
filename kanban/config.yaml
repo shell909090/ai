@@ -53,3 +53,7 @@ timer:
 hooks:
   default_timeout: 120s
   max_output_bytes: 8192
+
+control:
+  listen: "127.0.0.1:8087"    # same port as /health; control routes added automatically
+  token_env: KANBAN_CONTROL_TOKEN  # env var name holding the auth token

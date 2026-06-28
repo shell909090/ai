@@ -115,10 +115,15 @@ func New(cfg Config) (*Server, error) {
 // Run starts the HTTP server and the single timer loop, blocking until
 // ctx is cancelled or the HTTP server returns a non-shutdown error.
 func (s *Server) Run(ctx context.Context) error {
-	httpErrCh := make(chan error, 1)
+	httpErrCh := make(chan error, 2)
 	go func() {
 		httpErrCh <- s.serveHTTP(ctx)
 	}()
+	if s.cfg.ControlToken != "" && s.cfg.ControlListen != "" {
+		go func() {
+			httpErrCh <- s.controlServeHTTP(ctx)
+		}()
+	}
 
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()
@@ -140,12 +145,16 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// HTTPHandler returns the HTTP handler for /health.
+// HTTPHandler returns the HTTP handler for /health and, when ControlToken is set,
+// the Control API at /control/v1/*.
 func (s *Server) HTTPHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	if s.cfg.ControlToken != "" {
+		s.registerControlRoutes(mux)
+	}
 	return mux
 }
 

@@ -49,10 +49,26 @@ func (f *fakeTrello) setCards(listID string, cards []trelloCard) {
 
 func (f *fakeTrello) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/1/cards", f.createCardHandler) // card creation (no trailing slash)
 	mux.HandleFunc("/1/cards/", f.cardsHandler)
 	mux.HandleFunc("/1/boards/", f.boardsHandler)
 	mux.HandleFunc("/1/lists/", f.listsHandler)
 	return mux
+}
+
+func (f *fakeTrello) createCardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+		Desc string `json:"desc"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	card := trelloCard{ID: "new_card_id", Name: body.Name, Desc: body.Desc}
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(card)
 }
 
 func (f *fakeTrello) cardsHandler(w http.ResponseWriter, r *http.Request) {
@@ -105,10 +121,12 @@ func (f *fakeTrello) boardsHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	// Return the attention label so resolveLabelID can find it.
+	// Return labels so resolveLabelID can find them.
 	labels := []map[string]string{
 		{"id": testAttentionID, "name": testAttentionName, "color": "red", "idBoard": testBoardID},
 		{"id": "lbl_human", "name": testHumanName, "color": "green", "idBoard": testBoardID},
+		{"id": "lbl_proj_agent", "name": "proj:agent", "color": "blue", "idBoard": testBoardID},
+		{"id": "lbl_proj_kanban", "name": "proj:kanban", "color": "purple", "idBoard": testBoardID},
 	}
 	_ = json.NewEncoder(w).Encode(labels)
 }

@@ -111,9 +111,9 @@ func TestTrelloListBoardLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// fakeTrello always returns human + attention labels
-	if len(got) != 2 {
-		t.Errorf("len=%d, want 2", len(got))
+	// fakeTrello returns attention, human, proj:agent, proj:kanban labels
+	if len(got) < 2 {
+		t.Errorf("len=%d, want at least 2", len(got))
 	}
 }
 

@@ -158,6 +158,43 @@ are left untouched regardless of which list they are in.
 Unknown or ambiguous `proj:*` / `model:*` labels move the card to **done** with the
 `attention` label and a comment explaining the reason.
 
+## AI-driven kanban control
+
+The coordinator exposes a local Control API so AI assistants can query and modify Trello
+cards without holding Trello credentials. The API is authenticated with a Bearer token and
+listens on localhost only.
+
+Add to your `.env`:
+```
+KANBAN_CONTROL_TOKEN=<random-secret>
+```
+
+Add to `config.yaml`:
+```yaml
+control:
+  listen: "127.0.0.1:8087"
+  token_env: KANBAN_CONTROL_TOKEN
+```
+
+Then use `scripts/kanbanctl.py` from a project directory. The coordinator infers the
+project from the current working directory. See [`scripts/SKILL.md`](scripts/SKILL.md) for
+usage guidelines.
+
+```sh
+export KANBAN_CONTROL_URL=http://127.0.0.1:8087
+export KANBAN_CONTROL_TOKEN=<same-as-above>
+
+# Query current board state
+python3 scripts/kanbanctl.py list-cards --list todo
+
+# Create a new todo (project inferred from cwd)
+python3 scripts/kanbanctl.py add-todo --title "Fix login bug"
+
+# Move and comment
+python3 scripts/kanbanctl.py move <card_id> --list done
+python3 scripts/kanbanctl.py comment <card_id> --text "Fixed in commit abc123."
+```
+
 ## Running
 
 ```sh

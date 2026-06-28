@@ -62,6 +62,9 @@ type Config struct {
 	SummaryTimeout     time.Duration
 	HookDefaultTimeout time.Duration
 	HookMaxOutputBytes int
+	ControlListen      string
+	ControlToken       string // resolved token value (from ControlTokenEnv at load time)
+	ControlTokenEnv    string // env var name that holds the token
 	DefaultModel       ModelRef
 	AllowedModels      []AllowedModel
 	AllowedProjects    []AllowedProject
@@ -137,6 +140,10 @@ type yamlConfig struct {
 		DefaultTimeout string `yaml:"default_timeout"`
 		MaxOutputBytes int    `yaml:"max_output_bytes"`
 	} `yaml:"hooks"`
+	Control struct {
+		Listen   string `yaml:"listen"`
+		TokenEnv string `yaml:"token_env"`
+	} `yaml:"control"`
 }
 
 type yamlModel struct {
@@ -218,6 +225,13 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 	}
 	if yc.Hooks.MaxOutputBytes > 0 {
 		c.HookMaxOutputBytes = yc.Hooks.MaxOutputBytes
+	}
+	if yc.Control.Listen != "" {
+		c.ControlListen = yc.Control.Listen
+	}
+	if yc.Control.TokenEnv != "" {
+		c.ControlTokenEnv = yc.Control.TokenEnv
+		c.ControlToken = os.Getenv(yc.Control.TokenEnv)
 	}
 	if yc.Capacity.Total > 0 {
 		c.MaxDoingTotal = yc.Capacity.Total

@@ -147,6 +147,39 @@ fd 3 为空表示无结果。非零退出、超时、JSON 非法或 `workdir` �
 
 `proj:*` 或 `model:*` 标签未知或有多个时，卡片移到 **done** 并加 `attention`，comment 说明原因。
 
+## AI 看板控制
+
+协调器提供本地 Control API，让 AI 助手可以查询和修改 Trello 卡片，而无需持有 Trello 凭证。API 使用 Bearer token 鉴权，仅监听本机地址。
+
+在 `.env` 中添加：
+```
+KANBAN_CONTROL_TOKEN=<随机密钥>
+```
+
+在 `config.yaml` 中添加：
+```yaml
+control:
+  listen: "127.0.0.1:8087"
+  token_env: KANBAN_CONTROL_TOKEN
+```
+
+在项目目录内使用 `scripts/kanbanctl.py`，协调器会根据当前目录推断项目。详见 [`scripts/SKILL.md`](scripts/SKILL.md)。
+
+```sh
+export KANBAN_CONTROL_URL=http://127.0.0.1:8087
+export KANBAN_CONTROL_TOKEN=<同上>
+
+# 查询看板
+python3 scripts/kanbanctl.py list-cards --list todo
+
+# 创建 todo（自动推断项目）
+python3 scripts/kanbanctl.py add-todo --title "修复登录超时"
+
+# 移动和写 comment
+python3 scripts/kanbanctl.py move <card_id> --list done
+python3 scripts/kanbanctl.py comment <card_id> --text "已在 commit abc123 修复。"
+```
+
 ## 运行
 
 ```sh
