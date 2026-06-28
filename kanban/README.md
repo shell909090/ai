@@ -164,9 +164,14 @@ The coordinator exposes a local Control API so AI assistants can query and modif
 cards without holding Trello credentials. The API is authenticated with a Bearer token and
 listens on localhost only.
 
-Add to your `.env`:
+Add the token to your `.env` (recommended — keeps all secrets in one place):
 ```
 KANBAN_CONTROL_TOKEN=<random-secret>
+```
+
+Or export it as a real environment variable (useful in Docker/CI):
+```sh
+export KANBAN_CONTROL_TOKEN=<random-secret>
 ```
 
 Add to `config.yaml`:

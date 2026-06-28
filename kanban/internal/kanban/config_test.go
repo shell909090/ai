@@ -225,6 +225,86 @@ func TestValidateAllowedProjectMissingName(t *testing.T) {
 	}
 }
 
+func TestValidateAllowedProjectMissingRoot(t *testing.T) {
+	c := Config{
+		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
+		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: ""}},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for allowed project missing root")
+	}
+}
+
+func TestValidateAllowedProjectRelativeRoot(t *testing.T) {
+	c := Config{
+		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
+		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "relative/path"}},
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for relative root path")
+	}
+}
+
+func TestValidateAllowedProjectAbsoluteRootOK(t *testing.T) {
+	c := Config{
+		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
+		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "/abs/path"}},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("unexpected error for valid project: %v", err)
+	}
+}
+
+func TestLoadConfigControlTokenFromDotenv(t *testing.T) {
+	// Token placed in .env (not exported as real env var) must be picked up.
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(".env", []byte(strings.Join([]string{
+		"TRELLO_API_KEY=ABC",
+		"TRELLO_TOKEN=DEF",
+		"OPENCODE_SERVER_USERNAME=u",
+		"OPENCODE_SERVER_PASSWORD=p",
+		"MY_CONTROL_TOKEN=secret123",
+	}, "\n")), 0644))
+	must(os.WriteFile("config.yaml", []byte(`
+trello:
+  board_id: "B1"
+  lists:
+    todo: "L1"
+    doing: "L2"
+    done: "L3"
+opencode:
+  default_model:
+    providerID: "p"
+    modelID: "m"
+control:
+  token_env: MY_CONTROL_TOKEN
+`), 0644))
+	// Ensure the token is NOT in the real process environment.
+	os.Unsetenv("MY_CONTROL_TOKEN")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ControlToken != "secret123" {
+		t.Errorf("ControlToken=%q, want secret123 (should be loaded from .env)", cfg.ControlToken)
+	}
+}
+
 func TestLoadConfigOK(t *testing.T) {
 	dir := t.TempDir()
 	prev, _ := os.Getwd()

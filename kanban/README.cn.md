@@ -151,9 +151,14 @@ fd 3 为空表示无结果。非零退出、超时、JSON 非法或 `workdir` �
 
 协调器提供本地 Control API，让 AI 助手可以查询和修改 Trello 卡片，而无需持有 Trello 凭证。API 使用 Bearer token 鉴权，仅监听本机地址。
 
-在 `.env` 中添加：
+在 `.env` 中添加（推荐——所有密钥集中管理）：
 ```
 KANBAN_CONTROL_TOKEN=<随机密钥>
+```
+
+或导出为真实环境变量（适合 Docker/CI 部署）：
+```sh
+export KANBAN_CONTROL_TOKEN=<随机密钥>
 ```
 
 在 `config.yaml` 中添加：

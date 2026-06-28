@@ -3,6 +3,7 @@ package kanban
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -105,6 +106,14 @@ func LoadConfig() (Config, error) {
 		return c, fmt.Errorf("read config.yaml: %w", err)
 	}
 	mergeYAMLIntoConfig(&c, yamlCfg)
+	// Resolve control token: .env takes precedence over real env so that users
+	// can keep all secrets in one place. os.Getenv fallback (done in
+	// mergeYAMLIntoConfig) supports deployments that inject secrets as real env vars.
+	if c.ControlTokenEnv != "" && c.ControlToken == "" {
+		if v := env[c.ControlTokenEnv]; v != "" {
+			c.ControlToken = v
+		}
+	}
 	return c, nil
 }
 
@@ -269,6 +278,12 @@ func (c Config) Validate() error {
 		}
 		if p.Name == "" {
 			return fmt.Errorf("config: projects.allowed[%d] (%s).name is required", i, p.Label)
+		}
+		if p.Root == "" {
+			return fmt.Errorf("config: projects.allowed[%d] (%s).root is required", i, p.Label)
+		}
+		if !filepath.IsAbs(p.Root) {
+			return fmt.Errorf("config: projects.allowed[%d] (%s).root must be an absolute path, got %q", i, p.Label, p.Root)
 		}
 	}
 	return nil
