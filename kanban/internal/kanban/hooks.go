@@ -54,6 +54,33 @@ type HookRunner interface {
 		pc ProjectConfig) (HookResult, error)
 }
 
+// safeBaseEnv returns a filtered subset of the process environment containing
+// only generic system variables needed for shell execution (PATH, HOME, etc.).
+// Sensitive coordinator variables (TRELLO_*, OPENCODE_*, KANBAN_CONTROL_TOKEN,
+// and any KANBAN_* already set in the host env) are excluded.
+func safeBaseEnv() []string {
+	allowed := []string{
+		"PATH=", "HOME=", "USER=", "SHELL=", "LOGNAME=", "USERNAME=",
+		"TMPDIR=", "TEMP=", "TMP=",
+		"TERM=", "COLORTERM=",
+		"LANG=", "LC_", "LANGUAGE=",
+		"XDG_",
+		"GIT_", "SSH_",
+		"PWD=", "OLDPWD=",
+		"HOSTNAME=", "HOST=",
+	}
+	var env []string
+	for _, e := range os.Environ() {
+		for _, prefix := range allowed {
+			if strings.HasPrefix(e, prefix) {
+				env = append(env, e)
+				break
+			}
+		}
+	}
+	return env
+}
+
 // cappedWriter is an io.Writer that discards data past a byte limit.
 type cappedWriter struct {
 	w   io.Writer
@@ -157,7 +184,10 @@ func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, c
 	for _, l := range card.Labels {
 		labelNames = append(labelNames, l.Name)
 	}
-	cmd.Env = append(os.Environ(),
+	// Build a minimal env: only safe system variables plus KANBAN_* context.
+	// Never pass the full os.Environ() to avoid leaking Trello/opencode credentials
+	// or the control token to arbitrary project scripts.
+	cmd.Env = append(safeBaseEnv(),
 		"KANBAN_EVENT="+event,
 		"KANBAN_CARD_ID="+card.ID,
 		"KANBAN_CARD_TITLE="+card.Name,

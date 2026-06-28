@@ -1123,6 +1123,57 @@ func TestReconcileDoingError(t *testing.T) {
 	}
 }
 
+// ---------- orphan session compensation ----------
+
+func TestHandleDoingInAbortsSessionOnPromptFail(t *testing.T) {
+	// When ocCreateSession succeeds but ocSendPrompt fails,
+	// ocAbortSession must be called to avoid an orphan session.
+	oc := &fakeOpencode{sessionID: "ses_orphan"}
+	// Make prompt_async return 500 to simulate failure.
+	promptFail := false
+	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/prompt_async") {
+			if !promptFail {
+				promptFail = true
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		oc.handler().ServeHTTP(w, r)
+	}))
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
+
+	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	// Task must be gone (capacity released).
+	s.mu.Lock()
+	_, taskExists := s.tasks["c1"]
+	total := s.totalCount
+	s.mu.Unlock()
+
+	if taskExists {
+		t.Error("task should be destroyed after prompt failure")
+	}
+	if total != 0 {
+		t.Errorf("totalCount=%d, want 0", total)
+	}
+
+	// abort must have been called for the created session.
+	oc.mu.Lock()
+	aborts := oc.abortCalls
+	oc.mu.Unlock()
+	if len(aborts) != 1 || aborts[0] != "ses_orphan" {
+		t.Errorf("expected abort of ses_orphan, got abortCalls=%v", aborts)
+	}
+}
+
 // ---------- session_new hook integration ----------
 
 func TestHandleDoingInSessionNewHookSuccess(t *testing.T) {

@@ -172,7 +172,6 @@ KANBAN_CONTROL_TOKEN=<random-secret>
 Add to `config.yaml`:
 ```yaml
 control:
-  listen: "127.0.0.1:8087"
   token_env: KANBAN_CONTROL_TOKEN
 ```
 

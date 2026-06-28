@@ -159,7 +159,6 @@ KANBAN_CONTROL_TOKEN=<随机密钥>
 在 `config.yaml` 中添加：
 ```yaml
 control:
-  listen: "127.0.0.1:8087"
   token_env: KANBAN_CONTROL_TOKEN
 ```
 

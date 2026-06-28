@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -58,6 +60,17 @@ func TestControlAuthWrongToken(t *testing.T) {
 	rec := controlDo(t, s, "GET", "/control/v1/lists", "wrong-token", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("code=%d, want 401", rec.Code)
+	}
+}
+
+func TestControlAuthEmptyBearer(t *testing.T) {
+	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	req := httptest.NewRequest("GET", "/control/v1/lists", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	rec := httptest.NewRecorder()
+	s.HTTPHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("empty Bearer should be 401, got %d", rec.Code)
 	}
 }
 
@@ -480,6 +493,25 @@ func TestControlRoutesRequireToken(t *testing.T) {
 // checks that the inference code ran correctly (we won't test Trello create).
 // Actually we need the create to succeed for the test to pass. Let me add
 // card creation support to fakeTrello in fakes_test.go.
+
+func TestInferProjectSymlink(t *testing.T) {
+	// A symlink to the project root should still match.
+	realDir := t.TempDir()
+	linkDir := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skip("symlink not supported:", err)
+	}
+	cfg := Config{
+		AllowedProjects: []AllowedProject{
+			{Label: "proj:a", Name: "a", Root: realDir},
+		},
+	}
+	// cwd is inside the symlink path; should resolve to realDir and match.
+	proj, err := inferProject(linkDir, cfg, nil)
+	if err != nil || proj.Name != "a" {
+		t.Errorf("expected proj 'a' via symlink, got err=%v proj=%+v", err, proj)
+	}
+}
 
 func TestInferProjectEmptyCwd(t *testing.T) {
 	cfg := Config{AllowedProjects: []AllowedProject{{Label: "proj:a", Name: "a", Root: "/repo"}}}

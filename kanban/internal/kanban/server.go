@@ -115,15 +115,10 @@ func New(cfg Config) (*Server, error) {
 // Run starts the HTTP server and the single timer loop, blocking until
 // ctx is cancelled or the HTTP server returns a non-shutdown error.
 func (s *Server) Run(ctx context.Context) error {
-	httpErrCh := make(chan error, 2)
+	httpErrCh := make(chan error, 1)
 	go func() {
 		httpErrCh <- s.serveHTTP(ctx)
 	}()
-	if s.cfg.ControlToken != "" && s.cfg.ControlListen != "" {
-		go func() {
-			httpErrCh <- s.controlServeHTTP(ctx)
-		}()
-	}
 
 	ticker := time.NewTicker(s.cfg.PollInterval)
 	defer ticker.Stop()

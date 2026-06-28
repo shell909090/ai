@@ -302,6 +302,40 @@ echo "WORKDIR=$KANBAN_WORKDIR" >> `+outFile)
 	}
 }
 
+func TestRunHookDoesNotLeakSensitiveEnv(t *testing.T) {
+	// Sensitive vars must not reach the hook subprocess.
+	t.Setenv("TRELLO_API_KEY", "secret-trello-key")
+	t.Setenv("OPENCODE_SERVER_PASSWORD", "secret-oc-pass")
+	t.Setenv("KANBAN_CONTROL_TOKEN", "secret-token")
+
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "leaked.txt")
+	// Print all env vars to a file; we'll scan for the secrets.
+	script := writeScript(t, dir, "hook.sh",
+		`env > `+outFile)
+
+	pc := ProjectConfig{}
+	pc.Hooks.SessionNew.Command = []string{script}
+
+	r := newTestHookRunner(t)
+	_, err := r.RunHook(context.Background(), "session_new", testTask(),
+		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, secret := range []string{"secret-trello-key", "secret-oc-pass", "secret-token"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("sensitive value %q leaked to hook subprocess env:\n%s", secret, out)
+		}
+	}
+}
+
 func TestRunHookFd3Overflow(t *testing.T) {
 	dir := t.TempDir()
 	// Write maxOutputBytes+1 bytes to fd 3.

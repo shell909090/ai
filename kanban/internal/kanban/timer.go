@@ -317,6 +317,10 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	// Send the initial prompt.
 	if err := s.ocSendPrompt(ctx, sessionID, model, prompt); err != nil {
 		s.log("doing.in.prompt.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, err))
+		// Abort the already-created session to avoid leaving an orphan on the opencode side.
+		if abortErr := s.ocAbortSession(ctx, sessionID); abortErr != nil {
+			s.log("doing.in.session.abort.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, abortErr))
+		}
 		s.destroyTask(card.ID)
 		return
 	}

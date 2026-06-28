@@ -2,12 +2,12 @@ package kanban
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const controlMaxCommentLen = 16384
@@ -64,10 +64,14 @@ func (s *Server) registerControlRoutes(mux *http.ServeMux) {
 }
 
 // controlMiddleware wraps a handler with Bearer-token authentication.
+// Uses constant-time comparison to prevent timing side-channel attacks.
 func (s *Server) controlMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != s.cfg.ControlToken {
+		provided := strings.TrimPrefix(auth, "Bearer ")
+		if !strings.HasPrefix(auth, "Bearer ") ||
+			len(provided) == 0 ||
+			subtle.ConstantTimeCompare([]byte(provided), []byte(s.cfg.ControlToken)) != 1 {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
@@ -279,14 +283,30 @@ func (s *Server) handleControlRemoveLabel(w http.ResponseWriter, r *http.Request
 
 // --- Project inference ---
 
+// resolveRealPath returns the absolute, symlink-resolved form of p.
+// If the path does not exist (e.g. a worktree not yet created), it falls
+// back to the absolute path without symlink resolution.
+func resolveRealPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return real
+}
+
 // inferProject resolves the project for a given working directory.
 // It matches cwd against AllowedProject.Root and active task.Workdir values,
 // selecting the longest matching path (path-boundary-aware).
+// All paths are absolutized and symlink-resolved before comparison.
 func inferProject(cwd string, cfg Config, tasks map[string]*Task) (AllowedProject, error) {
 	if cwd == "" {
 		return AllowedProject{}, fmt.Errorf("cwd is empty")
 	}
-	cwd = filepath.Clean(cwd)
+	cwd = resolveRealPath(cwd)
 
 	type candidate struct {
 		proj    AllowedProject
@@ -298,7 +318,7 @@ func inferProject(cwd string, cfg Config, tasks map[string]*Task) (AllowedProjec
 		if p.Root == "" {
 			continue
 		}
-		root := filepath.Clean(p.Root)
+		root := resolveRealPath(p.Root)
 		if pathContainsDir(root, cwd) {
 			candidates = append(candidates, candidate{proj: p, pathLen: len(root)})
 		}
@@ -308,7 +328,7 @@ func inferProject(cwd string, cfg Config, tasks map[string]*Task) (AllowedProjec
 		if t.Workdir == "" {
 			continue
 		}
-		workdir := filepath.Clean(t.Workdir)
+		workdir := resolveRealPath(t.Workdir)
 		if pathContainsDir(workdir, cwd) {
 			if p, ok := findProject(t.Proj, cfg); ok {
 				candidates = append(candidates, candidate{proj: p, pathLen: len(workdir)})
@@ -405,26 +425,4 @@ func (s *Server) resolveModelLabel(alias string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unknown model alias: %q", alias)
-}
-
-// controlServeHTTP serves the Control API on a dedicated address.
-func (s *Server) controlServeHTTP(ctx context.Context) error {
-	mux := http.NewServeMux()
-	s.registerControlRoutes(mux)
-	srv := &http.Server{
-		Addr:         s.cfg.ControlListen,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-	}
-	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutCtx)
-	}()
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("control http: %w", err)
-	}
-	return nil
 }

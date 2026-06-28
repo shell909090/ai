@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -96,12 +97,13 @@ def cmd_label_add(args: argparse.Namespace) -> None:
 
 
 def cmd_label_remove(args: argparse.Namespace) -> None:
-    label_path = urllib.request.quote(args.label, safe="")
+    label_path = urllib.parse.quote(args.label, safe="")
     result = request("DELETE", f"/control/v1/cards/{args.card_id}/labels/{label_path}")
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser (separated for testability)."""
     parser = argparse.ArgumentParser(
         prog="kanbanctl.py",
         description="Kanban coordinator Control API client",
@@ -153,7 +155,16 @@ def main() -> None:
     p.add_argument("label")
     p.set_defaults(func=cmd_label_remove)
 
-    args = parser.parse_args()
+    return parser
+
+
+def _parse(argv: list[str]) -> argparse.Namespace:
+    """Parse argv using the canonical parser (used by tests)."""
+    return _build_parser().parse_args(argv)
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
     args.func(args)
 
 
