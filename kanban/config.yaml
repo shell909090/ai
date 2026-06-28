@@ -34,8 +34,12 @@ projects:
   allowed:
     - label: "proj:agent"
       name: "agent"
+      root: "/home/shell/tmp/kanban"
+      kanban_config: ".kanban.yml"
     - label: "proj:kanban"
       name: "kanban"
+      root: "/home/shell/tmp/kanban"
+      kanban_config: ".kanban.yml"
 
 capacity:
   total: 3
@@ -45,3 +49,7 @@ timer:
   interval: 5s
   abort_timeout: 60s
   summary_timeout: 60s
+
+hooks:
+  default_timeout: 120s
+  max_output_bytes: 8192

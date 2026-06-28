@@ -27,8 +27,20 @@ type AllowedModel struct {
 // AllowedProject is one entry in AllowedProjects: a card's "proj:X"
 // label can pick this entry if X matches Label.
 type AllowedProject struct {
-	Label string
-	Name  string
+	Label        string
+	Name         string
+	Root         string // absolute path to the project root directory
+	KanbanConfig string // path to .kanban.yml relative to Root; defaults to ".kanban.yml"
+}
+
+// findProject returns the AllowedProject with the given resolved project name.
+func findProject(projName string, cfg Config) (AllowedProject, bool) {
+	for _, p := range cfg.AllowedProjects {
+		if p.Name == projName {
+			return p, true
+		}
+	}
+	return AllowedProject{}, false
 }
 
 // Config holds the runtime configuration. Secrets come from .env;
@@ -48,6 +60,8 @@ type Config struct {
 	MaxDoingPerProject int
 	AbortTimeout       time.Duration
 	SummaryTimeout     time.Duration
+	HookDefaultTimeout time.Duration
+	HookMaxOutputBytes int
 	DefaultModel       ModelRef
 	AllowedModels      []AllowedModel
 	AllowedProjects    []AllowedProject
@@ -119,6 +133,10 @@ type yamlConfig struct {
 		AbortTimeout   string `yaml:"abort_timeout"`
 		SummaryTimeout string `yaml:"summary_timeout"`
 	} `yaml:"timer"`
+	Hooks struct {
+		DefaultTimeout string `yaml:"default_timeout"`
+		MaxOutputBytes int    `yaml:"max_output_bytes"`
+	} `yaml:"hooks"`
 }
 
 type yamlModel struct {
@@ -133,8 +151,10 @@ type yamlModelRow struct {
 }
 
 type yamlProjRow struct {
-	Label string `yaml:"label"`
-	Name  string `yaml:"name"`
+	Label        string `yaml:"label"`
+	Name         string `yaml:"name"`
+	Root         string `yaml:"root"`
+	KanbanConfig string `yaml:"kanban_config"`
 }
 
 func loadYAMLConfig(path string) (yamlConfig, error) {
@@ -182,10 +202,22 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 		})
 	}
 	for _, p := range yc.Projects.Allowed {
+		kc := p.KanbanConfig
+		if kc == "" {
+			kc = ".kanban.yml"
+		}
 		c.AllowedProjects = append(c.AllowedProjects, AllowedProject{
-			Label: p.Label,
-			Name:  p.Name,
+			Label:        p.Label,
+			Name:         p.Name,
+			Root:         p.Root,
+			KanbanConfig: kc,
 		})
+	}
+	if d, err := time.ParseDuration(yc.Hooks.DefaultTimeout); err == nil && d > 0 {
+		c.HookDefaultTimeout = d
+	}
+	if yc.Hooks.MaxOutputBytes > 0 {
+		c.HookMaxOutputBytes = yc.Hooks.MaxOutputBytes
 	}
 	if yc.Capacity.Total > 0 {
 		c.MaxDoingTotal = yc.Capacity.Total

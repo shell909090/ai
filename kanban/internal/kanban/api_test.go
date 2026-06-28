@@ -165,7 +165,7 @@ func TestOcCreateSessionReturnsSessionID(t *testing.T) {
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
 	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
-	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
+	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestOcCreateSessionBadID(t *testing.T) {
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
 	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
-	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
+	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"}, "")
 	if err == nil {
 		t.Fatal("expected error for bad session id prefix")
 	}
@@ -191,7 +191,7 @@ func TestOcCreateSessionError(t *testing.T) {
 	}))
 	defer srv.Close()
 	s := newTestServer(t, "http://api.trello.invalid", srv.URL)
-	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
+	_, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"}, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

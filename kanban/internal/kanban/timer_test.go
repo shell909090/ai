@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1097,7 +1098,7 @@ func TestOcCreateSessionReturnsID(t *testing.T) {
 	defer ocSrv.Close()
 	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
 
-	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"})
+	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"}, "")
 	if err != nil {
 		t.Fatalf("ocCreateSession: %v", err)
 	}
@@ -1119,5 +1120,343 @@ func TestReconcileDoingError(t *testing.T) {
 
 	if !strings.Contains(log.String(), "reconcile.doing.error") {
 		t.Errorf("expected reconcile.doing.error log, got %s", log.String())
+	}
+}
+
+// ---------- session_new hook integration ----------
+
+func TestHandleDoingInSessionNewHookSuccess(t *testing.T) {
+	oc := &fakeOpencode{sessionID: "ses_new"}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo/agent"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+	hook.result = HookResult{Workdir: "/repo/agent/worktree", Comment: "Worktree ready."}
+
+	card := trelloCard{
+		ID:     "c1",
+		Name:   "My task",
+		Desc:   "do the thing",
+		Labels: []trelloLabel{{Name: "proj:agent"}},
+	}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	s.mu.Lock()
+	task, ok := s.tasks["c1"]
+	s.mu.Unlock()
+
+	if !ok {
+		t.Fatal("task not created")
+	}
+	if task.SessionID != "ses_new" {
+		t.Errorf("SessionID=%q, want ses_new", task.SessionID)
+	}
+	if task.Workdir != "/repo/agent/worktree" {
+		t.Errorf("Workdir=%q, want /repo/agent/worktree", task.Workdir)
+	}
+	if task.CardTitle != "My task" {
+		t.Errorf("CardTitle=%q, want 'My task'", task.CardTitle)
+	}
+
+	hook.mu.Lock()
+	defer hook.mu.Unlock()
+	if len(hook.calls) != 1 || hook.calls[0].Event != "session_new" {
+		t.Errorf("hook calls=%v", hook.calls)
+	}
+
+	// Verify the hook's comment was posted to Trello.
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	var hookComment, startedComment bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "Worktree ready.") {
+			hookComment = true
+		}
+		if strings.Contains(c, "Started session ses_new") {
+			startedComment = true
+		}
+	}
+	if !hookComment {
+		t.Errorf("hook comment not found in %v", trello.comments)
+	}
+	if !startedComment {
+		t.Errorf("started comment not found in %v", trello.comments)
+	}
+}
+
+func TestHandleDoingInSessionNewHookFail(t *testing.T) {
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+	hook.err = fmt.Errorf("hook script failed: exit 1")
+
+	card := trelloCard{
+		ID:     "c1",
+		Labels: []trelloLabel{{Name: "proj:agent"}},
+	}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	// Task must be destroyed (no remaining task, capacity released).
+	s.mu.Lock()
+	_, ok := s.tasks["c1"]
+	total := s.totalCount
+	s.mu.Unlock()
+
+	if ok {
+		t.Error("task should be destroyed after hook failure")
+	}
+	if total != 0 {
+		t.Errorf("totalCount=%d, want 0 (capacity released)", total)
+	}
+
+	// Card must move to done with attention and a comment.
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
+		t.Errorf("card should move to done, moves=%v", trello.moves)
+	}
+	if len(trello.labelAdds) != 1 {
+		t.Error("attention label should be added")
+	}
+	var found bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "Hook session_new failed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected hook failure comment, got %v", trello.comments)
+	}
+}
+
+func TestHandleDoingInPendingTaskCountsCapacity(t *testing.T) {
+	// When the hook fails, the pending task must be destroyed and capacity released.
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s.cfg.MaxDoingTotal = 1
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+	hook.err = fmt.Errorf("hook failed")
+
+	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	// After failure: total must be 0 (capacity fully released).
+	s.mu.Lock()
+	total := s.totalCount
+	s.mu.Unlock()
+	if total != 0 {
+		t.Errorf("totalCount=%d, want 0 after hook failure", total)
+	}
+}
+
+func TestCheckSessionFinishSkipsPending(t *testing.T) {
+	oc := &fakeOpencode{message: makeFinishMsg("stop")}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
+
+	// Pending task must be skipped — no API calls made.
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "__pending__", Proj: "agent"}
+	s.totalCount = 1
+
+	s.checkSessionFinish(context.Background(), time.Now())
+
+	// Task must still be there.
+	s.mu.Lock()
+	_, ok := s.tasks["c1"]
+	s.mu.Unlock()
+	if !ok {
+		t.Error("pending task should remain untouched in checkSessionFinish")
+	}
+
+	// No API calls made to opencode.
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if len(oc.promptCalls) > 0 || len(oc.abortCalls) > 0 {
+		t.Error("checkSessionFinish should not call opencode for pending tasks")
+	}
+}
+
+// ---------- session_finish hook ----------
+
+func TestCheckOneFinishStopWithSummaryRunsFinishHook(t *testing.T) {
+	summaryText := "Done."
+	oc := &fakeOpencode{message: makeSummaryMsg("stop", summaryText)}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+
+	sumTime := time.Now()
+	s.tasks["c1"] = &Task{
+		CardID: "c1", CardTitle: "T1", SessionID: "ses1",
+		Proj: "agent", Summary: &sumTime,
+	}
+	s.totalCount = 1
+	s.projCount["agent"] = 1
+
+	s.checkOneFinish(context.Background(), "c1", time.Now())
+
+	// Hook must have been called.
+	hook.mu.Lock()
+	calls := hook.calls
+	hook.mu.Unlock()
+	if len(calls) != 1 || calls[0].Event != "session_finish" {
+		t.Errorf("session_finish hook not called, calls=%v", calls)
+	}
+
+	// Task must be gone, card moved to done.
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("task should be destroyed")
+	}
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
+		t.Errorf("card should move to done, moves=%v", trello.moves)
+	}
+}
+
+func TestCheckOneFinishStopWithSummaryHookFail(t *testing.T) {
+	oc := &fakeOpencode{message: makeSummaryMsg("stop", "summary")}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+	hook.err = fmt.Errorf("finish hook failed")
+
+	sumTime := time.Now()
+	s.tasks["c1"] = &Task{
+		CardID: "c1", SessionID: "ses1", Proj: "agent", Summary: &sumTime,
+	}
+	s.totalCount = 1
+	s.projCount["agent"] = 1
+
+	s.checkOneFinish(context.Background(), "c1", time.Now())
+
+	// Task must still be destroyed and card moved to done despite hook failure.
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("task should be destroyed even on hook failure")
+	}
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
+		t.Errorf("card should still move to done on hook failure, moves=%v", trello.moves)
+	}
+	// attention label must be added.
+	if len(trello.labelAdds) != 1 {
+		t.Errorf("attention should be added on hook failure, labelAdds=%v", trello.labelAdds)
+	}
+	var hookFailComment bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "Hook session_finish failed") {
+			hookFailComment = true
+		}
+	}
+	if !hookFailComment {
+		t.Errorf("hook failure comment not found in %v", trello.comments)
+	}
+}
+
+// ---------- session_abort hook ----------
+
+func TestCheckOneFinishAbortDoneRunsAbortHook(t *testing.T) {
+	oc := &fakeOpencode{message: makeFinishMsg("stop")}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+
+	abortTime := time.Now()
+	s.tasks["c1"] = &Task{
+		CardID: "c1", CardTitle: "T1", SessionID: "ses1",
+		Proj: "agent", Abort: &abortTime,
+	}
+	s.totalCount = 1
+	s.projCount["agent"] = 1
+
+	s.checkOneFinish(context.Background(), "c1", time.Now())
+
+	hook.mu.Lock()
+	calls := hook.calls
+	hook.mu.Unlock()
+	if len(calls) != 1 || calls[0].Event != "session_abort" {
+		t.Errorf("session_abort hook not called, calls=%v", calls)
+	}
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("task should be destroyed after abort done")
+	}
+}
+
+func TestCheckOneFinishAbortDoneHookFail(t *testing.T) {
+	oc := &fakeOpencode{message: makeFinishMsg("stop")}
+	ocSrv := httptest.NewServer(oc.handler())
+	defer ocSrv.Close()
+	trello := newFakeTrello()
+	trSrv := httptest.NewServer(trello.handler())
+	defer trSrv.Close()
+
+	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
+	hook := s.hookRunner.(*fakeHookRunner)
+	hook.err = fmt.Errorf("abort hook failed")
+
+	abortTime := time.Now()
+	s.tasks["c1"] = &Task{
+		CardID: "c1", SessionID: "ses1", Proj: "agent", Abort: &abortTime,
+	}
+	s.totalCount = 1
+	s.projCount["agent"] = 1
+
+	s.checkOneFinish(context.Background(), "c1", time.Now())
+
+	// Task must be destroyed and capacity released despite hook failure.
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("task should be destroyed even on abort hook failure")
+	}
+	if s.totalCount != 0 {
+		t.Errorf("totalCount=%d, want 0", s.totalCount)
+	}
+
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.labelAdds) != 1 {
+		t.Errorf("attention should be added on abort hook failure, labelAdds=%v", trello.labelAdds)
+	}
+	var hookFailComment bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "Hook session_abort failed") {
+			hookFailComment = true
+		}
+	}
+	if !hookFailComment {
+		t.Errorf("hook failure comment not found in %v", trello.comments)
 	}
 }

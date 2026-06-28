@@ -123,6 +123,8 @@ projects:
   allowed:
     - label: "proj:agent"
       name: "agent"
+      root: "/repo/agent"
+      kanban_config: ".kanban.yml"
 capacity:
   total: 5
   per_project: 2
@@ -130,6 +132,9 @@ timer:
   interval: 10s
   abort_timeout: 120s
   summary_timeout: 90s
+hooks:
+  default_timeout: 90s
+  max_output_bytes: 4096
 `), 0644))
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -147,8 +152,20 @@ timer:
 	if cfg.TrelloBoardID != "B1" {
 		t.Errorf("TrelloBoardID=%q, want B1", cfg.TrelloBoardID)
 	}
+	if cfg.HookDefaultTimeout != 90*time.Second {
+		t.Errorf("HookDefaultTimeout=%v, want 90s", cfg.HookDefaultTimeout)
+	}
+	if cfg.HookMaxOutputBytes != 4096 {
+		t.Errorf("HookMaxOutputBytes=%d, want 4096", cfg.HookMaxOutputBytes)
+	}
 	if len(cfg.AllowedProjects) != 1 || cfg.AllowedProjects[0].Name != "agent" {
 		t.Errorf("AllowedProjects=%+v", cfg.AllowedProjects)
+	}
+	if cfg.AllowedProjects[0].Root != "/repo/agent" {
+		t.Errorf("AllowedProjects[0].Root=%q, want /repo/agent", cfg.AllowedProjects[0].Root)
+	}
+	if cfg.AllowedProjects[0].KanbanConfig != ".kanban.yml" {
+		t.Errorf("AllowedProjects[0].KanbanConfig=%q, want .kanban.yml", cfg.AllowedProjects[0].KanbanConfig)
 	}
 	if cfg.MaxDoingTotal != 5 {
 		t.Errorf("MaxDoingTotal=%d, want 5", cfg.MaxDoingTotal)
@@ -278,6 +295,27 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"k":"v"`) {
 		t.Errorf("body=%q", w.Body.String())
+	}
+}
+
+// ---------- findProject tests ----------
+
+func TestFindProject(t *testing.T) {
+	cfg := Config{
+		AllowedProjects: []AllowedProject{
+			{Label: "proj:agent", Name: "agent", Root: "/repo/agent"},
+			{Label: "proj:kanban", Name: "kanban", Root: "/repo/kanban"},
+		},
+	}
+
+	p, ok := findProject("agent", cfg)
+	if !ok || p.Root != "/repo/agent" {
+		t.Errorf("findProject(agent) = %+v, %v", p, ok)
+	}
+
+	_, ok = findProject("unknown", cfg)
+	if ok {
+		t.Error("findProject(unknown) should return false")
 	}
 }
 

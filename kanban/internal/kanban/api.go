@@ -113,11 +113,11 @@ func (s *Server) ocAbortSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// Opencode API: create a new session, using cfg.WorkDir as the working directory.
-func (s *Server) ocCreateSession(ctx context.Context, model ModelRef) (string, error) {
+// Opencode API: create a new session using the given working directory.
+func (s *Server) ocCreateSession(ctx context.Context, model ModelRef, workdir string) (string, error) {
 	u := s.cfg.OpenCodeBaseURL + "/session"
-	if s.cfg.WorkDir != "" {
-		u += "?directory=" + url.QueryEscape(s.cfg.WorkDir)
+	if workdir != "" {
+		u += "?directory=" + url.QueryEscape(workdir)
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
@@ -144,9 +144,6 @@ func (s *Server) ocCreateSession(ctx context.Context, model ModelRef) (string, e
 // Opencode API: send a prompt to a session asynchronously.
 func (s *Server) ocSendPrompt(ctx context.Context, sessionID string, model ModelRef, prompt string) error {
 	u := fmt.Sprintf("%s/session/%s/prompt_async", s.cfg.OpenCodeBaseURL, sessionID)
-	if s.cfg.WorkDir != "" {
-		u += "?directory=" + url.QueryEscape(s.cfg.WorkDir)
-	}
 	body, _ := json.Marshal(map[string]any{
 		"model": map[string]string{
 			"providerID": model.ProviderID,

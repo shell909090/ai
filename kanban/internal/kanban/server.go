@@ -13,9 +13,12 @@ import (
 // Task tracks an in-flight opencode session paired with a Trello card.
 type Task struct {
 	CardID    string
-	SessionID string
+	CardTitle string // snapshot for hook env vars
+	CardURL   string // snapshot for hook env vars
+	SessionID string // "__pending__" during session_new hook execution
 	Proj      string
 	Model     ModelRef
+	Workdir   string     // resolved after session_new hook; used for session creation and proj inference
 	Abort     *time.Time // set when abort was requested
 	Summary   *time.Time // set when summary prompt was sent
 }
@@ -63,6 +66,7 @@ type Server struct {
 	projCount  map[string]int
 	labelIDs   map[string]string // Trello label name → Trello label ID (cached)
 	httpc      *http.Client
+	hookRunner HookRunner // injectable; defaults to realHookRunner in New()
 }
 
 // New constructs a Server. It does not start any background goroutines;
@@ -89,12 +93,22 @@ func New(cfg Config) (*Server, error) {
 	if cfg.SummaryTimeout <= 0 {
 		cfg.SummaryTimeout = 60 * time.Second
 	}
+	if cfg.HookDefaultTimeout <= 0 {
+		cfg.HookDefaultTimeout = 120 * time.Second
+	}
+	if cfg.HookMaxOutputBytes <= 0 {
+		cfg.HookMaxOutputBytes = 8192
+	}
 	return &Server{
 		cfg:       cfg,
 		tasks:     make(map[string]*Task),
 		projCount: make(map[string]int),
 		labelIDs:  make(map[string]string),
 		httpc:     &http.Client{Timeout: cfg.HTTPTimeout},
+		hookRunner: realHookRunner{
+			defaultTimeout: cfg.HookDefaultTimeout,
+			maxOutputBytes: cfg.HookMaxOutputBytes,
+		},
 	}, nil
 }
 

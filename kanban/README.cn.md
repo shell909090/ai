@@ -78,6 +78,63 @@ timer:
   summary_timeout: 60s
 ```
 
+## 项目钩子：`.kanban.yml`
+
+每个项目仓库可以提供 `.kanban.yml` 来自定义 Trello 卡片如何转为 opencode prompt，以及任务生命周期中运行哪些脚本。文件不存在时，协调器使用内置默认 prompt，不运行任何钩子。
+
+```yaml
+prompt:
+  # 可选。存在时完整替代内置 card 格式化。
+  template: |
+    Trello card: {{ .Card.Title }}
+    Description:
+    {{ .Card.Description }}
+
+  # 可选。始终追加到最终 prompt 后面。
+  addons:
+    - "开始前确认 git 工作树干净。"
+    - "结束前运行 lint 和 unittest，并修复错误。"
+
+hooks:
+  session_new:         # 创建 opencode session 前运行
+    command: ["./scripts/kanban-session-new.sh"]
+    timeout: 180s
+  session_finish:      # summary comment 写完后运行；失败只加 attention
+    command: ["./scripts/kanban-session-finish.sh"]
+    timeout: 300s
+  session_abort:       # abort 确认后运行；失败只加 attention
+    command: ["./scripts/kanban-session-abort.sh"]
+    timeout: 120s
+```
+
+### 钩子结果通道
+
+钩子通过 **fd 3**（协调器创建的管道写端）返回结构化 JSON：
+
+```sh
+printf '{"workdir":"%s","comment":"Worktree ready."}\n' "$WORKTREE" >&3
+```
+
+fd 3 为空表示无结果。非零退出、超时、JSON 非法或 `workdir` 非绝对路径均视为钩子失败。
+
+### 钩子环境变量
+
+| 变量 | 值 |
+|---|---|
+| `KANBAN_EVENT` | `session_new` / `session_finish` / `session_abort` |
+| `KANBAN_CARD_ID` | Trello card ID |
+| `KANBAN_CARD_TITLE` | 卡片标题 |
+| `KANBAN_CARD_URL` | 卡片 URL |
+| `KANBAN_PROJECT` | 项目名称 |
+| `KANBAN_PROJECT_LABEL` | `proj:*` 标签 |
+| `KANBAN_MODEL_PROVIDER` | 模型 provider ID |
+| `KANBAN_MODEL_NAME` | 模型 ID |
+| `KANBAN_SESSION_ID` | Session ID（`session_new` 阶段为 `__pending__`） |
+| `KANBAN_WORKDIR` | 工作目录 |
+| `KANBAN_HOOK_RESULT_FD` | 固定为 `3` |
+
+钩子的 stdout/stderr 只进入调试日志，不写入 Trello comment。
+
 ## 卡片标签
 
 | 标签 | 含义 |

@@ -1,6 +1,7 @@
 package kanban
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -283,6 +284,29 @@ type testingTB interface {
 	Cleanup(func())
 }
 
+// fakeHookRunner is an injectable HookRunner for tests.
+type fakeHookRunner struct {
+	mu     sync.Mutex
+	calls  []hookCall
+	result HookResult
+	err    error
+}
+
+type hookCall struct {
+	Event   string
+	CardID  string
+	Proj    string
+	Workdir string
+}
+
+func (f *fakeHookRunner) RunHook(_ context.Context, event string, _ *Task, card trelloCard,
+	proj AllowedProject, _ ModelRef, workdir string, _ ProjectConfig) (HookResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, hookCall{Event: event, CardID: card.ID, Proj: proj.Name, Workdir: workdir})
+	return f.result, f.err
+}
+
 // newTestServer builds a Server wired to the given fake Trello and opencode URLs.
 func newTestServer(t interface {
 	testingTB
@@ -300,12 +324,13 @@ func newTestServer(t interface {
 		OpenCodeUser:       "u",
 		OpenCodePass:       "p",
 		OpenCodeBaseURL:    ocURL,
-		WorkDir:            "/tmp",
 		HTTPTimeout:        2 * time.Second,
 		HTTPListen:         "127.0.0.1:0",
 		PollInterval:       time.Second,
 		AbortTimeout:       60 * time.Second,
 		SummaryTimeout:     60 * time.Second,
+		HookDefaultTimeout: 5 * time.Second,
+		HookMaxOutputBytes: 4096,
 		DefaultModel:       ModelRef{ProviderID: "test", ModelID: "model"},
 		MaxDoingTotal:      2,
 		MaxDoingPerProject: 1,
@@ -324,5 +349,6 @@ func newTestServer(t interface {
 		t.Fatal("New failed:", err)
 	}
 	s.httpc = httpc
+	s.hookRunner = &fakeHookRunner{}
 	return s
 }

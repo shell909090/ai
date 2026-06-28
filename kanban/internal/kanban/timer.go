@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-const summaryPromptText = "请用 140 个字以内总结本次运行的结果。只输出总结本身，不要前缀、解释或 Markdown。"
-
 // tick runs one scheduler iteration in the fixed order required by design.md §5:
 //  1. check session finish
 //  2. reconcile doing
@@ -21,11 +19,14 @@ func (s *Server) tick(ctx context.Context, now time.Time) {
 }
 
 // checkSessionFinish polls every tracked session for a finish event.
+// Pending tasks (SessionID == "__pending__") are skipped.
 func (s *Server) checkSessionFinish(ctx context.Context, now time.Time) {
 	s.mu.Lock()
 	cardIDs := make([]string, 0, len(s.tasks))
-	for id := range s.tasks {
-		cardIDs = append(cardIDs, id)
+	for id, t := range s.tasks {
+		if t.SessionID != "__pending__" {
+			cardIDs = append(cardIDs, id)
+		}
 	}
 	s.mu.Unlock()
 
@@ -64,14 +65,21 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 		s.mu.Unlock()
 		return
 	}
-	abort := task.Abort
-	summary := task.Summary
-	model := task.Model
+	taskSnap := *task
 	s.mu.Unlock()
 
-	// Rule 2: abort was in progress → write abort success comment, destroy task.
+	abort := taskSnap.Abort
+	summary := taskSnap.Summary
+	model := taskSnap.Model
+
+	// Rule 2: abort was in progress → write abort success comment, run abort hook, destroy task.
 	if abort != nil {
 		s.trelloAddComment(ctx, cardID, fmt.Sprintf("Abort completed for session %s.", sessionID))
+		if hookErr := s.runFinishHook(ctx, "session_abort", &taskSnap); hookErr != nil {
+			s.addAttentionLabel(ctx, cardID)
+			s.trelloAddComment(ctx, cardID, fmt.Sprintf("Hook session_abort failed: %v. Task tracking was still released.", hookErr))
+			s.log("hook.session_abort.fail", fmt.Sprintf("card=%s err=%v", cardID, hookErr))
+		}
 		s.destroyTask(cardID)
 		s.log("finish.abort.done", fmt.Sprintf("card=%s session=%s", cardID, sessionID))
 		return
@@ -87,10 +95,15 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 		return
 	}
 
-	// Rule 4: stop + summary already sent → write completion comment, move done.
+	// Rule 4: stop + summary already sent → write completion comment, run finish hook, move done.
 	if summary != nil {
 		summaryText := ExtractSummaryText(last, summaryCharLimit)
 		s.trelloAddComment(ctx, cardID, "Task finished. Summary:\n"+summaryText)
+		if hookErr := s.runFinishHook(ctx, "session_finish", &taskSnap); hookErr != nil {
+			s.addAttentionLabel(ctx, cardID)
+			s.trelloAddComment(ctx, cardID, fmt.Sprintf("Hook session_finish failed: %v. Task was still moved to done.", hookErr))
+			s.log("hook.session_finish.fail", fmt.Sprintf("card=%s err=%v", cardID, hookErr))
+		}
 		s.trelloMoveCard(ctx, cardID, s.listIDFor("done"))
 		s.destroyTask(cardID)
 		s.log("finish.done", fmt.Sprintf("card=%s session=%s", cardID, sessionID))
@@ -169,9 +182,9 @@ func (s *Server) handleDoingOut(ctx context.Context, cardID string, now time.Tim
 		s.mu.Unlock()
 		return
 	}
-	if task.Abort != nil {
+	if task.Abort != nil || task.SessionID == "__pending__" {
 		s.mu.Unlock()
-		return // already aborting, don't re-send
+		return // already aborting or not yet started
 	}
 	sessionID := task.SessionID
 	s.mu.Unlock()
@@ -239,35 +252,106 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 		return
 	}
 
-	// Create opencode session.
-	sessionID, err := s.ocCreateSession(ctx, model)
+	// Find the AllowedProject and load its .kanban.yml.
+	allowedProj, _ := findProject(proj, s.cfg)
+	pc, err := loadProjectConfig(allowedProj)
 	if err != nil {
-		s.log("doing.in.session.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
+		s.addAttentionLabel(ctx, card.ID)
+		s.trelloAddComment(ctx, card.ID, "Cannot start task: failed to load .kanban.yml: "+err.Error()+".")
+		s.log("doing.in.kanban_yml.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
 		return
 	}
 
-	// Register task and update capacity.
-	task := &Task{
+	// Create a pending task that counts against capacity from this point on.
+	pendingTask := &Task{
 		CardID:    card.ID,
-		SessionID: sessionID,
+		CardTitle: card.Name,
+		CardURL:   card.URL,
+		SessionID: "__pending__",
 		Proj:      proj,
 		Model:     model,
+		Workdir:   allowedProj.Root,
 	}
 	s.mu.Lock()
-	s.tasks[card.ID] = task
+	s.tasks[card.ID] = pendingTask
 	s.totalCount++
 	s.projCount[proj]++
 	s.mu.Unlock()
 
-	// Send the card description as the task prompt.
-	if err := s.ocSendPrompt(ctx, sessionID, model, card.Desc); err != nil {
+	// Run session_new hook.
+	workdir := allowedProj.Root
+	hookResult, err := s.hookRunner.RunHook(ctx, "session_new", pendingTask, card, allowedProj, model, workdir, pc)
+	if err != nil {
+		s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
+		s.addAttentionLabel(ctx, card.ID)
+		s.trelloAddComment(ctx, card.ID, fmt.Sprintf("Hook session_new failed: %v. Please check manually.", err))
+		s.log("hook.session_new.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		s.destroyTask(card.ID)
+		return
+	}
+
+	if hookResult.Workdir != "" {
+		workdir = hookResult.Workdir
+	}
+	if hookResult.Comment != "" {
+		s.trelloAddComment(ctx, card.ID, truncateString(hookResult.Comment, 500))
+	}
+
+	// Render the initial prompt using the project's .kanban.yml template/addons.
+	prompt, promptErr := renderInitialPrompt(card, allowedProj, model, pc)
+	if promptErr != nil {
+		// Non-fatal: fall back to raw card description.
+		s.log("doing.in.prompt.render.fail", fmt.Sprintf("card=%s err=%v, falling back to card.Desc", card.ID, promptErr))
+		prompt = card.Desc
+	}
+
+	// Create opencode session.
+	sessionID, err := s.ocCreateSession(ctx, model, workdir)
+	if err != nil {
+		s.log("doing.in.session.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		s.destroyTask(card.ID)
+		return
+	}
+
+	// Send the initial prompt.
+	if err := s.ocSendPrompt(ctx, sessionID, model, prompt); err != nil {
 		s.log("doing.in.prompt.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, err))
 		s.destroyTask(card.ID)
 		return
 	}
 
+	// Upgrade pending task to a real session.
+	s.mu.Lock()
+	if t, ok := s.tasks[card.ID]; ok {
+		t.SessionID = sessionID
+		t.Workdir = workdir
+	}
+	s.mu.Unlock()
+
 	s.trelloAddComment(ctx, card.ID, fmt.Sprintf("Started session %s.", sessionID))
 	s.log("doing.in.started", fmt.Sprintf("card=%s session=%s proj=%s", card.ID, sessionID, proj))
+}
+
+// runFinishHook runs a session_finish or session_abort hook using data from the task snapshot.
+func (s *Server) runFinishHook(ctx context.Context, event string, task *Task) error {
+	allowedProj, _ := findProject(task.Proj, s.cfg)
+	pc, err := loadProjectConfig(allowedProj)
+	if err != nil {
+		return fmt.Errorf("load project config: %w", err)
+	}
+	partialCard := trelloCard{ID: task.CardID, Name: task.CardTitle, URL: task.CardURL}
+	_, hookErr := s.hookRunner.RunHook(ctx, event, task, partialCard, allowedProj, task.Model, task.Workdir, pc)
+	return hookErr
+}
+
+// truncateString truncates s to at most maxRunes runes, adding "…" if truncated.
+func truncateString(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
 }
 
 // checkTimeouts handles abort and summary timeouts.

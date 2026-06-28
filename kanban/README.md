@@ -82,6 +82,68 @@ timer:
   summary_timeout: 60s
 ```
 
+## Project hooks: `.kanban.yml`
+
+Each project repository can provide a `.kanban.yml` to customise how Trello cards become
+opencode prompts and to run lifecycle scripts. If the file does not exist, the coordinator
+uses a built-in default prompt and skips all hooks.
+
+```yaml
+prompt:
+  # Optional: fully replaces the default card-to-prompt formatting.
+  template: |
+    Trello card: {{ .Card.Title }}
+
+    Description:
+    {{ .Card.Description }}
+
+  # Optional: always appended after the base prompt.
+  addons:
+    - "Before starting, confirm the git working tree is clean."
+    - "Before finishing, run lint and unittest, and fix any failures."
+
+hooks:
+  session_new:       # runs before the opencode session is created
+    command: ["./scripts/kanban-session-new.sh"]
+    timeout: 180s
+  session_finish:    # runs after the summary comment is written; failure adds attention
+    command: ["./scripts/kanban-session-finish.sh"]
+    timeout: 300s
+  session_abort:     # runs after abort is confirmed; failure adds attention
+    command: ["./scripts/kanban-session-abort.sh"]
+    timeout: 120s
+```
+
+### Hook result channel
+
+Hooks communicate structured results via **fd 3** (a pipe set up by the coordinator):
+
+```sh
+# Return a custom working directory from session_new:
+printf '{"workdir":"%s","comment":"Worktree ready."}\n' "$WORKTREE" >&3
+```
+
+Empty fd 3 output is allowed. Non-zero exit code, timeout, invalid JSON, or a
+non-absolute `workdir` all count as hook failure.
+
+### Hook environment variables
+
+| Variable | Value |
+|---|---|
+| `KANBAN_EVENT` | `session_new` / `session_finish` / `session_abort` |
+| `KANBAN_CARD_ID` | Trello card ID |
+| `KANBAN_CARD_TITLE` | Card title |
+| `KANBAN_CARD_URL` | Card URL |
+| `KANBAN_PROJECT` | Project name |
+| `KANBAN_PROJECT_LABEL` | `proj:*` label |
+| `KANBAN_MODEL_PROVIDER` | Model provider ID |
+| `KANBAN_MODEL_NAME` | Model ID |
+| `KANBAN_SESSION_ID` | Session ID (`__pending__` during `session_new`) |
+| `KANBAN_WORKDIR` | Working directory |
+| `KANBAN_HOOK_RESULT_FD` | Always `3` |
+
+Hook stdout/stderr is captured for debug logging only; it is never written to Trello comments.
+
 ## Card labels
 
 | Label | Meaning |
