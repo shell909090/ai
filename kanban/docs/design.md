@@ -20,7 +20,7 @@
 
 ```text
 Task {
-  card_id: string
+  card_id: CardID
   session_id: string  # 启动前钩子运行阶段使用占位值 "__pending__"
   proj: string
   agent: string       # 选中的 agents 配置名
@@ -44,7 +44,7 @@ Task {
 
 ```text
 RuntimeState {
-  tasks: map[card_id]Task
+  tasks: map[CardID]Task
   total_count: int
   proj_count: map[proj]int
 }
@@ -55,8 +55,10 @@ RuntimeState {
 ### 2.3 CardSnapshot
 
 ```text
+type CardID string
+
 CardSnapshot {
-  id: string
+  id: CardID
   title: string
   description: string
   list: string
@@ -65,6 +67,14 @@ CardSnapshot {
 ```
 
 协调器只依赖 list 和 labels 做调度决策。
+
+`CardID` 是 BoardGateway 返回的、不透明的、board-scoped card 身份标识：
+
+- 底层表示当前使用 `string`，但业务代码必须通过 `type CardID string` 表达语义边界。
+- 协调器不得解析、拼接、格式校验或假设 `CardID` 的后端格式；只能把它作为 map key、日志字段，以及传回同一个 BoardGateway 的操作参数。
+- `CardID` 的稳定性至少覆盖协调器进程生命周期和对应 card 生命周期。
+- 如果某个后端原生 id 不是字符串，BoardGateway 实现负责把它编码为稳定字符串并在内部解码。
+- 当前一个 Server 只绑定一个 BoardGateway，因此 `CardID` 不包含 backend 或 board namespace；未来如果同一进程同时管理多个 board backend，再升级为 namespaced `CardID` 或结构化 `CardRef`。
 
 ## 3. 配置
 
@@ -279,17 +289,30 @@ KANBAN_HOOK_RESULT_FD=3
 
 ## 5. 外部接口
 
-### 5.1 TrelloGateway
+### 5.1 BoardGateway
 
 ```text
+type CardID string
+
 list_cards(list_name) -> []CardSnapshot
-move_card(card_id, list_name) -> void
-add_comment(card_id, text) -> void
-add_label(card_id, label_name) -> void
-has_label(card, label_name) -> bool
+get_card(card_id CardID) -> CardSnapshot
+move_card(card_id CardID, list_name) -> void
+add_comment(card_id CardID, text) -> void
+add_label(card_id CardID, label_name) -> void
+remove_label(card_id CardID, label_name) -> void
+create_card(list_name, title, description, labels) -> CardSnapshot
 ```
 
-所有 comment 应简短、面向人类：说明发生了什么、是否需要人工介入。
+BoardGateway 是调度核心与具体看板后端之间的抽象接口。当前生产实现是 Trello，但 scheduler 不应直接依赖 Trello HTTP API、list id、label id 或 credential。
+
+规则：
+
+- `list_name` 使用逻辑名，例如 `todo`、`doing`、`done`；具体后端 list id 由 BoardGateway 实现解析。
+- `card_id` 使用 `CardID`；它是不透明的 board-scoped 标识，调用方不得假设其格式是 Trello card id。
+- `CardSnapshot.labels` 使用 label name 数组；具体后端 label id 查询和缓存由 BoardGateway 实现处理。
+- `has_label` 不作为接口方法，使用对 `CardSnapshot.labels` 的纯函数判断即可。
+- 所有 comment 应简短、面向人类：说明发生了什么、是否需要人工介入。
+- credential 只允许存在于具体 BoardGateway 实现内部，不得进入 hooks、agent driver、Control API response 或普通日志。
 
 ### 5.2 AgentDriver
 
