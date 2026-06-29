@@ -176,12 +176,19 @@ func TestHTTPHandler(t *testing.T) {
 
 // ---------- opencode driver tests ----------
 
+func testOpenCodeRaw(baseURL string) map[string]any {
+	return map[string]any{
+		"base_url":      baseURL,
+		"default_model": map[string]any{"providerID": "test-prov", "modelID": "test-mod"},
+	}
+}
+
 func TestOpenCodeDriverCreateSession(t *testing.T) {
 	oc := &fakeOpencode{sessionID: "ses_abc"}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
 	d, _ := newOpenCodeDriver(
-		map[string]any{"base_url": srv.URL},
+		testOpenCodeRaw(srv.URL),
 		func(string) string { return "" },
 		&http.Client{},
 	)
@@ -199,10 +206,7 @@ func TestOpenCodeDriverSendPromptUsesModel(t *testing.T) {
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
 	d, _ := newOpenCodeDriver(
-		map[string]any{
-			"base_url":      srv.URL,
-			"default_model": map[string]any{"providerID": "test-prov", "modelID": "test-mod"},
-		},
+		testOpenCodeRaw(srv.URL),
 		func(string) string { return "" },
 		&http.Client{},
 	)
@@ -220,11 +224,27 @@ func TestOpenCodeDriverSendPromptUsesModel(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDriverRequiresDefaultModel(t *testing.T) {
+	_, err := newOpenCodeDriver(map[string]any{"base_url": "http://example.test"}, func(string) string { return "" }, &http.Client{})
+	if err == nil || !strings.Contains(err.Error(), "default_model") {
+		t.Fatalf("err=%v, want default_model validation error", err)
+	}
+}
+
+func TestOpenCodeDriverValidatesAllowedModels(t *testing.T) {
+	raw := testOpenCodeRaw("http://example.test")
+	raw["allowed_models"] = []any{map[string]any{"label": "model:bad", "providerID": "p"}}
+	_, err := newOpenCodeDriver(raw, func(string) string { return "" }, &http.Client{})
+	if err == nil || !strings.Contains(err.Error(), "allowed_models") {
+		t.Fatalf("err=%v, want allowed_models validation error", err)
+	}
+}
+
 func TestOpenCodeDriverSessionStateRunning(t *testing.T) {
 	oc := &fakeOpencode{message: nil} // no message → running
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	d, _ := newOpenCodeDriver(map[string]any{"base_url": srv.URL}, func(string) string { return "" }, &http.Client{})
+	d, _ := newOpenCodeDriver(testOpenCodeRaw(srv.URL), func(string) string { return "" }, &http.Client{})
 	state, err := d.SessionState(context.Background(), "ses1")
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +258,7 @@ func TestOpenCodeDriverSessionStateFinished(t *testing.T) {
 	oc := &fakeOpencode{message: makeFinishMsg("stop")}
 	srv := httptest.NewServer(oc.handler())
 	defer srv.Close()
-	d, _ := newOpenCodeDriver(map[string]any{"base_url": srv.URL}, func(string) string { return "" }, &http.Client{})
+	d, _ := newOpenCodeDriver(testOpenCodeRaw(srv.URL), func(string) string { return "" }, &http.Client{})
 	state, err := d.SessionState(context.Background(), "ses1")
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +277,7 @@ func TestOpenCodeDriverSessionStateFailed(t *testing.T) {
 			oc := &fakeOpencode{message: makeFinishMsg(finish)}
 			srv := httptest.NewServer(oc.handler())
 			defer srv.Close()
-			d, _ := newOpenCodeDriver(map[string]any{"base_url": srv.URL}, func(string) string { return "" }, &http.Client{})
+			d, _ := newOpenCodeDriver(testOpenCodeRaw(srv.URL), func(string) string { return "" }, &http.Client{})
 			state, err := d.SessionState(context.Background(), "ses1")
 			if err != nil {
 				t.Fatal(err)

@@ -25,6 +25,7 @@ Task {
   proj: string
   agent: string       # 选中的 agents 配置名
   workdir: string?    # 启动前钩子可返回，创建 session 时传给 agent，也用于当前目录推断 proj
+  labels: []string    # 启动时卡片 labels 快照，后续 summary prompt 继续传给 driver
   abort: time?      # 已向 session 发送 abort 的时间
   summary: time?    # 已向 session 发送 summary prompt 的时间
 }
@@ -36,6 +37,7 @@ Task {
 - task 存在表示协调器认为这张卡正在由某个 agent 管理。
 - `session_id == "__pending__"` 只允许存在于同步运行启动前钩子的短暂阶段；pending task 必须计入容量，避免下一轮扫描多激活任务。钩子失败必须销毁 task 并释放容量，钩子成功后必须替换为真实 session id。
 - task 的 `workdir` 必须由 task 结构管理；它既是 agent session 的工作目录，也是 Control API 按当前目录推断 proj 的匹配来源。
+- task 的 `labels` 必须保存启动时的卡片 label 名称快照；初始 prompt 和 summary prompt 都使用这份 labels 传给 AgentDriver，避免 `model:*`、`effort:*` 等 driver 级标签在 summary 阶段丢失。
 - task 销毁时必须同步释放总容量计数和 proj 容量计数。
 
 ### 2.2 RuntimeState
@@ -145,6 +147,12 @@ timer:
 - 除 `proj:*`、`agent:*` 和协调器保留标签外，其他 label 均传给 agent driver；例如 `model:*` 的合法性和含义由具体 driver 决定。
 
 `agents` 是具名配置字典。每个 key 是 card 可通过 `agent:<key>` 选择的配置名；每个 value 必须包含 `type` 字段。协调器只用 `type` 选择 driver，其他字段保持为 driver 私有配置并由该 driver 解释。比如 `type: opencode` 可解释 `base_url`、`username_env`、`password_env`、`default_model` 和 `labels`；未来 `type: codex` 或 `type: claude` 可以解释为命令行参数、profile、sandbox、approval 等完全不同的字段。
+
+opencode driver 构建阶段必须校验：
+
+- `default_model.providerID` 和 `default_model.modelID` 必填。
+- `allowed_models` 中带 `label` 的条目必须同时提供 `providerID` 和 `modelID`。
+- 配置非法时启动失败并返回明确错误，禁止运行时发送空模型请求。
 
 为了兼容旧配置，实现阶段可以把历史 `opencode`/`models` 配置转换成一个内置 agent，例如 `agents.default.type=opencode`，但新文档和新配置应以 `kanban.default_agent` + `agents` 为准。
 
@@ -468,7 +476,7 @@ driver.session_state(task.session_id) -> AgentState
 2. task.abort 非空：写 abort 成功 comment，运行 `session_abort` 钩子；钩子失败时添加 `attention` 并写 comment；销毁 task，释放容量。
 3. `state.kind == failed`：移卡到 `done`，添加 `attention`，写异常结束 comment，销毁 task，释放容量。
 4. `state.kind == finished` 且 task.summary 非空：写完成 comment，把 `state.text` 写入 comment，运行 `session_finish` 钩子；钩子失败时添加 `attention` 并写 comment；移卡到 `done`，销毁 task，释放容量。
-5. `state.kind == finished` 且 task.summary 为空：通过 driver 发送 summary prompt，设置 `task.summary = now`。
+5. `state.kind == finished` 且 task.summary 为空：通过 driver 发送 summary prompt，并传入 `task.labels`，设置 `task.summary = now`。如果发送 summary prompt 失败，应把卡片移到 `done`，添加 `attention`，写 comment 说明原因，销毁 task 并释放容量。
 
 ### 8.2 summary prompt
 
@@ -538,7 +546,8 @@ handle_doing_in(card, now):
     comment capacity full
     return
 
-  tasks[card.id] = Task{card_id: card.id, session_id: "__pending__", proj, agent}
+  labels = card.labels
+  tasks[card.id] = Task{card_id: card.id, session_id: "__pending__", proj, agent, labels}
   total_count++
   proj_count[proj]++
   hook_result = run_hook(session_new, task, card, project, agent, project.root)
@@ -552,8 +561,23 @@ handle_doing_in(card, now):
   workdir = hook_result.workdir or project.root
   prompt = render_initial_prompt(card, project, agent, project_config)
   session_id = create_session(agent, card, card.labels, workdir)
+  if create_session failed:
+    move card to done
+    add attention
+    comment session create failure with proj, agent and reason
+    destroy pending task and decrement counters
+    return
+
   send_initial_prompt(session_id, prompt, card.labels)
-  tasks[card.id] = Task{card_id: card.id, session_id, proj, agent, workdir}
+  if send_initial_prompt failed:
+    abort_session(session_id)
+    move card to done
+    add attention
+    comment prompt send failure with proj, agent, session id and reason
+    destroy pending task and decrement counters
+    return
+
+  tasks[card.id] = Task{card_id: card.id, session_id, proj, agent, workdir, labels}
   comment session started
 ```
 
@@ -665,6 +689,10 @@ Hook session_new failed: <reason>. Please check manually.
 Hook session_finish failed: <reason>. Task was still moved to done.
 
 Hook session_abort failed: <reason>. Task tracking was still released.
+
+Cannot start task: failed to create session for proj <proj> with agent <agent>: <reason>. Please check manually.
+
+Cannot start task: failed to send initial prompt for session <session_id>, proj <proj>, agent <agent>: <reason>. Session abort was requested; please check manually.
 ```
 
 具体文案可调整，但必须包含人类排查所需的 session id、driver 状态或底层 finish 值、proj、agent、hook 名称和原因。hook 输出写入 comment 前必须截断，并避免包含敏感信息。
@@ -678,6 +706,8 @@ Hook session_abort failed: <reason>. Task tracking was still released.
 - `session_new` hook 只在 pending task 阶段运行一次；pending task 占用容量。失败后销毁 pending task 并释放容量，避免下一轮重复创建同一个 pending task。
 - `session_finish` 和 `session_abort` hook 失败不阻止 task 销毁，避免卡片因项目脚本失败而永久占用容量。
 - Trello move 或 comment 失败时应记录错误，下一轮 timer 重试安全流程。
+- agent create session 失败时，必须把卡片移到 `done`、添加 `attention`、写 comment 并释放 pending task，避免 `doing.in` 循环重试。
+- agent create session 成功但 send initial prompt 失败时，应尽量 abort session，并把卡片移到 `done`、添加 `attention`、写 comment、释放 pending task。
 - agent create session 成功但写 task 失败时，应尽量 abort session 并写错误日志。
 
 ## 14. 测试要点
@@ -689,12 +719,14 @@ Hook session_abort failed: <reason>. Task tracking was still released.
 - capacity：全局满、项目满、可启动、跳过无 proj 卡片。
 - `session_state`：`running`、`finished` 首次、`finished` summary 完成、`failed`。
 - opencode driver 状态映射：缺失 finish、`tool-calls`、`stop`、`length`、`content-filter`、`error`、`unknown`。
+- opencode driver 配置校验：缺少默认模型、allowed model 字段缺失、合法配置。
 - doing 对账：先 out 后 in，容量释放后可启动新卡。
 - timeout：abort 超时、summary 超时、未超时不处理。
 - task 销毁：总计数和项目计数正确递减。
 - `.kanban.yml`：不存在时使用默认 prompt，非法时启动失败并加 `attention`。
 - prompt 渲染：全量 template 替代默认格式，addons 追加到最终 prompt，summary prompt 包含敏感信息禁止写入要求。
 - hooks：`session_new` 成功返回 workdir、`session_new` 失败不创建 session、`session_finish`/`session_abort` 失败只加 `attention` 且释放 task。
+- 启动失败：`CreateSession` 失败和首个 `SendPrompt` 失败都移动 `done`、添加 `attention`、写 comment、释放容量；summary prompt 发送时保留 task labels。
 
 集成测试建议覆盖：
 

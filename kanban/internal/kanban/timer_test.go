@@ -91,7 +91,10 @@ func TestCheckOneFinishSkipsWhenNoFinish(t *testing.T) {
 	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
 	fakeDriver.state = AgentState{Kind: "running"}
 
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
+	s.tasks["c1"] = &Task{
+		CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent",
+		Labels: []string{"proj:agent", "model:step-3.6"},
+	}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -109,7 +112,10 @@ func TestCheckOneFinishSkipsToolCalls(t *testing.T) {
 	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
 	fakeDriver.state = AgentState{Kind: "running", RawFinish: "tool-calls"}
 
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
+	s.tasks["c1"] = &Task{
+		CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent",
+		Labels: []string{"proj:agent", "model:step-3.6"},
+	}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -210,7 +216,10 @@ func TestCheckOneFinishStopSendsSummary(t *testing.T) {
 	fakeDriver.sessionID = "ses1"
 	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
 
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
+	s.tasks["c1"] = &Task{
+		CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent",
+		Labels: []string{"proj:agent", "model:step-3.6"},
+	}
 	s.totalCount = 1
 
 	now := time.Now()
@@ -228,14 +237,19 @@ func TestCheckOneFinishStopSendsSummary(t *testing.T) {
 
 	fakeDriver.mu.Lock()
 	found := false
+	var summaryLabels []string
 	for _, pc := range fakeDriver.promptCalls {
 		if strings.Contains(pc.Prompt, "总结") {
 			found = true
+			summaryLabels = pc.Labels
 		}
 	}
 	fakeDriver.mu.Unlock()
 	if !found {
 		t.Error("summary prompt should have been sent")
+	}
+	if !stringSliceContains(summaryLabels, "model:step-3.6") {
+		t.Errorf("summary labels=%v, want model:step-3.6", summaryLabels)
 	}
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
@@ -1069,6 +1083,67 @@ func TestHandleDoingInAbortsSessionOnPromptFail(t *testing.T) {
 	if len(aborts) != 1 || aborts[0] != "ses_orphan" {
 		t.Errorf("expected abort of ses_orphan, got abortCalls=%v", aborts)
 	}
+
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
+		t.Errorf("card should move to done on prompt failure, moves=%v", trello.moves)
+	}
+	if len(trello.labelAdds) != 1 || trello.labelAdds[0] != testAttentionID {
+		t.Errorf("attention should be added on prompt failure, labelAdds=%v", trello.labelAdds)
+	}
+	var foundComment bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "failed to send initial prompt") && strings.Contains(c, "ses_orphan") {
+			foundComment = true
+		}
+	}
+	if !foundComment {
+		t.Errorf("prompt failure comment not found in %v", trello.comments)
+	}
+}
+
+func TestHandleDoingInCreateSessionFailVisibleOnTrello(t *testing.T) {
+	trello := newFakeTrello()
+	trSrv := newFakeTrelloServer(t, trello)
+
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.createErr = fmt.Errorf("create failed")
+
+	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
+
+	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
+	s.handleDoingIn(context.Background(), card, time.Now())
+
+	s.mu.Lock()
+	_, taskExists := s.tasks["c1"]
+	total := s.totalCount
+	s.mu.Unlock()
+	if taskExists {
+		t.Error("task should be destroyed after create failure")
+	}
+	if total != 0 {
+		t.Errorf("totalCount=%d, want 0", total)
+	}
+
+	trello.mu.Lock()
+	defer trello.mu.Unlock()
+	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
+		t.Errorf("card should move to done on create failure, moves=%v", trello.moves)
+	}
+	if len(trello.labelAdds) != 1 || trello.labelAdds[0] != testAttentionID {
+		t.Errorf("attention should be added on create failure, labelAdds=%v", trello.labelAdds)
+	}
+	var foundComment bool
+	for _, c := range trello.comments {
+		if strings.Contains(c, "failed to create session") && strings.Contains(c, "create failed") {
+			foundComment = true
+		}
+	}
+	if !foundComment {
+		t.Errorf("create failure comment not found in %v", trello.comments)
+	}
 }
 
 // ---------- session_new hook integration ----------
@@ -1399,4 +1474,13 @@ func TestCheckOneFinishAbortDoneHookFail(t *testing.T) {
 	if !hookFailComment {
 		t.Errorf("hook failure comment not found in %v", trello.comments)
 	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }

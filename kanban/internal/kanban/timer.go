@@ -119,10 +119,10 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 	}
 
 	// Rule 5: finished + no summary → send summary prompt, set task.summary time.
-	if err := driver.SendPrompt(ctx, sessionID, summaryPromptText, nil); err != nil {
+	if err := driver.SendPrompt(ctx, sessionID, summaryPromptText, taskSnap.Labels); err != nil {
 		s.log("finish.summary.send.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
-		// Complete without summary on send failure.
-		s.trelloAddComment(ctx, cardID, "Task finished.")
+		s.addAttentionLabel(ctx, cardID)
+		s.trelloAddComment(ctx, cardID, fmt.Sprintf("Task finished, but summary prompt failed for session %s: %v. Please check manually.", sessionID, err))
 		s.trelloMoveCard(ctx, cardID, s.listIDFor("done"))
 		s.destroyTask(cardID)
 		return
@@ -302,6 +302,7 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	agentType := s.cfg.Agents[agentName].Type
 
 	// Create a pending task that counts against capacity from this point on.
+	labels := labelNames(card)
 	pendingTask := &Task{
 		CardID:    card.ID,
 		CardTitle: card.Name,
@@ -310,6 +311,7 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 		Proj:      proj,
 		Agent:     agentName,
 		Workdir:   allowedProj.Root,
+		Labels:    labels,
 	}
 	s.mu.Lock()
 	s.tasks[card.ID] = pendingTask
@@ -345,20 +347,22 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	}
 
 	// Create agent session.
-	sessionID, err := driver.CreateSession(ctx, workdir, labelNames(card))
+	sessionID, err := driver.CreateSession(ctx, workdir, labels)
 	if err != nil {
 		s.log("doing.in.session.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		s.failStartTask(ctx, card.ID, fmt.Sprintf("Cannot start task: failed to create session for proj %s with agent %s: %v. Please check manually.", proj, agentName, err))
 		s.destroyTask(card.ID)
 		return
 	}
 
 	// Send the initial prompt.
-	if err := driver.SendPrompt(ctx, sessionID, prompt, labelNames(card)); err != nil {
+	if err := driver.SendPrompt(ctx, sessionID, prompt, labels); err != nil {
 		s.log("doing.in.prompt.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, err))
 		// Abort the already-created session to avoid leaving an orphan on the agent side.
 		if abortErr := driver.AbortSession(ctx, sessionID); abortErr != nil {
 			s.log("doing.in.session.abort.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, abortErr))
 		}
+		s.failStartTask(ctx, card.ID, fmt.Sprintf("Cannot start task: failed to send initial prompt for session %s, proj %s, agent %s: %v. Session abort was requested; please check manually.", sessionID, proj, agentName, err))
 		s.destroyTask(card.ID)
 		return
 	}
@@ -373,6 +377,12 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 
 	s.trelloAddComment(ctx, card.ID, fmt.Sprintf("Started session %s.", sessionID))
 	s.log("doing.in.started", fmt.Sprintf("card=%s session=%s proj=%s agent=%s", card.ID, sessionID, proj, agentName))
+}
+
+func (s *Server) failStartTask(ctx context.Context, cardID, comment string) {
+	s.trelloMoveCard(ctx, cardID, s.listIDFor("done"))
+	s.addAttentionLabel(ctx, cardID)
+	s.trelloAddComment(ctx, cardID, comment)
 }
 
 // runFinishHook runs a session_finish or session_abort hook using data from the task snapshot.

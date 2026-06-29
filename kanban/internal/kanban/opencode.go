@@ -53,6 +53,9 @@ func newOpenCodeDriver(raw map[string]any, envLookup func(string) string, httpc 
 			d.defaultModel.ModelID = mid
 		}
 	}
+	if d.defaultModel.ProviderID == "" || d.defaultModel.ModelID == "" {
+		return nil, fmt.Errorf("default_model.providerID and default_model.modelID are required")
+	}
 
 	if am, ok := raw["allowed_models"].([]any); ok {
 		for _, item := range am {
@@ -64,6 +67,9 @@ func newOpenCodeDriver(raw map[string]any, envLookup func(string) string, httpc 
 			pid, _ := m["providerID"].(string)
 			mid, _ := m["modelID"].(string)
 			if label != "" {
+				if pid == "" || mid == "" {
+					return nil, fmt.Errorf("allowed_models %q requires providerID and modelID", label)
+				}
 				d.labelModels[label] = ocModelRef{ProviderID: pid, ModelID: mid}
 			}
 		}

@@ -272,6 +272,7 @@ type fakeAgentDriver struct {
 type agentPromptCall struct {
 	SessionID string
 	Prompt    string
+	Labels    []string
 }
 
 func (f *fakeAgentDriver) CreateSession(_ context.Context, _ string, _ []string) (string, error) {
@@ -294,10 +295,10 @@ func (f *fakeAgentDriver) AbortSession(_ context.Context, sessionID string) erro
 	return f.abortErr
 }
 
-func (f *fakeAgentDriver) SendPrompt(_ context.Context, sessionID, prompt string, _ []string) error {
+func (f *fakeAgentDriver) SendPrompt(_ context.Context, sessionID, prompt string, labels []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.promptCalls = append(f.promptCalls, agentPromptCall{SessionID: sessionID, Prompt: prompt})
+	f.promptCalls = append(f.promptCalls, agentPromptCall{SessionID: sessionID, Prompt: prompt, Labels: append([]string(nil), labels...)})
 	return f.promptErr
 }
 

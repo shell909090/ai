@@ -19,6 +19,7 @@ type Task struct {
 	Proj      string
 	Agent     string     // agent config name selected for this task
 	Workdir   string     // resolved after session_new hook; used for session creation and proj inference
+	Labels    []string   // card label names captured at start; passed to later driver prompts
 	Abort     *time.Time // set when abort was requested
 	Summary   *time.Time // set when summary prompt was sent
 }
