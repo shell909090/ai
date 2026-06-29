@@ -15,9 +15,9 @@ import (
 
 const testToken = "test-control-token"
 
-func newControlServer(t *testing.T, trelloURL, ocURL string) *Server {
+func newControlServer(t *testing.T, trelloURL string) *Server {
 	t.Helper()
-	s := newTestServer(t, trelloURL, ocURL)
+	s := newTestServer(t, trelloURL)
 	s.cfg.ControlToken = testToken
 	s.cfg.AllowedProjects = []AllowedProject{
 		{Label: "proj:agent", Name: "agent", Root: "/repo/agent"},
@@ -48,7 +48,7 @@ func controlDo(t *testing.T, s *Server, method, path, token string, body any) *h
 // ---------- authentication ----------
 
 func TestControlAuthMissingToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "GET", "/control/v1/lists", "", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("code=%d, want 401", rec.Code)
@@ -56,7 +56,7 @@ func TestControlAuthMissingToken(t *testing.T) {
 }
 
 func TestControlAuthWrongToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "GET", "/control/v1/lists", "wrong-token", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("code=%d, want 401", rec.Code)
@@ -64,7 +64,7 @@ func TestControlAuthWrongToken(t *testing.T) {
 }
 
 func TestControlAuthEmptyBearer(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	req := httptest.NewRequest("GET", "/control/v1/lists", nil)
 	req.Header.Set("Authorization", "Bearer ")
 	rec := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestControlAuthEmptyBearer(t *testing.T) {
 }
 
 func TestControlAuthCorrectToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
 	// Should not be 401
 	if rec.Code == http.StatusUnauthorized {
@@ -86,7 +86,7 @@ func TestControlAuthCorrectToken(t *testing.T) {
 // ---------- list lists ----------
 
 func TestControlListLists(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -108,7 +108,7 @@ func TestControlListLists(t *testing.T) {
 // ---------- list cards ----------
 
 func TestControlListCardsUnknownList(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "GET", "/control/v1/cards?list=unknown", testToken, nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("code=%d, want 400", rec.Code)
@@ -124,7 +124,7 @@ func TestControlListCards(t *testing.T) {
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 	rec := controlDo(t, s, "GET", "/control/v1/cards?list=todo", testToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
@@ -141,7 +141,7 @@ func TestControlListCards(t *testing.T) {
 // ---------- create card ----------
 
 func TestControlCreateCardEmptyTitle(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]string{
 		"title": "", "cwd": "/repo/agent",
 	})
@@ -154,7 +154,7 @@ func TestControlCreateCardEmptyTitle(t *testing.T) {
 }
 
 func TestControlCreateCardUnknownProject(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]string{
 		"title": "T", "project": "nonexistent",
 	})
@@ -168,7 +168,7 @@ func TestControlCreateCardCwdInference(t *testing.T) {
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title":       "New task",
 		"description": "desc",
@@ -188,7 +188,7 @@ func TestControlCreateCardExplicitProject(t *testing.T) {
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title":   "Task",
 		"project": "kanban",
@@ -199,7 +199,7 @@ func TestControlCreateCardExplicitProject(t *testing.T) {
 }
 
 func TestControlCreateCardNoCwdNoProject(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title": "Task",
 		// neither cwd nor project
@@ -212,7 +212,7 @@ func TestControlCreateCardNoCwdNoProject(t *testing.T) {
 // ---------- move card ----------
 
 func TestControlMoveCardUnknownList(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/move", testToken, map[string]string{
 		"list": "nonexistent",
 	})
@@ -225,7 +225,7 @@ func TestControlMoveCard(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/move", testToken, map[string]string{
 		"list": "done",
@@ -243,7 +243,7 @@ func TestControlMoveCard(t *testing.T) {
 // ---------- add comment ----------
 
 func TestControlAddCommentTooLong(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	longText := strings.Repeat("x", controlMaxCommentLen+1)
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/comments", testToken, map[string]string{
 		"text": longText,
@@ -257,7 +257,7 @@ func TestControlAddComment(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/comments", testToken, map[string]string{
 		"text": "Hello!",
@@ -278,7 +278,7 @@ func TestControlAddLabelUnknown(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/labels", testToken, map[string]string{
 		"label": "notexist",
@@ -292,7 +292,7 @@ func TestControlAddLabel(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/labels", testToken, map[string]string{
 		"label": testAttentionName,
@@ -311,7 +311,7 @@ func TestControlRemoveLabelUnknown(t *testing.T) {
 	trello := newFakeTrello()
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 
 	rec := controlDo(t, s, "DELETE", "/control/v1/cards/c1/labels/unknownlabel", testToken, nil)
 	if rec.Code != http.StatusBadRequest {
@@ -434,7 +434,7 @@ func init() {
 
 // TestControlCreateCardRegistersRoute verifies the route is wired.
 func TestControlCreateCardRegistersRoute(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newControlServer(t, "http://trello.invalid")
 	// With no token in request, should get 401 (not 404).
 	rec := controlDo(t, s, "POST", "/control/v1/cards", "", nil)
 	if rec.Code == http.StatusNotFound {
@@ -448,7 +448,7 @@ func TestControlAuditLog(t *testing.T) {
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 	// Use a distinctive token value to check it doesn't appear in logs.
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 	s.cfg.TrelloToken = "TRELLO_SECRET_9876"
 
 	log := &drainLog{}
@@ -466,7 +466,7 @@ func TestControlAuditLog(t *testing.T) {
 
 // verify control API routes are NOT registered when token is empty
 func TestControlRoutesRequireToken(t *testing.T) {
-	s := newTestServer(t, "http://trello.invalid", "http://oc.invalid")
+	s := newTestServer(t, "http://trello.invalid")
 	// ControlToken is empty → routes not registered.
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
 	// Should be 404 because the route is not registered.
@@ -527,7 +527,7 @@ func TestControlCreateCardFromTaskWorkdir(t *testing.T) {
 	srv := httptest.NewServer(trello.handler())
 	defer srv.Close()
 
-	s := newControlServer(t, srv.URL, "http://oc.invalid")
+	s := newControlServer(t, srv.URL)
 	// Add a task with a workdir the cwd will match.
 	s.mu.Lock()
 	s.tasks["c_existing"] = &Task{

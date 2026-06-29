@@ -135,7 +135,7 @@ func (s *Server) handleControlCreateCard(w http.ResponseWriter, r *http.Request)
 		Description string   `json:"description"`
 		CWD         string   `json:"cwd"`
 		Project     string   `json:"project"` // explicit override (project name)
-		Model       string   `json:"model"`   // model alias
+		Agent       string   `json:"agent"`   // agent name (e.g. opencode-default)
 		Labels      []string `json:"labels"`  // extra labels (non-proj)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -176,7 +176,7 @@ func (s *Server) handleControlCreateCard(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Collect label IDs.
-	labelIDs, err := s.resolveLabelIDsForCreate(r.Context(), proj, req.Model, req.Labels)
+	labelIDs, err := s.resolveLabelIDsForCreate(r.Context(), proj, req.Agent, req.Labels)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -379,7 +379,7 @@ func pathContainsDir(root, dir string) bool {
 }
 
 // resolveLabelIDsForCreate collects Trello label IDs for a new todo card.
-func (s *Server) resolveLabelIDsForCreate(ctx context.Context, proj AllowedProject, modelAlias string, extraLabels []string) ([]string, error) {
+func (s *Server) resolveLabelIDsForCreate(ctx context.Context, proj AllowedProject, agentName string, extraLabels []string) ([]string, error) {
 	var ids []string
 
 	// proj:* label
@@ -391,15 +391,12 @@ func (s *Server) resolveLabelIDsForCreate(ctx context.Context, proj AllowedProje
 		ids = append(ids, id)
 	}
 
-	// model:* label (optional)
-	if modelAlias != "" {
-		modelLabel, err := s.resolveModelLabel(modelAlias)
+	// agent:* label (optional)
+	if agentName != "" {
+		agentLabel := "agent:" + agentName
+		id, err := s.resolveLabelID(ctx, agentLabel)
 		if err != nil {
-			return nil, err
-		}
-		id, err := s.resolveLabelID(ctx, modelLabel)
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve model label %q: %w", modelLabel, err)
+			return nil, fmt.Errorf("cannot resolve agent label %q: %w", agentLabel, err)
 		}
 		ids = append(ids, id)
 	}
@@ -414,15 +411,4 @@ func (s *Server) resolveLabelIDsForCreate(ctx context.Context, proj AllowedProje
 	}
 
 	return ids, nil
-}
-
-// resolveModelLabel converts a model alias (e.g. "sonnet") to the model label name.
-func (s *Server) resolveModelLabel(alias string) (string, error) {
-	// Try direct match against allowed model labels
-	for _, m := range s.cfg.AllowedModels {
-		if m.Label == alias || m.Label == "model:"+alias {
-			return m.Label, nil
-		}
-	}
-	return "", fmt.Errorf("unknown model alias: %q", alias)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -149,6 +150,7 @@ func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // fakeOpencode is a minimal opencode stand-in for tests.
+// Used by opencode driver tests in api_test.go.
 type fakeOpencode struct {
 	mu            sync.Mutex
 	sessionID     string
@@ -254,6 +256,62 @@ func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// fakeAgentDriver implements AgentDriver for tests.
+type fakeAgentDriver struct {
+	mu          sync.Mutex
+	sessionID   string
+	state       AgentState
+	stateQueue  []AgentState
+	abortCalls  []string
+	promptCalls []agentPromptCall
+	createErr   error
+	abortErr    error
+	promptErr   error
+}
+
+type agentPromptCall struct {
+	SessionID string
+	Prompt    string
+}
+
+func (f *fakeAgentDriver) CreateSession(_ context.Context, _ string, _ []string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	id := f.sessionID
+	if id == "" {
+		id = "ses_fake"
+	}
+	return id, nil
+}
+
+func (f *fakeAgentDriver) AbortSession(_ context.Context, sessionID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.abortCalls = append(f.abortCalls, sessionID)
+	return f.abortErr
+}
+
+func (f *fakeAgentDriver) SendPrompt(_ context.Context, sessionID, prompt string, _ []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.promptCalls = append(f.promptCalls, agentPromptCall{SessionID: sessionID, Prompt: prompt})
+	return f.promptErr
+}
+
+func (f *fakeAgentDriver) SessionState(_ context.Context, _ string) (AgentState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.stateQueue) > 0 {
+		s := f.stateQueue[0]
+		f.stateQueue = f.stateQueue[1:]
+		return s, nil
+	}
+	return f.state, nil
+}
+
 // rewriteTransport intercepts requests to https://api.trello.com and
 // rewrites the host to the fake test server.
 type rewriteTransport struct {
@@ -318,18 +376,18 @@ type hookCall struct {
 }
 
 func (f *fakeHookRunner) RunHook(_ context.Context, event string, _ *Task, card trelloCard,
-	proj AllowedProject, _ ModelRef, workdir string, _ ProjectConfig) (HookResult, error) {
+	proj AllowedProject, agentName, agentType string, workdir string, _ ProjectConfig) (HookResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, hookCall{Event: event, CardID: card.ID, Proj: proj.Name, Workdir: workdir})
 	return f.result, f.err
 }
 
-// newTestServer builds a Server wired to the given fake Trello and opencode URLs.
+// newTestServer builds a Server wired to the given fake Trello URL.
 func newTestServer(t interface {
 	testingTB
 	Fatal(...any)
-}, trelloURL, ocURL string) *Server {
+}, trelloURL string) *Server {
 	t.Helper()
 	httpc := &http.Client{
 		Timeout:   2 * time.Second,
@@ -339,9 +397,6 @@ func newTestServer(t interface {
 		TrelloKey:          "k",
 		TrelloToken:        "t",
 		TrelloBoardID:      testBoardID,
-		OpenCodeUser:       "u",
-		OpenCodePass:       "p",
-		OpenCodeBaseURL:    ocURL,
 		HTTPTimeout:        2 * time.Second,
 		HTTPListen:         "127.0.0.1:0",
 		PollInterval:       time.Second,
@@ -349,7 +404,8 @@ func newTestServer(t interface {
 		SummaryTimeout:     60 * time.Second,
 		HookDefaultTimeout: 5 * time.Second,
 		HookMaxOutputBytes: 4096,
-		DefaultModel:       ModelRef{ProviderID: "test", ModelID: "model"},
+		DefaultAgent:       "test-agent",
+		Agents:             map[string]AgentConfig{"test-agent": {Type: "fake"}},
 		MaxDoingTotal:      2,
 		MaxDoingPerProject: 1,
 		TrelloLists: map[string]string{
@@ -368,5 +424,30 @@ func newTestServer(t interface {
 	}
 	s.httpc = httpc
 	s.hookRunner = &fakeHookRunner{}
+	s.drivers = map[string]AgentDriver{"test-agent": &fakeAgentDriver{}}
 	return s
+}
+
+// newFakeTrelloServer starts an httptest.Server for a fakeTrello and registers cleanup.
+func newFakeTrelloServer(t interface {
+	testingTB
+	Helper()
+	Cleanup(func())
+}, ft *fakeTrello) string {
+	t.Helper()
+	srv := httptest.NewServer(ft.handler())
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// newFakeHTTPServer starts an httptest.Server with the given handler and registers cleanup.
+func newFakeHTTPServer(t interface {
+	testingTB
+	Helper()
+	Cleanup(func())
+}, h http.HandlerFunc) string {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv.URL
 }

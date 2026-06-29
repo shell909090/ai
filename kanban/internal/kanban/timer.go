@@ -36,7 +36,7 @@ func (s *Server) checkSessionFinish(ctx context.Context, now time.Time) {
 }
 
 // checkOneFinish handles finish detection for a single task.
-// Implements the rules from design.md §6.1.
+// Implements the rules from design.md §8.
 func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Time) {
 	s.mu.Lock()
 	task, ok := s.tasks[cardID]
@@ -45,17 +45,25 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 		return
 	}
 	sessionID := task.SessionID
+	agentName := task.Agent
 	s.mu.Unlock()
 
-	last, err := s.ocGetLastMessage(ctx, sessionID)
-	if err != nil {
-		s.log("finish.message.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
+	s.mu.Lock()
+	driver, ok := s.drivers[agentName]
+	s.mu.Unlock()
+	if !ok {
+		s.log("finish.driver.missing", fmt.Sprintf("card=%s agent=%s", cardID, agentName))
 		return
 	}
 
-	finish := extractFinish(last)
-	// Rule 1: no finish or tool-calls → session still active.
-	if finish == "" || finish == "tool-calls" {
+	state, err := driver.SessionState(ctx, sessionID)
+	if err != nil {
+		s.log("finish.state.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
+		return
+	}
+
+	// Rule 1: session still active.
+	if state.Kind == "running" {
 		return
 	}
 
@@ -70,7 +78,6 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 
 	abort := taskSnap.Abort
 	summary := taskSnap.Summary
-	model := taskSnap.Model
 
 	// Rule 2: abort was in progress → write abort success comment, run abort hook, destroy task.
 	if abort != nil {
@@ -85,20 +92,21 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 		return
 	}
 
-	// Rule 3: non-stop finish → abnormal end.
-	if finish != "stop" {
+	// Rule 3: failed → abnormal end.
+	if state.Kind == "failed" {
 		s.trelloMoveCard(ctx, cardID, s.listIDFor("done"))
 		s.addAttentionLabel(ctx, cardID)
-		s.trelloAddComment(ctx, cardID, fmt.Sprintf("Session ended abnormally: finish=%s. Please check manually.", finish))
+		s.trelloAddComment(ctx, cardID, fmt.Sprintf("Session ended abnormally: status=%s. Please check manually.", state.RawFinish))
 		s.destroyTask(cardID)
-		s.log("finish.abnormal", fmt.Sprintf("card=%s session=%s finish=%s", cardID, sessionID, finish))
+		s.log("finish.abnormal", fmt.Sprintf("card=%s session=%s finish=%s", cardID, sessionID, state.RawFinish))
 		return
 	}
 
-	// Rule 4: stop + summary already sent → write completion comment, run finish hook, move done.
+	// From here state.Kind == "finished".
+
+	// Rule 4: finished + summary already sent → write completion comment, run finish hook, move done.
 	if summary != nil {
-		summaryText := ExtractSummaryText(last, summaryCharLimit)
-		s.trelloAddComment(ctx, cardID, "Task finished. Summary:\n"+summaryText)
+		s.trelloAddComment(ctx, cardID, "Task finished. Summary:\n"+state.Text)
 		if hookErr := s.runFinishHook(ctx, "session_finish", &taskSnap); hookErr != nil {
 			s.addAttentionLabel(ctx, cardID)
 			s.trelloAddComment(ctx, cardID, fmt.Sprintf("Hook session_finish failed: %v. Task was still moved to done.", hookErr))
@@ -110,8 +118,8 @@ func (s *Server) checkOneFinish(ctx context.Context, cardID string, now time.Tim
 		return
 	}
 
-	// Rule 5: stop + no summary → send summary prompt, set task.summary time.
-	if err := s.ocSendPrompt(ctx, sessionID, model, summaryPromptText); err != nil {
+	// Rule 5: finished + no summary → send summary prompt, set task.summary time.
+	if err := driver.SendPrompt(ctx, sessionID, summaryPromptText, nil); err != nil {
 		s.log("finish.summary.send.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
 		// Complete without summary on send failure.
 		s.trelloAddComment(ctx, cardID, "Task finished.")
@@ -187,10 +195,18 @@ func (s *Server) handleDoingOut(ctx context.Context, cardID string, now time.Tim
 		return // already aborting or not yet started
 	}
 	sessionID := task.SessionID
+	agentName := task.Agent
 	s.mu.Unlock()
 
-	if err := s.ocAbortSession(ctx, sessionID); err != nil {
-		s.log("doing.out.abort.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
+	s.mu.Lock()
+	driver, ok := s.drivers[agentName]
+	s.mu.Unlock()
+	if ok {
+		if err := driver.AbortSession(ctx, sessionID); err != nil {
+			s.log("doing.out.abort.fail", fmt.Sprintf("card=%s session=%s err=%v", cardID, sessionID, err))
+		}
+	} else {
+		s.log("doing.out.driver.missing", fmt.Sprintf("card=%s agent=%s", cardID, agentName))
 	}
 
 	t := now
@@ -204,8 +220,17 @@ func (s *Server) handleDoingOut(ctx context.Context, cardID string, now time.Tim
 	s.log("doing.out", fmt.Sprintf("card=%s session=%s", cardID, sessionID))
 }
 
+// labelNames returns the label names from a card's labels.
+func labelNames(card trelloCard) []string {
+	names := make([]string, 0, len(card.Labels))
+	for _, l := range card.Labels {
+		names = append(names, l.Name)
+	}
+	return names
+}
+
 // handleDoingIn handles a card newly found in the doing list.
-// Implements the flow from design.md §7.3.
+// Implements the flow from design.md §9.3.
 func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Time) {
 	s.mu.Lock()
 	_, exists := s.tasks[card.ID]
@@ -229,13 +254,24 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 		return
 	}
 
-	// Parse model label.
-	model, err := parseModel(card, s.cfg)
+	// Parse agent label.
+	agentName, err := parseAgent(card, s.cfg)
 	if err != nil {
 		s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
 		s.addAttentionLabel(ctx, card.ID)
-		s.trelloAddComment(ctx, card.ID, "Cannot start task: model label is invalid: "+err.Error()+".")
-		s.log("doing.in.model.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		s.trelloAddComment(ctx, card.ID, "Cannot start task: agent label is invalid: "+err.Error()+".")
+		s.log("doing.in.agent.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
+		return
+	}
+
+	s.mu.Lock()
+	driver, driverOk := s.drivers[agentName]
+	s.mu.Unlock()
+	if !driverOk {
+		s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
+		s.addAttentionLabel(ctx, card.ID)
+		s.trelloAddComment(ctx, card.ID, fmt.Sprintf("Cannot start task: agent %q has no driver loaded.", agentName))
+		s.log("doing.in.driver.missing", fmt.Sprintf("card=%s agent=%s", card.ID, agentName))
 		return
 	}
 
@@ -263,6 +299,8 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 		return
 	}
 
+	agentType := s.cfg.Agents[agentName].Type
+
 	// Create a pending task that counts against capacity from this point on.
 	pendingTask := &Task{
 		CardID:    card.ID,
@@ -270,7 +308,7 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 		CardURL:   card.URL,
 		SessionID: "__pending__",
 		Proj:      proj,
-		Model:     model,
+		Agent:     agentName,
 		Workdir:   allowedProj.Root,
 	}
 	s.mu.Lock()
@@ -281,7 +319,7 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 
 	// Run session_new hook.
 	workdir := allowedProj.Root
-	hookResult, err := s.hookRunner.RunHook(ctx, "session_new", pendingTask, card, allowedProj, model, workdir, pc)
+	hookResult, err := s.hookRunner.RunHook(ctx, "session_new", pendingTask, card, allowedProj, agentName, agentType, workdir, pc)
 	if err != nil {
 		s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
 		s.addAttentionLabel(ctx, card.ID)
@@ -299,15 +337,15 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	}
 
 	// Render the initial prompt using the project's .kanban.yml template/addons.
-	prompt, promptErr := renderInitialPrompt(card, allowedProj, model, pc)
+	prompt, promptErr := renderInitialPrompt(card, allowedProj, agentName, agentType, pc)
 	if promptErr != nil {
 		// Non-fatal: fall back to raw card description.
 		s.log("doing.in.prompt.render.fail", fmt.Sprintf("card=%s err=%v, falling back to card.Desc", card.ID, promptErr))
 		prompt = card.Desc
 	}
 
-	// Create opencode session.
-	sessionID, err := s.ocCreateSession(ctx, model, workdir)
+	// Create agent session.
+	sessionID, err := driver.CreateSession(ctx, workdir, labelNames(card))
 	if err != nil {
 		s.log("doing.in.session.fail", fmt.Sprintf("card=%s err=%v", card.ID, err))
 		s.destroyTask(card.ID)
@@ -315,10 +353,10 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	}
 
 	// Send the initial prompt.
-	if err := s.ocSendPrompt(ctx, sessionID, model, prompt); err != nil {
+	if err := driver.SendPrompt(ctx, sessionID, prompt, labelNames(card)); err != nil {
 		s.log("doing.in.prompt.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, err))
-		// Abort the already-created session to avoid leaving an orphan on the opencode side.
-		if abortErr := s.ocAbortSession(ctx, sessionID); abortErr != nil {
+		// Abort the already-created session to avoid leaving an orphan on the agent side.
+		if abortErr := driver.AbortSession(ctx, sessionID); abortErr != nil {
 			s.log("doing.in.session.abort.fail", fmt.Sprintf("card=%s session=%s err=%v", card.ID, sessionID, abortErr))
 		}
 		s.destroyTask(card.ID)
@@ -334,7 +372,7 @@ func (s *Server) handleDoingIn(ctx context.Context, card trelloCard, now time.Ti
 	s.mu.Unlock()
 
 	s.trelloAddComment(ctx, card.ID, fmt.Sprintf("Started session %s.", sessionID))
-	s.log("doing.in.started", fmt.Sprintf("card=%s session=%s proj=%s", card.ID, sessionID, proj))
+	s.log("doing.in.started", fmt.Sprintf("card=%s session=%s proj=%s agent=%s", card.ID, sessionID, proj, agentName))
 }
 
 // runFinishHook runs a session_finish or session_abort hook using data from the task snapshot.
@@ -344,8 +382,9 @@ func (s *Server) runFinishHook(ctx context.Context, event string, task *Task) er
 	if err != nil {
 		return fmt.Errorf("load project config: %w", err)
 	}
+	agentType := s.cfg.Agents[task.Agent].Type
 	partialCard := trelloCard{ID: task.CardID, Name: task.CardTitle, URL: task.CardURL}
-	_, hookErr := s.hookRunner.RunHook(ctx, event, task, partialCard, allowedProj, task.Model, task.Workdir, pc)
+	_, hookErr := s.hookRunner.RunHook(ctx, event, task, partialCard, allowedProj, task.Agent, agentType, task.Workdir, pc)
 	return hookErr
 }
 
@@ -402,7 +441,7 @@ func (s *Server) checkOneTimeout(ctx context.Context, cardID string, now time.Ti
 }
 
 // promoteTodo promotes eligible cards from todo to doing.
-// Implements design.md §9.
+// Implements design.md §11.
 func (s *Server) promoteTodo(ctx context.Context, now time.Time) {
 	s.mu.Lock()
 	if s.totalCount >= s.cfg.MaxDoingTotal {
@@ -439,10 +478,10 @@ func (s *Server) promoteTodo(ctx context.Context, now time.Time) {
 			continue
 		}
 
-		if _, err := parseModel(card, s.cfg); err != nil {
+		if _, err := parseAgent(card, s.cfg); err != nil {
 			s.trelloMoveCard(ctx, card.ID, s.listIDFor("done"))
 			s.addAttentionLabel(ctx, card.ID)
-			s.trelloAddComment(ctx, card.ID, "Cannot start task: model label is invalid: "+err.Error()+".")
+			s.trelloAddComment(ctx, card.ID, "Cannot start task: agent label is invalid: "+err.Error()+".")
 			continue
 		}
 

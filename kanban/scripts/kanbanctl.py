@@ -73,8 +73,8 @@ def cmd_add_todo(args: argparse.Namespace) -> None:
         body["project"] = args.project
     else:
         body["cwd"] = os.getcwd()
-    if args.model:
-        body["model"] = args.model
+    if args.agent:
+        body["agent"] = args.agent
     for label in args.label or []:
         body.setdefault("labels", []).append(label)
     card = request("POST", "/control/v1/cards", body)
@@ -125,7 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", required=True, help="Card title")
     p.add_argument("--desc", default="", help="Card description")
     p.add_argument("--project", help="Project name override (default: infer from cwd)")
-    p.add_argument("--model", help="Model alias (e.g. sonnet)")
+    p.add_argument("--agent", help="Agent name (e.g. opencode-default)")
     p.add_argument("--label", action="append", metavar="LABEL", help="Extra label (repeatable)")
     p.set_defaults(func=cmd_add_todo)
 

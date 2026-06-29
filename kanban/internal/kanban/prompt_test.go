@@ -33,17 +33,12 @@ func testProj(name, label string) AllowedProject {
 	return AllowedProject{Name: name, Label: label}
 }
 
-func testModel(provider, model string) ModelRef {
-	return ModelRef{ProviderID: provider, ModelID: model}
-}
-
 func TestRenderInitialPromptDefault(t *testing.T) {
-	card := testCard("c1", "Fix the bug", "Some description", "https://trello.com/c/c1", "proj:agent", "model:sonnet")
+	card := testCard("c1", "Fix the bug", "Some description", "https://trello.com/c/c1", "proj:agent", "agent:test-agent")
 	proj := testProj("agent", "proj:agent")
-	model := testModel("anthropic", "claude-sonnet-4")
 	pc := ProjectConfig{}
 
-	result, err := renderInitialPrompt(card, proj, model, pc)
+	result, err := renderInitialPrompt(card, proj, "test-agent", "opencode", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,8 +48,8 @@ func TestRenderInitialPromptDefault(t *testing.T) {
 		"Some description",
 		"https://trello.com/c/c1",
 		"agent",
-		"anthropic",
-		"claude-sonnet-4",
+		"test-agent",
+		"opencode",
 	} {
 		if !strings.Contains(result, want) {
 			t.Errorf("prompt missing %q; got:\n%s", want, result)
@@ -65,12 +60,11 @@ func TestRenderInitialPromptDefault(t *testing.T) {
 func TestRenderInitialPromptTemplate(t *testing.T) {
 	card := testCard("c1", "Build feature", "desc", "http://trello/c")
 	proj := testProj("myproj", "proj:myproj")
-	model := testModel("p", "m")
 
 	var pc ProjectConfig
 	pc.Prompt.Template = "Card: {{.Card.Title}} | Project: {{.Project.Name}}"
 
-	result, err := renderInitialPrompt(card, proj, model, pc)
+	result, err := renderInitialPrompt(card, proj, "p", "opencode", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,12 +77,11 @@ func TestRenderInitialPromptTemplate(t *testing.T) {
 func TestRenderInitialPromptAddons(t *testing.T) {
 	card := testCard("c1", "T", "d", "u")
 	proj := testProj("p", "proj:p")
-	model := testModel("prov", "mod")
 
 	var pc ProjectConfig
 	pc.Prompt.Addons = []string{"Before starting, check git.", "Run tests."}
 
-	result, err := renderInitialPrompt(card, proj, model, pc)
+	result, err := renderInitialPrompt(card, proj, "prov", "opencode", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,13 +102,12 @@ func TestRenderInitialPromptAddons(t *testing.T) {
 func TestRenderInitialPromptTemplateAndAddons(t *testing.T) {
 	card := testCard("c1", "T", "d", "u")
 	proj := testProj("p", "proj:p")
-	model := testModel("prov", "mod")
 
 	var pc ProjectConfig
 	pc.Prompt.Template = "Custom: {{.Card.Title}}"
 	pc.Prompt.Addons = []string{"Addon text."}
 
-	result, err := renderInitialPrompt(card, proj, model, pc)
+	result, err := renderInitialPrompt(card, proj, "prov", "opencode", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,12 +122,11 @@ func TestRenderInitialPromptTemplateAndAddons(t *testing.T) {
 func TestRenderInitialPromptBadTemplate(t *testing.T) {
 	card := testCard("c1", "T", "d", "u")
 	proj := testProj("p", "proj:p")
-	model := testModel("prov", "mod")
 
 	var pc ProjectConfig
 	pc.Prompt.Template = "{{.Card.Title" // malformed
 
-	_, err := renderInitialPrompt(card, proj, model, pc)
+	_, err := renderInitialPrompt(card, proj, "prov", "opencode", pc)
 	if err == nil {
 		t.Fatal("expected error for bad template")
 	}

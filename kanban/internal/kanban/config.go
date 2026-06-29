@@ -11,20 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ModelRef identifies an opencode model as a (provider, model) pair.
-type ModelRef struct {
-	ProviderID string
-	ModelID    string
-}
-
-// AllowedModel is one entry in AllowedModels: a card's "model:X" label
-// can pick this entry if X matches Label.
-type AllowedModel struct {
-	Label      string
-	ProviderID string
-	ModelID    string
-}
-
 // AllowedProject is one entry in AllowedProjects: a card's "proj:X"
 // label can pick this entry if X matches Label.
 type AllowedProject struct {
@@ -50,10 +36,6 @@ type Config struct {
 	TrelloKey          string
 	TrelloToken        string
 	TrelloBoardID      string
-	OpenCodeUser       string
-	OpenCodePass       string
-	OpenCodeBaseURL    string
-	WorkDir            string
 	PollInterval       time.Duration
 	HTTPTimeout        time.Duration
 	HTTPListen         string
@@ -65,8 +47,8 @@ type Config struct {
 	HookMaxOutputBytes int
 	ControlToken       string // resolved token value (from ControlTokenEnv at load time)
 	ControlTokenEnv    string // env var name that holds the token
-	DefaultModel       ModelRef
-	AllowedModels      []AllowedModel
+	DefaultAgent       string
+	Agents             map[string]AgentConfig
 	AllowedProjects    []AllowedProject
 	// TrelloLists maps logical list names (todo/doing/done) to Trello list IDs.
 	TrelloLists map[string]string
@@ -74,11 +56,9 @@ type Config struct {
 	TrelloLabels map[string]string
 }
 
-// LoadConfig reads ./.env and ./config.yaml, returning a merged Config.
-func LoadConfig() (Config, error) {
+// LoadConfig reads ./.env and ./config.yaml, returning a merged Config and the env map.
+func LoadConfig() (Config, map[string]string, error) {
 	c := Config{
-		OpenCodeBaseURL:    envOr("KANBAN_OPENCODE_URL", "http://127.0.0.1:4096"),
-		WorkDir:            os.Getenv("KANBAN_WORKDIR"),
 		HTTPTimeout:        15 * time.Second,
 		PollInterval:       5 * time.Second,
 		HTTPListen:         "127.0.0.1:8087",
@@ -89,21 +69,16 @@ func LoadConfig() (Config, error) {
 	}
 	env, err := readDotenv(".env")
 	if err != nil {
-		return c, fmt.Errorf("read .env: %w", err)
+		return c, nil, fmt.Errorf("read .env: %w", err)
 	}
 	c.TrelloKey = env["TRELLO_API_KEY"]
 	c.TrelloToken = env["TRELLO_TOKEN"]
-	c.OpenCodeUser = env["OPENCODE_SERVER_USERNAME"]
-	c.OpenCodePass = env["OPENCODE_SERVER_PASSWORD"]
 	if c.TrelloKey == "" || c.TrelloToken == "" {
-		return c, fmt.Errorf("TRELLO_API_KEY or TRELLO_TOKEN missing in .env")
-	}
-	if c.OpenCodeUser == "" || c.OpenCodePass == "" {
-		return c, fmt.Errorf("OPENCODE_SERVER_USERNAME or OPENCODE_SERVER_PASSWORD missing in .env")
+		return c, nil, fmt.Errorf("TRELLO_API_KEY or TRELLO_TOKEN missing in .env")
 	}
 	yamlCfg, err := loadYAMLConfig("config.yaml")
 	if err != nil {
-		return c, fmt.Errorf("read config.yaml: %w", err)
+		return c, nil, fmt.Errorf("read config.yaml: %w", err)
 	}
 	mergeYAMLIntoConfig(&c, yamlCfg)
 	// Resolve control token: .env takes precedence over real env so that users
@@ -114,7 +89,7 @@ func LoadConfig() (Config, error) {
 			c.ControlToken = v
 		}
 	}
-	return c, nil
+	return c, env, nil
 }
 
 // yamlConfig mirrors the on-disk config.yaml structure.
@@ -124,6 +99,7 @@ type yamlConfig struct {
 		Lists   map[string]string `yaml:"lists"`
 		Labels  map[string]string `yaml:"labels"`
 	} `yaml:"trello"`
+	// Opencode is kept for backward compatibility with old configs.
 	Opencode struct {
 		BaseURL       string         `yaml:"base_url"`
 		WorkDir       string         `yaml:"workdir"`
@@ -132,6 +108,10 @@ type yamlConfig struct {
 		DefaultModel  yamlModel      `yaml:"default_model"`
 		AllowedModels []yamlModelRow `yaml:"allowed_models"`
 	} `yaml:"opencode"`
+	Kanban struct {
+		DefaultAgent string `yaml:"default_agent"`
+	} `yaml:"kanban"`
+	Agents   map[string]map[string]any `yaml:"agents"`
 	Projects struct {
 		Allowed []yamlProjRow `yaml:"allowed"`
 	} `yaml:"projects"`
@@ -196,25 +176,55 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 	if len(yc.Trello.Labels) > 0 {
 		c.TrelloLabels = yc.Trello.Labels
 	}
-	if yc.Opencode.BaseURL != "" {
-		c.OpenCodeBaseURL = yc.Opencode.BaseURL
+
+	// New kanban.default_agent / agents config.
+	if yc.Kanban.DefaultAgent != "" {
+		c.DefaultAgent = yc.Kanban.DefaultAgent
 	}
-	if yc.Opencode.WorkDir != "" {
-		c.WorkDir = yc.Opencode.WorkDir
-	}
-	if yc.Opencode.DefaultModel.ProviderID != "" {
-		c.DefaultModel = ModelRef{
-			ProviderID: yc.Opencode.DefaultModel.ProviderID,
-			ModelID:    yc.Opencode.DefaultModel.ModelID,
+	if len(yc.Agents) > 0 {
+		c.Agents = make(map[string]AgentConfig, len(yc.Agents))
+		for name, raw := range yc.Agents {
+			agentType, _ := raw["type"].(string)
+			c.Agents[name] = AgentConfig{Type: agentType, Raw: raw}
 		}
 	}
-	for _, m := range yc.Opencode.AllowedModels {
-		c.AllowedModels = append(c.AllowedModels, AllowedModel{
-			Label:      m.Label,
-			ProviderID: m.ProviderID,
-			ModelID:    m.ModelID,
-		})
+
+	// Backward compatibility: if no agents configured and old opencode section present,
+	// synthesize an "opencode-default" agent entry.
+	if len(c.Agents) == 0 && (yc.Opencode.BaseURL != "" || yc.Opencode.DefaultModel.ProviderID != "") {
+		raw := map[string]any{
+			"type":         "opencode",
+			"base_url":     yc.Opencode.BaseURL,
+			"workdir":      yc.Opencode.WorkDir,
+			"username_env": yc.Opencode.UsernameEnv,
+			"password_env": yc.Opencode.PasswordEnv,
+		}
+		if yc.Opencode.DefaultModel.ProviderID != "" {
+			raw["default_model"] = map[string]any{
+				"providerID": yc.Opencode.DefaultModel.ProviderID,
+				"modelID":    yc.Opencode.DefaultModel.ModelID,
+			}
+		}
+		if len(yc.Opencode.AllowedModels) > 0 {
+			var models []any
+			for _, m := range yc.Opencode.AllowedModels {
+				models = append(models, map[string]any{
+					"label": m.Label, "providerID": m.ProviderID, "modelID": m.ModelID,
+				})
+			}
+			raw["allowed_models"] = models
+		}
+		// Use the user-specified default_agent name if set, otherwise use "opencode-default".
+		agentKey := c.DefaultAgent
+		if agentKey == "" {
+			agentKey = "opencode-default"
+			c.DefaultAgent = agentKey
+		}
+		c.Agents = map[string]AgentConfig{
+			agentKey: {Type: "opencode", Raw: raw},
+		}
 	}
+
 	for _, p := range yc.Projects.Allowed {
 		kc := p.KanbanConfig
 		if kc == "" {
@@ -256,20 +266,23 @@ func mergeYAMLIntoConfig(c *Config, yc yamlConfig) {
 
 // Validate enforces config requirements at startup.
 func (c Config) Validate() error {
-	if c.DefaultModel.ProviderID == "" || c.DefaultModel.ModelID == "" {
-		return fmt.Errorf("config: opencode.default_model is required (providerID + modelID)")
+	if c.DefaultAgent == "" {
+		return fmt.Errorf("config: kanban.default_agent is required")
+	}
+	if c.Agents == nil {
+		return fmt.Errorf("config: default agent %q not found in agents", c.DefaultAgent)
+	}
+	if _, ok := c.Agents[c.DefaultAgent]; !ok {
+		return fmt.Errorf("config: default agent %q not found in agents", c.DefaultAgent)
+	}
+	for name, ac := range c.Agents {
+		if ac.Type == "" {
+			return fmt.Errorf("config: agent %q missing type", name)
+		}
 	}
 	for _, l := range []string{"todo", "doing", "done"} {
 		if c.TrelloLists[l] == "" {
 			return fmt.Errorf("config: trello.lists.%s is required", l)
-		}
-	}
-	for i, m := range c.AllowedModels {
-		if m.Label == "" {
-			return fmt.Errorf("config: opencode.allowed_models[%d].label is required", i)
-		}
-		if m.ProviderID == "" || m.ModelID == "" {
-			return fmt.Errorf("config: opencode.allowed_models[%d] (%s) needs providerID + modelID", i, m.Label)
 		}
 	}
 	for i, p := range c.AllowedProjects {
@@ -287,6 +300,35 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// parseAgent extracts the agent name from a card's agent:* label.
+// Returns (defaultAgent, nil) if no agent:* label is present.
+// Returns ("", error) if parsing fails (multiple or unknown label).
+func parseAgent(card trelloCard, cfg Config) (string, error) {
+	var matches []string
+	for _, l := range card.Labels {
+		if strings.HasPrefix(l.Name, "agent:") {
+			matches = append(matches, l.Name)
+		}
+	}
+	if len(matches) == 0 {
+		if cfg.DefaultAgent == "" {
+			return "", fmt.Errorf("no agent:* label and no default agent configured")
+		}
+		if _, ok := cfg.Agents[cfg.DefaultAgent]; !ok {
+			return "", fmt.Errorf("default agent %q not found in agents config", cfg.DefaultAgent)
+		}
+		return cfg.DefaultAgent, nil
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple agent:* labels: %s", strings.Join(matches, ", "))
+	}
+	name := strings.TrimPrefix(matches[0], "agent:")
+	if _, ok := cfg.Agents[name]; !ok {
+		return "", fmt.Errorf("unknown agent label: %s", matches[0])
+	}
+	return name, nil
 }
 
 // hasProjLabel reports whether a card has at least one proj:* label.
@@ -323,31 +365,6 @@ func parseProj(card trelloCard, cfg Config) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unknown proj label: %s", labelName)
-}
-
-// parseModel extracts the model from a card's labels.
-// Returns (defaultModel, nil) if no model:* label is present.
-// Returns (ModelRef{}, error) if parsing fails (multiple or unknown label).
-func parseModel(card trelloCard, cfg Config) (ModelRef, error) {
-	var matches []string
-	for _, l := range card.Labels {
-		if strings.HasPrefix(l.Name, "model:") {
-			matches = append(matches, l.Name)
-		}
-	}
-	if len(matches) == 0 {
-		return cfg.DefaultModel, nil
-	}
-	if len(matches) > 1 {
-		return ModelRef{}, fmt.Errorf("multiple model labels: %s", strings.Join(matches, ", "))
-	}
-	labelName := matches[0]
-	for _, m := range cfg.AllowedModels {
-		if m.Label == labelName {
-			return ModelRef{ProviderID: m.ProviderID, ModelID: m.ModelID}, nil
-		}
-	}
-	return ModelRef{}, fmt.Errorf("unknown model label: %s", labelName)
 }
 
 func envInt(key string, def int) int {
