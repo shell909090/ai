@@ -4,11 +4,11 @@
 
 ## 1. 设计目标
 
-协调器是一个常驻进程，周期性读取 Trello 和 opencode 状态，并维护一组内存 task。它是 Trello 与 opencode 的任务桥，只做五件事：
+协调器是一个常驻进程，周期性读取 Trello 和 agent driver 状态，并维护一组内存 task。它是 Trello 与 AI coding agent 的任务桥，只做五件事：
 
 1. 从 `todo` 启动可执行卡片。
 2. 维护 `doing` list 与 task 结构的一致性。
-3. 监听 opencode `session.finish`。
+3. 通过 agent driver 监听 session 状态。
 4. 对 abort、summary 和异常情况写 comment、移动卡片、释放容量。
 5. 按项目 `.kanban.yml` 调用生命周期钩子并渲染初始 prompt。
 
@@ -23,8 +23,8 @@ Task {
   card_id: string
   session_id: string  # 启动前钩子运行阶段使用占位值 "__pending__"
   proj: string
-  model: ModelRef
-  workdir: string?    # 启动前钩子可返回，创建 session 时传给 opencode，也用于当前目录推断 proj
+  agent: string       # 选中的 agents 配置名
+  workdir: string?    # 启动前钩子可返回，创建 session 时传给 agent，也用于当前目录推断 proj
   abort: time?      # 已向 session 发送 abort 的时间
   summary: time?    # 已向 session 发送 summary prompt 的时间
 }
@@ -33,9 +33,9 @@ Task {
 约束：
 
 - 一个 card 同时最多有一个 task。
-- task 存在表示协调器认为这张卡正在由 opencode 管理。
+- task 存在表示协调器认为这张卡正在由某个 agent 管理。
 - `session_id == "__pending__"` 只允许存在于同步运行启动前钩子的短暂阶段；pending task 必须计入容量，避免下一轮扫描多激活任务。钩子失败必须销毁 task 并释放容量，钩子成功后必须替换为真实 session id。
-- task 的 `workdir` 必须由 task 结构管理；它既是 opencode session 的工作目录，也是 Control API 按当前目录推断 proj 的匹配来源。
+- task 的 `workdir` 必须由 task 结构管理；它既是 agent session 的工作目录，也是 Control API 按当前目录推断 proj 的匹配来源。
 - task 销毁时必须同步释放总容量计数和 proj 容量计数。
 
 ### 2.2 RuntimeState
@@ -78,22 +78,29 @@ trello:
   labels:
     attention: "attention"
 
-opencode:
-  base_url: "http://127.0.0.1:4096"
-  username_env: OPENCODE_SERVER_USERNAME
-  password_env: OPENCODE_SERVER_PASSWORD
+kanban:
+  default_agent: "opencode-main"
 
-models:
-  default:
-    provider: "anthropic"
-    model: "claude-sonnet-4"
-  allowed:
-    - label: "model:sonnet"
-      provider: "anthropic"
-      model: "claude-sonnet-4"
-    - label: "model:gpt"
-      provider: "openai"
-      model: "gpt-5"
+agents:
+  opencode-main:
+    type: "opencode"
+    base_url: "http://127.0.0.1:4096"
+    workdir: "/repo/default"
+    username_env: OPENCODE_SERVER_USERNAME
+    password_env: OPENCODE_SERVER_PASSWORD
+    default_model:
+      providerID: "anthropic"
+      modelID: "claude-sonnet-4"
+    labels:
+      model:sonnet:
+        providerID: "anthropic"
+        modelID: "claude-sonnet-4"
+      model:gpt:
+        providerID: "openai"
+        modelID: "gpt-5"
+  codex-local:
+    type: "codex"
+    command: ["codex"]
 
 projects:
   allowed:
@@ -131,10 +138,15 @@ timer:
 - 解析失败、多个 proj label 或 label 不在 allowlist 中，都视为 proj 解析失败。
 - proj 解析失败时，卡片移到 `done`，添加 `attention`，写 comment，不启动 session。
 - 每个 allowed proj 必须提供项目根目录；`kanban_config` 默认为 `.kanban.yml`。
-- 无 `model:*` label 时使用 `models.default`。
-- 存在一个可识别 `model:*` label 时使用对应模型。
-- 多个 model label、未知 model label 或配置不合法，都视为 model 解析失败。
-- model 解析失败时，卡片移到 `done`，添加 `attention`，写 comment，不启动 session。
+- 无 `agent:*` label 时使用 `kanban.default_agent`。
+- 存在一个可识别 `agent:*` label 时使用对应 `agents` 配置。
+- 多个 `agent:*` label、未知 agent label、默认 agent 缺失或 agent 配置不合法，都视为 agent 解析失败。
+- agent 解析失败时，卡片移到 `done`，添加 `attention`，写 comment，不启动 session。
+- 除 `proj:*`、`agent:*` 和协调器保留标签外，其他 label 均传给 agent driver；例如 `model:*` 的合法性和含义由具体 driver 决定。
+
+`agents` 是具名配置字典。每个 key 是 card 可通过 `agent:<key>` 选择的配置名；每个 value 必须包含 `type` 字段。协调器只用 `type` 选择 driver，其他字段保持为 driver 私有配置并由该 driver 解释。比如 `type: opencode` 可解释 `base_url`、`username_env`、`password_env`、`default_model` 和 `labels`；未来 `type: codex` 或 `type: claude` 可以解释为命令行参数、profile、sandbox、approval 等完全不同的字段。
+
+为了兼容旧配置，实现阶段可以把历史 `opencode`/`models` 配置转换成一个内置 agent，例如 `agents.default.type=opencode`，但新文档和新配置应以 `kanban.default_agent` + `agents` 为准。
 
 ## 4. 项目 `.kanban.yml`
 
@@ -174,7 +186,7 @@ hooks:
 
 最终初始 prompt 由两部分组成：
 
-1. base prompt：如果 `.kanban.yml` 提供 `prompt.template`，用该模版全量渲染；否则使用内置默认格式，包含 card title、description、url、labels、proj 和 model。
+1. base prompt：如果 `.kanban.yml` 提供 `prompt.template`，用该模版全量渲染；否则使用内置默认格式，包含 card title、description、url、labels、proj 和 agent。
 2. addon prompt：按顺序追加 `prompt.addons` 的渲染结果；addon 不改变 card 的基础格式，只补充项目约束。
 
 模版上下文至少包含：
@@ -187,8 +199,8 @@ Card.URL
 Card.Labels
 Project.Name
 Project.Label
-Model.Provider
-Model.Model
+Agent.Name
+Agent.Type
 ```
 
 summary prompt 仍由协调器固定发送，但必须包含“不要把密钥、token、密码、私有 URL 等敏感信息写入总结”的要求。
@@ -201,7 +213,7 @@ summary prompt 仍由协调器固定发送，但必须包含“不要把密钥�
 
 | hook | 时机 | 失败行为 |
 |---|---|---|
-| `session_new` | 创建 opencode session 前 | 不创建 session；移卡到 `done`，添加 `attention`，写 hook 失败 comment，销毁 pending task |
+| `session_new` | 创建 agent session 前 | 不创建 session；移卡到 `done`，添加 `attention`，写 hook 失败 comment，销毁 pending task |
 | `session_finish` | summary 完成并写完成 comment 后、移卡到 `done` 前 | 添加 `attention`，写 hook 失败 comment；仍移动到 `done` 并销毁 task |
 | `session_abort` | abort finish 确认并写 abort 完成 comment 后 | 添加 `attention`，写 hook 失败 comment；仍销毁 task 并释放容量 |
 
@@ -214,8 +226,8 @@ KANBAN_CARD_TITLE
 KANBAN_CARD_URL
 KANBAN_PROJECT
 KANBAN_PROJECT_LABEL
-KANBAN_MODEL_PROVIDER
-KANBAN_MODEL_NAME
+KANBAN_AGENT
+KANBAN_AGENT_TYPE
 KANBAN_SESSION_ID         # session_new 阶段为空或 "__pending__"
 KANBAN_WORKDIR            # 已知工作目录；session_new 前为项目 root
 KANBAN_HOOK_RESULT_FD     # 专用结果通道 fd，默认 3；钩子可写 JSON 结果
@@ -252,7 +264,7 @@ KANBAN_HOOK_RESULT_FD=3
 
 规则：
 
-- `workdir` 可空；为空时使用项目 root 创建 opencode session。
+- `workdir` 可空；为空时使用项目 root 创建 agent session。
 - `workdir` 必须是绝对路径，且应由项目脚本保证存在。
 - 协调器不直接创建或删除 git worktree；需要 worktree 的项目在 `session_new` 中创建，在 `session_finish` 或 `session_abort` 中清理。
 - `comment` 可选；协调器可以写入 Trello，但必须截断且不得包含敏感信息。项目脚本应避免输出密钥、token、密码和私有 URL。
@@ -271,24 +283,36 @@ has_label(card, label_name) -> bool
 
 所有 comment 应简短、面向人类：说明发生了什么、是否需要人工介入。
 
-### 5.2 OpencodeGateway
+### 5.2 AgentDriver
 
 ```text
-create_session(card, model, workdir) -> session_id
+create_session(agent_name, agent_config, card, labels, workdir) -> session_id
 abort_session(session_id) -> void
-send_summary_prompt(session_id) -> void
-send_initial_prompt(session_id, model, prompt) -> void
-last_message(session_id) -> Message
+send_prompt(session_id, prompt, labels) -> void
+session_state(session_id) -> AgentState
 ```
 
 ```text
-Message {
-  finish: string?   # info.finish
-  text: string      # 可读文本，summary 完成时写入 Trello comment
+AgentState {
+  kind: running|finished|failed
+  text: string       # 可读文本，summary 完成时写入 Trello comment
+  raw_finish: string # 可选；底层 finish/status，供 comment 和日志排查
 }
 ```
 
-`finish` 合法值：`stop`、`tool-calls`、`length`、`content-filter`、`error`、`unknown`。缺失表示 session 仍在继续。
+协调器只依赖 `kind` 分支，不解释底层 finish 值。具体 driver 负责把 opencode、codex、claude code 等工具的状态映射为 `running`、`finished` 或 `failed`。
+
+opencode driver 的推荐映射：
+
+```text
+missing finish -> running
+tool-calls     -> running
+stop           -> finished
+length         -> failed
+content-filter -> failed
+error          -> failed
+unknown        -> failed
+```
 
 ### 5.3 ProjectConfigLoader
 
@@ -301,7 +325,7 @@ load_project_config(project) -> ProjectConfig
 ### 5.4 PromptRenderer
 
 ```text
-render_initial_prompt(card, project, model, project_config) -> string
+render_initial_prompt(card, project, agent, project_config) -> string
 render_summary_prompt() -> string
 ```
 
@@ -310,7 +334,7 @@ render_summary_prompt() -> string
 ### 5.5 HookRunner
 
 ```text
-run_hook(event, task, card, project, model, workdir, project_config) -> HookResult
+run_hook(event, task, card, project, agent, workdir, project_config) -> HookResult
 ```
 
 ```text
@@ -376,7 +400,8 @@ infer_project(cwd) -> project
 ```text
 kanbanctl.py list-cards --list todo
 kanbanctl.py show-card <card_id>
-kanbanctl.py add-todo --title <title> --desc <description> --model sonnet
+kanbanctl.py add-todo --title <title> --desc <description> --agent opencode-main
+kanbanctl.py add-todo --title <title> --desc <description> --label model:sonnet
 kanbanctl.py add-todo --title <title> --desc <description> --project agent
 kanbanctl.py move <card_id> --list doing
 kanbanctl.py comment <card_id> --text <text>
@@ -384,7 +409,7 @@ kanbanctl.py label add <card_id> <label>
 kanbanctl.py label remove <card_id> <label>
 ```
 
-`add-todo` 默认把 `os.getcwd()` 作为 `cwd` 传给 Control API，由协调器推断 project 并添加 `proj:*` label。`--project` 只用于显式覆盖推断结果；`--model` 使用模型别名，由脚本或协调器转换成 `model:*` label。脚本仍允许 `--label` 传其他非 project label，但不建议用 `--label proj:*`。
+`add-todo` 默认把 `os.getcwd()` 作为 `cwd` 传给 Control API，由协调器推断 project 并添加 `proj:*` label。`--project` 只用于显式覆盖推断结果；`--agent` 添加 `agent:*` label，未提供时由协调器使用 `kanban.default_agent`。脚本允许 `--label` 传其他非 project/agent label，例如 `model:*`；这些标签的含义由具体 agent driver 解释。不建议用 `--label proj:*` 或 `--label agent:*` 绕过显式参数校验。
 
 脚本从环境变量读取控制 API 地址和 token，例如：
 
@@ -414,7 +439,7 @@ skill 可把命令示例放在 `SKILL.md`，不需要额外长文档；脚本是
 
 ```text
 tick(now):
-  check_session_finish(now)
+  check_session_state(now)
   reconcile_doing(now)
   check_timeouts(now)
   promote_todo(now)
@@ -422,32 +447,32 @@ tick(now):
 
 顺序不能随意调整：
 
-- 先处理 finish，避免已完成任务继续占容量。
+- 先处理 session 状态，避免已完成任务继续占容量。
 - doing 检查中先 out 后 in，避免容量计数错误。
-- timeout 在 finish 和 doing diff 后处理，减少误判。
+- timeout 在 session 状态和 doing diff 后处理，减少误判。
 - todo promotion 放最后，使用最新容量。
 
-## 8. session.finish 处理
+## 8. session 状态处理
 
-### 8.1 finish 探测
+### 8.1 状态探测
 
 对每个 task 调用：
 
 ```text
-GET /session/:session_id/message?limit=1
+driver.session_state(task.session_id) -> AgentState
 ```
 
 处理规则：
 
-1. `finish` 缺失或 `finish == tool-calls`：跳过。
+1. `state.kind == running`：跳过。
 2. task.abort 非空：写 abort 成功 comment，运行 `session_abort` 钩子；钩子失败时添加 `attention` 并写 comment；销毁 task，释放容量。
-3. `finish != stop`：移卡到 `done`，添加 `attention`，写异常结束 comment，销毁 task，释放容量。
-4. `finish == stop` 且 task.summary 非空：写完成 comment，把最后一条 message 文本写入 comment，运行 `session_finish` 钩子；钩子失败时添加 `attention` 并写 comment；移卡到 `done`，销毁 task，释放容量。
-5. `finish == stop` 且 task.summary 为空：发送 summary prompt，设置 `task.summary = now`。
+3. `state.kind == failed`：移卡到 `done`，添加 `attention`，写异常结束 comment，销毁 task，释放容量。
+4. `state.kind == finished` 且 task.summary 非空：写完成 comment，把 `state.text` 写入 comment，运行 `session_finish` 钩子；钩子失败时添加 `attention` 并写 comment；移卡到 `done`，销毁 task，释放容量。
+5. `state.kind == finished` 且 task.summary 为空：通过 driver 发送 summary prompt，设置 `task.summary = now`。
 
 ### 8.2 summary prompt
 
-summary prompt 固定由协调器发送。目标是让 opencode 用简短文本说明本次执行结果。建议文案：
+summary prompt 固定由协调器发送。目标是让 agent 用简短文本说明本次执行结果。建议文案：
 
 ```text
 请用 140 个字以内总结本次运行的结果。只输出总结本身，不要前缀、解释或 Markdown。不要包含密钥、token、密码、私有 URL 或其他敏感信息。
@@ -455,20 +480,13 @@ summary prompt 固定由协调器发送。目标是让 opencode 用简短文本�
 
 协调器假设模型会遵守 140 字要求，不额外限制“完成 comment + summary”组合后的总长度。
 
-### 8.3 异常 finish
-
-以下 finish 都视为异常：
-
-- `length`
-- `content-filter`
-- `error`
-- `unknown`
+### 8.3 异常状态
 
 无论异常发生在原任务阶段还是 summary 阶段，都必须：
 
 - 移卡到 `done`。
 - 添加 `attention`。
-- 写 comment 说明 session 异常结束和 finish 值。
+- 写 comment 说明 session 异常结束，并尽量包含 driver 返回的 `raw_finish` 或等价排查信息。
 - 销毁 task 并释放容量。
 
 ## 9. doing 对账
@@ -508,11 +526,11 @@ handle_doing_in(card, now):
     comment proj parse failure
     return
 
-  model = parse_model(card)
-  if model invalid:
+  agent = parse_agent(card)
+  if agent invalid:
     move card to done
     add attention
-    comment model parse failure
+    comment agent parse failure
     return
 
   if capacity full for total or proj:
@@ -520,10 +538,10 @@ handle_doing_in(card, now):
     comment capacity full
     return
 
-  tasks[card.id] = Task{card_id: card.id, session_id: "__pending__", proj, model}
+  tasks[card.id] = Task{card_id: card.id, session_id: "__pending__", proj, agent}
   total_count++
   proj_count[proj]++
-  hook_result = run_hook(session_new, task, card, project, model, project.root)
+  hook_result = run_hook(session_new, task, card, project, agent, project.root)
   if hook failed:
     move card to done
     add attention
@@ -532,10 +550,10 @@ handle_doing_in(card, now):
     return
 
   workdir = hook_result.workdir or project.root
-  prompt = render_initial_prompt(card, project, model, project_config)
-  session_id = create_session(card, model, workdir)
-  send_initial_prompt(session_id, model, prompt)
-  tasks[card.id] = Task{card_id: card.id, session_id, proj, model, workdir}
+  prompt = render_initial_prompt(card, project, agent, project_config)
+  session_id = create_session(agent, card, card.labels, workdir)
+  send_initial_prompt(session_id, prompt, card.labels)
+  tasks[card.id] = Task{card_id: card.id, session_id, proj, agent, workdir}
   comment session started
 ```
 
@@ -599,11 +617,11 @@ promote_todo(now):
       comment proj parse failure
       continue
 
-    model = parse_model(card)
-    if model invalid:
+    agent = parse_agent(card)
+    if agent invalid:
       move card to done
       add attention
-      comment model parse failure
+      comment agent parse failure
       continue
 
     if proj capacity full:
@@ -632,13 +650,13 @@ Abort timeout for session <session_id>. Please check manually.
 Task finished. Summary:
 <last_message_text>
 
-Session ended abnormally: finish=<finish>. Please check manually.
+Session ended abnormally: status=<driver_status>. Please check manually.
 
 Summary timeout. Task was moved to done, but summary did not finish in time.
 
 Cannot start task: project label is invalid: <reason>.
 
-Cannot start task: model label is invalid: <reason>.
+Cannot start task: agent label is invalid: <reason>.
 
 Cannot start task now: capacity is full for project <proj>.
 
@@ -649,27 +667,28 @@ Hook session_finish failed: <reason>. Task was still moved to done.
 Hook session_abort failed: <reason>. Task tracking was still released.
 ```
 
-具体文案可调整，但必须包含人类排查所需的 session id、finish 值、proj、model、hook 名称和原因。hook 输出写入 comment 前必须截断，并避免包含敏感信息。
+具体文案可调整，但必须包含人类排查所需的 session id、driver 状态或底层 finish 值、proj、agent、hook 名称和原因。hook 输出写入 comment 前必须截断，并避免包含敏感信息。
 
 ## 13. 幂等与错误处理
 
 - timer 可能重复运行；所有操作应尽量幂等。
-- 对同一个 task 重复看到 `tool-calls` 不产生副作用。
+- 对同一个 task 重复看到 `running` 不产生副作用。
 - 已设置 abort 的 task 不重复发送 abort；只等待 finish 或 timeout。
 - 已设置 summary 的 task 不重复发送 summary prompt；只等待下一次 finish 或 timeout。
 - `session_new` hook 只在 pending task 阶段运行一次；pending task 占用容量。失败后销毁 pending task 并释放容量，避免下一轮重复创建同一个 pending task。
 - `session_finish` 和 `session_abort` hook 失败不阻止 task 销毁，避免卡片因项目脚本失败而永久占用容量。
 - Trello move 或 comment 失败时应记录错误，下一轮 timer 重试安全流程。
-- opencode create session 成功但写 task 失败时，应尽量 abort session 并写错误日志。
+- agent create session 成功但写 task 失败时，应尽量 abort session 并写错误日志。
 
 ## 14. 测试要点
 
 单元测试建议覆盖：
 
 - `parse_proj`：无 proj 时跳过、合法 proj、未知 proj、多个 proj。
-- `parse_model`：默认 model、合法 model、未知 model、多个 model。
+- `parse_agent`：默认 agent、合法 agent、未知 agent、多个 agent、agent 配置非法。
 - capacity：全局满、项目满、可启动、跳过无 proj 卡片。
-- `session.finish`：缺失、`tool-calls`、`stop` 首次、`stop` summary 完成、4 种异常 finish。
+- `session_state`：`running`、`finished` 首次、`finished` summary 完成、`failed`。
+- opencode driver 状态映射：缺失 finish、`tool-calls`、`stop`、`length`、`content-filter`、`error`、`unknown`。
 - doing 对账：先 out 后 in，容量释放后可启动新卡。
 - timeout：abort 超时、summary 超时、未超时不处理。
 - task 销毁：总计数和项目计数正确递减。
@@ -683,5 +702,5 @@ Hook session_abort failed: <reason>. Task tracking was still released.
 2. 卡片从 doing 被人工拖走后触发 abort，finish 后释放容量。
 3. session `stop` 后发送 summary，再次 `stop` 后移动 done。
 4. summary 阶段异常 finish 添加 `attention`。
-5. proj 或 model label 解析失败时移动 done 并添加 `attention`。
-6. 项目通过 `session_new` hook 创建 worktree 并把 workdir 返回给 opencode session。
+5. proj 或 agent label 解析失败时移动 done 并添加 `attention`。
+6. 项目通过 `session_new` hook 创建 worktree 并把 workdir 返回给 agent session。
