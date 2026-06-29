@@ -14,21 +14,26 @@ trello:
   labels:
     attention: "attention"
 
-opencode:
-  base_url: "http://127.0.0.1:8567"
-  workdir: "/home/shell/tmp/kanban"    # default working directory for sessions
-  username_env: OPENCODE_SERVER_USERNAME
-  password_env: OPENCODE_SERVER_PASSWORD
-  default_model:
-    providerID: "opencode-go"
-    modelID: "minimax-m3"
-  allowed_models:
-    - label: "model:minimax-m3"
+kanban:
+  default_agent: "opencode-default"
+
+agents:
+  opencode-default:
+    type: "opencode"
+    base_url: "http://127.0.0.1:8567"
+    workdir: "/home/shell/tmp/kanban"
+    username_env: OPENCODE_SERVER_USERNAME
+    password_env: OPENCODE_SERVER_PASSWORD
+    default_model:
       providerID: "opencode-go"
       modelID: "minimax-m3"
-    - label: "model:step-3.6"
-      providerID: "stepfun"
-      modelID: "step-3.6"
+    allowed_models:
+      - label: "model:minimax-m3"
+        providerID: "opencode-go"
+        modelID: "minimax-m3"
+      - label: "model:step-3.6"
+        providerID: "stepfun"
+        modelID: "step-3.6"
 
 projects:
   allowed:

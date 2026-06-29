@@ -50,7 +50,7 @@ type HookResult struct {
 // HookRunner executes a lifecycle hook for a given event.
 type HookRunner interface {
 	RunHook(ctx context.Context, event string, task *Task, card trelloCard,
-		proj AllowedProject, model ModelRef, workdir string,
+		proj AllowedProject, agentName, agentType string, workdir string,
 		pc ProjectConfig) (HookResult, error)
 }
 
@@ -150,7 +150,7 @@ type realHookRunner struct {
 // RunHook executes the hook for the given event.
 // Returns (HookResult{}, nil) when no command is configured for the event.
 func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, card trelloCard,
-	proj AllowedProject, model ModelRef, workdir string, pc ProjectConfig) (HookResult, error) {
+	proj AllowedProject, agentName, agentType string, workdir string, pc ProjectConfig) (HookResult, error) {
 
 	hc := hookConfigForEvent(event, pc)
 	if len(hc.Command) == 0 {
@@ -194,8 +194,8 @@ func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, c
 		"KANBAN_CARD_URL="+card.URL,
 		"KANBAN_PROJECT="+proj.Name,
 		"KANBAN_PROJECT_LABEL="+proj.Label,
-		"KANBAN_MODEL_PROVIDER="+model.ProviderID,
-		"KANBAN_MODEL_NAME="+model.ModelID,
+		"KANBAN_AGENT="+agentName,
+		"KANBAN_AGENT_TYPE="+agentType,
 		"KANBAN_SESSION_ID="+task.SessionID,
 		"KANBAN_WORKDIR="+workdir,
 		"KANBAN_HOOK_RESULT_FD=3",

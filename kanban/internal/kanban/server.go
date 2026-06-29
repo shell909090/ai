@@ -10,14 +10,14 @@ import (
 	"time"
 )
 
-// Task tracks an in-flight opencode session paired with a Trello card.
+// Task tracks an in-flight agent session paired with a Trello card.
 type Task struct {
 	CardID    string
 	CardTitle string // snapshot for hook env vars
 	CardURL   string // snapshot for hook env vars
 	SessionID string // "__pending__" during session_new hook execution
 	Proj      string
-	Model     ModelRef
+	Agent     string     // agent config name selected for this task
 	Workdir   string     // resolved after session_new hook; used for session creation and proj inference
 	Abort     *time.Time // set when abort was requested
 	Summary   *time.Time // set when summary prompt was sent
@@ -56,7 +56,7 @@ type logRec struct {
 }
 
 // Server is the kanban scheduler. One Server per process; it owns the
-// Trello poll loop, the opencode session registry, and the HTTP /health
+// Trello poll loop, the agent session registry, and the HTTP /health
 // endpoint. State is in-memory; restart loses in-flight session mappings.
 type Server struct {
 	cfg        Config
@@ -66,7 +66,8 @@ type Server struct {
 	projCount  map[string]int
 	labelIDs   map[string]string // Trello label name → Trello label ID (cached)
 	httpc      *http.Client
-	hookRunner HookRunner // injectable; defaults to realHookRunner in New()
+	hookRunner HookRunner             // injectable; defaults to realHookRunner in New()
+	drivers    map[string]AgentDriver // agent name → driver
 }
 
 // New constructs a Server. It does not start any background goroutines;
@@ -104,12 +105,20 @@ func New(cfg Config) (*Server, error) {
 		tasks:     make(map[string]*Task),
 		projCount: make(map[string]int),
 		labelIDs:  make(map[string]string),
+		drivers:   make(map[string]AgentDriver),
 		httpc:     &http.Client{Timeout: cfg.HTTPTimeout},
 		hookRunner: realHookRunner{
 			defaultTimeout: cfg.HookDefaultTimeout,
 			maxOutputBytes: cfg.HookMaxOutputBytes,
 		},
 	}, nil
+}
+
+// SetDrivers replaces the driver registry. Used by main after BuildDrivers.
+func (s *Server) SetDrivers(drivers map[string]AgentDriver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.drivers = drivers
 }
 
 // Run starts the HTTP server and the single timer loop, blocking until

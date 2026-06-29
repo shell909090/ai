@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,7 +24,7 @@ func main() {
 	maxPerProject := flag.Int("max-per-project", -1, "max concurrent tasks per project (overrides config; default 1)")
 	flag.Parse()
 
-	cfg, err := kanban.LoadConfig()
+	cfg, env, err := kanban.LoadConfig()
 	if err != nil {
 		die("config: %v", err)
 	}
@@ -46,6 +47,18 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		die("validate: %v", err)
 	}
+
+	envLookup := func(key string) string {
+		if v, ok := env[key]; v != "" && ok {
+			return v
+		}
+		return os.Getenv(key)
+	}
+	drivers, err := kanban.BuildDrivers(cfg, envLookup, &http.Client{Timeout: cfg.HTTPTimeout})
+	if err != nil {
+		die("drivers: %v", err)
+	}
+
 	if *logPath != "" {
 		f, err := os.Create(*logPath)
 		if err != nil {
@@ -59,6 +72,7 @@ func main() {
 	if err != nil {
 		die("init: %v", err)
 	}
+	srv.SetDrivers(drivers)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

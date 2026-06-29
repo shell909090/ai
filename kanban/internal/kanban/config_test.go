@@ -76,7 +76,7 @@ func TestLoadConfigMissingEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chdir(prev) //nolint:errcheck
-	_, err := LoadConfig()
+	_, _, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error when .env missing")
 	}
@@ -98,9 +98,8 @@ func TestLoadConfigWithYAML(t *testing.T) {
 	must(os.WriteFile(".env", []byte(strings.Join([]string{
 		"TRELLO_API_KEY=ABC",
 		"TRELLO_TOKEN=DEF",
-		"OPENCODE_SERVER_USERNAME=u",
-		"OPENCODE_SERVER_PASSWORD=p",
 	}, "\n")), 0644))
+	// New format: kanban.default_agent + agents section
 	must(os.WriteFile("config.yaml", []byte(`
 trello:
   board_id: "B1"
@@ -110,13 +109,13 @@ trello:
     done: "L3"
   labels:
     attention: "attention"
-opencode:
-  base_url: "http://127.0.0.1:8567"
-  default_model:
-    providerID: "test-provider"
-    modelID: "test-model"
-  allowed_models:
-    - label: "model:test"
+kanban:
+  default_agent: "my-agent"
+agents:
+  my-agent:
+    type: opencode
+    base_url: "http://127.0.0.1:8567"
+    default_model:
       providerID: "test-provider"
       modelID: "test-model"
 projects:
@@ -136,15 +135,15 @@ hooks:
   default_timeout: 90s
   max_output_bytes: 4096
 `), 0644))
-	cfg, err := LoadConfig()
+	cfg, _, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DefaultModel.ProviderID != "test-provider" || cfg.DefaultModel.ModelID != "test-model" {
-		t.Errorf("DefaultModel=%+v", cfg.DefaultModel)
+	if cfg.DefaultAgent != "my-agent" {
+		t.Errorf("DefaultAgent=%q, want my-agent", cfg.DefaultAgent)
 	}
-	if len(cfg.AllowedModels) != 1 || cfg.AllowedModels[0].Label != "model:test" {
-		t.Errorf("AllowedModels=%+v", cfg.AllowedModels)
+	if _, ok := cfg.Agents["my-agent"]; !ok {
+		t.Errorf("Agents[my-agent] not found, Agents=%v", cfg.Agents)
 	}
 	if cfg.TrelloLists["todo"] != "L1" {
 		t.Errorf("TrelloLists[todo]=%q", cfg.TrelloLists["todo"])
@@ -184,18 +183,106 @@ hooks:
 	}
 }
 
-func TestValidateMissingDefaultModel(t *testing.T) {
+// TestLoadConfigWithYAMLBackwardCompat verifies the old opencode: section still works.
+func TestLoadConfigWithYAMLBackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(".env", []byte("TRELLO_API_KEY=ABC\nTRELLO_TOKEN=DEF\n"), 0644))
+	// Old format: opencode section → synthesizes opencode-default agent
+	must(os.WriteFile("config.yaml", []byte(`
+trello:
+  board_id: "B1"
+  lists:
+    todo: "L1"
+    doing: "L2"
+    done: "L3"
+opencode:
+  base_url: "http://127.0.0.1:8567"
+  default_model:
+    providerID: "test-provider"
+    modelID: "test-model"
+`), 0644))
+	cfg, _, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultAgent != "opencode-default" {
+		t.Errorf("DefaultAgent=%q, want opencode-default", cfg.DefaultAgent)
+	}
+	if _, ok := cfg.Agents["opencode-default"]; !ok {
+		t.Errorf("Agents[opencode-default] not found")
+	}
+}
+
+func TestLoadConfigWithYAMLBackwardCompatCustomDefaultAgent(t *testing.T) {
+	// If the user sets kanban.default_agent but uses the legacy opencode: section
+	// (no agents: block), the synthesized agent must use the user-specified name.
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prev) //nolint:errcheck
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(".env", []byte("TRELLO_API_KEY=ABC\nTRELLO_TOKEN=DEF\n"), 0644))
+	must(os.WriteFile("config.yaml", []byte(`
+trello:
+  board_id: "B1"
+  lists:
+    todo: "L1"
+    doing: "L2"
+    done: "L3"
+kanban:
+  default_agent: "my-oc"
+opencode:
+  base_url: "http://127.0.0.1:8567"
+  default_model:
+    providerID: "test-provider"
+    modelID: "test-model"
+`), 0644))
+	cfg, _, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultAgent != "my-oc" {
+		t.Errorf("DefaultAgent=%q, want my-oc", cfg.DefaultAgent)
+	}
+	if _, ok := cfg.Agents["my-oc"]; !ok {
+		t.Errorf("Agents[my-oc] not found; Agents=%v", cfg.Agents)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
+
+func TestValidateMissingDefaultAgent(t *testing.T) {
 	c := Config{
 		TrelloLists: map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 	}
 	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for missing DefaultModel")
+		t.Fatal("expected error for missing DefaultAgent")
 	}
 }
 
 func TestValidateMissingTrelloList(t *testing.T) {
 	c := Config{
-		DefaultModel: ModelRef{ProviderID: "p", ModelID: "m"},
+		DefaultAgent: "a",
+		Agents:       map[string]AgentConfig{"a": {Type: "opencode"}},
 		TrelloLists:  map[string]string{"todo": "L1", "doing": "L2"},
 	}
 	if err := c.Validate(); err == nil {
@@ -203,20 +290,10 @@ func TestValidateMissingTrelloList(t *testing.T) {
 	}
 }
 
-func TestValidateAllowedModelEmpty(t *testing.T) {
-	c := Config{
-		DefaultModel:  ModelRef{ProviderID: "p", ModelID: "m"},
-		TrelloLists:   map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
-		AllowedModels: []AllowedModel{{Label: "model:x", ProviderID: "", ModelID: "m"}},
-	}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error for allowed model missing providerID")
-	}
-}
-
 func TestValidateAllowedProjectMissingName(t *testing.T) {
 	c := Config{
-		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		DefaultAgent:    "a",
+		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
 		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: ""}},
 	}
@@ -227,7 +304,8 @@ func TestValidateAllowedProjectMissingName(t *testing.T) {
 
 func TestValidateAllowedProjectMissingRoot(t *testing.T) {
 	c := Config{
-		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		DefaultAgent:    "a",
+		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
 		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: ""}},
 	}
@@ -238,7 +316,8 @@ func TestValidateAllowedProjectMissingRoot(t *testing.T) {
 
 func TestValidateAllowedProjectRelativeRoot(t *testing.T) {
 	c := Config{
-		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		DefaultAgent:    "a",
+		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
 		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "relative/path"}},
 	}
@@ -249,7 +328,8 @@ func TestValidateAllowedProjectRelativeRoot(t *testing.T) {
 
 func TestValidateAllowedProjectAbsoluteRootOK(t *testing.T) {
 	c := Config{
-		DefaultModel:    ModelRef{ProviderID: "p", ModelID: "m"},
+		DefaultAgent:    "a",
+		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
 		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "/abs/path"}},
 	}
@@ -275,8 +355,6 @@ func TestLoadConfigControlTokenFromDotenv(t *testing.T) {
 	must(os.WriteFile(".env", []byte(strings.Join([]string{
 		"TRELLO_API_KEY=ABC",
 		"TRELLO_TOKEN=DEF",
-		"OPENCODE_SERVER_USERNAME=u",
-		"OPENCODE_SERVER_PASSWORD=p",
 		"MY_CONTROL_TOKEN=secret123",
 	}, "\n")), 0644))
 	must(os.WriteFile("config.yaml", []byte(`
@@ -287,6 +365,7 @@ trello:
     doing: "L2"
     done: "L3"
 opencode:
+  base_url: "http://127.0.0.1:4096"
   default_model:
     providerID: "p"
     modelID: "m"
@@ -296,7 +375,7 @@ control:
 	// Ensure the token is NOT in the real process environment.
 	os.Unsetenv("MY_CONTROL_TOKEN")
 
-	cfg, err := LoadConfig()
+	cfg, _, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,24 +400,16 @@ func TestLoadConfigOK(t *testing.T) {
 	must(os.WriteFile(".env", []byte(strings.Join([]string{
 		"TRELLO_API_KEY=ABC",
 		"TRELLO_TOKEN=DEF",
-		"OPENCODE_SERVER_USERNAME=u",
-		"OPENCODE_SERVER_PASSWORD=p",
 	}, "\n")), 0644))
-	cfg, err := LoadConfig()
+	cfg, _, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.TrelloKey != "ABC" {
 		t.Errorf("TrelloKey=%q", cfg.TrelloKey)
 	}
-	if cfg.OpenCodeUser != "u" {
-		t.Errorf("OpenCodeUser=%q", cfg.OpenCodeUser)
-	}
 	if cfg.HTTPListen != "127.0.0.1:8087" {
 		t.Errorf("HTTPListen=%q (default missing)", cfg.HTTPListen)
-	}
-	if cfg.OpenCodeBaseURL == "" {
-		t.Error("OpenCodeBaseURL should default")
 	}
 }
 
@@ -483,55 +554,58 @@ func TestParseProj(t *testing.T) {
 	}
 }
 
-// ---------- parse_model tests ----------
+// ---------- parseAgent tests ----------
 
-func TestParseModel(t *testing.T) {
-	defaultModel := ModelRef{ProviderID: "test", ModelID: "default-model"}
+func TestParseAgent(t *testing.T) {
 	cfg := Config{
-		DefaultModel: defaultModel,
-		AllowedModels: []AllowedModel{
-			{Label: "model:sonnet", ProviderID: "anthropic", ModelID: "claude-sonnet-4"},
-			{Label: "model:gpt", ProviderID: "openai", ModelID: "gpt-5"},
+		DefaultAgent: "test-agent",
+		Agents: map[string]AgentConfig{
+			"test-agent":  {Type: "opencode"},
+			"other-agent": {Type: "opencode"},
 		},
 	}
 	cases := []struct {
 		name    string
 		labels  []trelloLabel
-		want    ModelRef
+		want    string
 		wantErr bool
 	}{
 		{
-			name: "no model label uses default",
-			want: defaultModel,
+			name: "no agent label uses default",
+			want: "test-agent",
 		},
 		{
-			name:   "known model:sonnet",
-			labels: []trelloLabel{{Name: "model:sonnet"}},
-			want:   ModelRef{ProviderID: "anthropic", ModelID: "claude-sonnet-4"},
+			name:   "known agent:other-agent",
+			labels: []trelloLabel{{Name: "agent:other-agent"}},
+			want:   "other-agent",
 		},
 		{
-			name:   "unrelated label uses default",
-			labels: []trelloLabel{{Name: "proj:agent"}},
-			want:   defaultModel,
-		},
-		{
-			name:    "unknown model label",
-			labels:  []trelloLabel{{Name: "model:unknown"}},
+			name:    "unknown agent label",
+			labels:  []trelloLabel{{Name: "agent:unknown"}},
 			wantErr: true,
 		},
 		{
-			name:    "multiple model labels",
-			labels:  []trelloLabel{{Name: "model:sonnet"}, {Name: "model:gpt"}},
+			name:    "multiple agent labels",
+			labels:  []trelloLabel{{Name: "agent:test-agent"}, {Name: "agent:other-agent"}},
 			wantErr: true,
+		},
+		{
+			name: "no default configured",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			useCfg := cfg
+			if c.name == "no default configured" {
+				useCfg = Config{
+					Agents: map[string]AgentConfig{"test-agent": {Type: "opencode"}},
+				}
+			}
 			card := trelloCard{Labels: c.labels}
-			got, err := parseModel(card, cfg)
-			if c.wantErr {
+			got, err := parseAgent(card, useCfg)
+			if c.wantErr || c.name == "no default configured" {
 				if err == nil {
-					t.Errorf("expected error, got model=%+v", got)
+					t.Errorf("expected error, got agent=%q", got)
 				}
 				return
 			}
@@ -539,7 +613,7 @@ func TestParseModel(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 			if got != c.want {
-				t.Errorf("parseModel = %+v, want %+v", got, c.want)
+				t.Errorf("parseAgent = %q, want %q", got, c.want)
 			}
 		})
 	}

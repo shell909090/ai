@@ -130,7 +130,7 @@ func testTask() *Task {
 		CardURL:   "https://trello.com/c/test",
 		SessionID: "__pending__",
 		Proj:      "agent",
-		Model:     ModelRef{ProviderID: "test", ModelID: "model"},
+		Agent:     "test-agent",
 		Workdir:   "/tmp",
 	}
 }
@@ -139,7 +139,7 @@ func TestRunHookNoCommand(t *testing.T) {
 	r := newTestHookRunner(t)
 	pc := ProjectConfig{}
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestRunHookSuccess(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1", Name: "T"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1", Name: "T"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRunHookExitNonZero(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for non-zero exit")
 	}
@@ -198,7 +198,7 @@ func TestRunHookTimeout(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -216,7 +216,7 @@ func TestRunHookBadJSON(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for bad JSON")
 	}
@@ -234,7 +234,7 @@ func TestRunHookRelativeWorkdir(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for relative workdir")
 	}
@@ -253,7 +253,7 @@ func TestRunHookEmptyFd3Result(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -269,7 +269,9 @@ func TestRunHookSetsEnvVars(t *testing.T) {
 		`echo "EVENT=$KANBAN_EVENT" > `+outFile+`
 echo "CARD_ID=$KANBAN_CARD_ID" >> `+outFile+`
 echo "PROJECT=$KANBAN_PROJECT" >> `+outFile+`
-echo "WORKDIR=$KANBAN_WORKDIR" >> `+outFile)
+echo "WORKDIR=$KANBAN_WORKDIR" >> `+outFile+`
+echo "AGENT=$KANBAN_AGENT" >> `+outFile+`
+echo "AGENT_TYPE=$KANBAN_AGENT_TYPE" >> `+outFile)
 
 	pc := ProjectConfig{}
 	pc.Hooks.SessionNew.Command = []string{script}
@@ -278,7 +280,7 @@ echo "WORKDIR=$KANBAN_WORKDIR" >> `+outFile)
 	card := trelloCard{ID: "card42", Name: "My Task", URL: "https://trello.com/c/test"}
 	proj := AllowedProject{Name: "myproj", Label: "proj:myproj"}
 	task := &Task{SessionID: "__pending__"}
-	_, err := r.RunHook(context.Background(), "session_new", task, card, proj, ModelRef{}, "/work", pc)
+	_, err := r.RunHook(context.Background(), "session_new", task, card, proj, "my-agent", "opencode", "/work", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,6 +302,12 @@ echo "WORKDIR=$KANBAN_WORKDIR" >> `+outFile)
 	if !strings.Contains(out, "WORKDIR=/work") {
 		t.Errorf("env KANBAN_WORKDIR not set correctly, got:\n%s", out)
 	}
+	if !strings.Contains(out, "AGENT=my-agent") {
+		t.Errorf("env KANBAN_AGENT not set correctly, got:\n%s", out)
+	}
+	if !strings.Contains(out, "AGENT_TYPE=opencode") {
+		t.Errorf("env KANBAN_AGENT_TYPE not set correctly, got:\n%s", out)
+	}
 }
 
 func TestRunHookDoesNotLeakSensitiveEnv(t *testing.T) {
@@ -319,7 +327,7 @@ func TestRunHookDoesNotLeakSensitiveEnv(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -346,7 +354,7 @@ func TestRunHookFd3Overflow(t *testing.T) {
 
 	r := realHookRunner{defaultTimeout: 5 * time.Second, maxOutputBytes: 4096}
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, ModelRef{}, "/tmp", pc)
+		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for fd3 overflow")
 	}

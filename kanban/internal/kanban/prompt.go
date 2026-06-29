@@ -13,7 +13,7 @@ const summaryPromptText = "请用 140 个字以内总结本次运行的结果。
 const defaultPromptTemplate = `Card: {{.Card.Title}}
 URL: {{.Card.URL}}
 Project: {{.Project.Name}}
-Model: {{.Model.Provider}}/{{.Model.Model}}
+Agent: {{.Agent.Name}} ({{.Agent.Type}})
 
 Description:
 {{.Card.Description}}
@@ -24,7 +24,7 @@ Labels: {{range .Card.Labels}}{{.}} {{end}}`
 type promptContext struct {
 	Card    promptCard
 	Project promptProject
-	Model   promptModel
+	Agent   promptAgent
 }
 
 type promptCard struct {
@@ -40,15 +40,15 @@ type promptProject struct {
 	Label string
 }
 
-type promptModel struct {
-	Provider string
-	Model    string
+type promptAgent struct {
+	Name string
+	Type string
 }
 
-// renderInitialPrompt builds the initial prompt for an opencode session.
+// renderInitialPrompt builds the initial prompt for an agent session.
 // It uses pc.Prompt.Template if set, otherwise the built-in default template.
 // pc.Prompt.Addons are appended after the base prompt.
-func renderInitialPrompt(card trelloCard, proj AllowedProject, model ModelRef, pc ProjectConfig) (string, error) {
+func renderInitialPrompt(card trelloCard, proj AllowedProject, agentName, agentType string, pc ProjectConfig) (string, error) {
 	labelNames := make([]string, 0, len(card.Labels))
 	for _, l := range card.Labels {
 		labelNames = append(labelNames, l.Name)
@@ -65,9 +65,9 @@ func renderInitialPrompt(card trelloCard, proj AllowedProject, model ModelRef, p
 			Name:  proj.Name,
 			Label: proj.Label,
 		},
-		Model: promptModel{
-			Provider: model.ProviderID,
-			Model:    model.ModelID,
+		Agent: promptAgent{
+			Name: agentName,
+			Type: agentType,
 		},
 	}
 

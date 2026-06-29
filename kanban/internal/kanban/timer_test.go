@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -85,15 +84,14 @@ func TestDestroyTaskNegativeProtection(t *testing.T) {
 // ---------- session.finish: checkOneFinish ----------
 
 func TestCheckOneFinishSkipsWhenNoFinish(t *testing.T) {
-	oc := &fakeOpencode{}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default"}
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "running"}
+
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -104,15 +102,14 @@ func TestCheckOneFinishSkipsWhenNoFinish(t *testing.T) {
 }
 
 func TestCheckOneFinishSkipsToolCalls(t *testing.T) {
-	oc := &fakeOpencode{message: makeFinishMsg("tool-calls")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default"}
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "running", RawFinish: "tool-calls"}
+
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -128,16 +125,15 @@ func TestCheckOneFinishSkipsToolCalls(t *testing.T) {
 }
 
 func TestCheckOneFinishAbortDone(t *testing.T) {
-	oc := &fakeOpencode{message: makeFinishMsg("stop")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
+
 	abortTime := time.Now()
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Abort: &abortTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Abort: &abortTime}
 	s.totalCount = 1
 	s.projCount["default"] = 1
 
@@ -169,15 +165,14 @@ func TestCheckOneFinishAbnormalFinishes(t *testing.T) {
 	abnormal := []string{"length", "content-filter", "error", "unknown"}
 	for _, finish := range abnormal {
 		t.Run(finish, func(t *testing.T) {
-			oc := &fakeOpencode{message: makeFinishMsg(finish)}
-			ocSrv := httptest.NewServer(oc.handler())
-			defer ocSrv.Close()
 			trello := newFakeTrello()
-			trSrv := httptest.NewServer(trello.handler())
-			defer trSrv.Close()
+			trSrv := newFakeTrelloServer(t, trello)
 
-			s := newTestServer(t, trSrv.URL, ocSrv.URL)
-			s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default"}
+			s := newTestServer(t, trSrv)
+			fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+			fakeDriver.state = AgentState{Kind: "failed", RawFinish: finish}
+
+			s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
 			s.totalCount = 1
 
 			s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -195,31 +190,27 @@ func TestCheckOneFinishAbnormalFinishes(t *testing.T) {
 			}
 			var found bool
 			for _, c := range trello.comments {
-				if strings.Contains(c, "finish="+finish) {
+				if strings.Contains(c, "status="+finish) {
 					found = true
 				}
 			}
 			if !found {
-				t.Errorf("comment should mention finish=%s, got %v", finish, trello.comments)
+				t.Errorf("comment should mention status=%s, got %v", finish, trello.comments)
 			}
 		})
 	}
 }
 
 func TestCheckOneFinishStopSendsSummary(t *testing.T) {
-	oc := &fakeOpencode{
-		sessionID: "ses1",
-		message:   makeFinishMsg("stop"),
-	}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default",
-		Model: ModelRef{ProviderID: "test", ModelID: "model"}}
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses1"
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
+
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
 	s.totalCount = 1
 
 	now := time.Now()
@@ -235,14 +226,14 @@ func TestCheckOneFinishStopSendsSummary(t *testing.T) {
 		t.Error("task.Summary should be set after summary prompt sent")
 	}
 
-	oc.mu.Lock()
+	fakeDriver.mu.Lock()
 	found := false
-	for _, pc := range oc.promptCalls {
+	for _, pc := range fakeDriver.promptCalls {
 		if strings.Contains(pc.Prompt, "总结") {
 			found = true
 		}
 	}
-	oc.mu.Unlock()
+	fakeDriver.mu.Unlock()
 	if !found {
 		t.Error("summary prompt should have been sent")
 	}
@@ -255,16 +246,15 @@ func TestCheckOneFinishStopSendsSummary(t *testing.T) {
 
 func TestCheckOneFinishStopWithSummaryCompletes(t *testing.T) {
 	summaryText := "完成了一个 bug 修复。"
-	oc := &fakeOpencode{message: makeSummaryMsg("stop", summaryText)}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop", Text: summaryText}
+
 	sumTime := time.Now()
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Summary: &sumTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Summary: &sumTime}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -294,16 +284,15 @@ func TestCheckOneFinishStopWithSummaryCompletes(t *testing.T) {
 func TestCheckOneFinishSummaryAbnormal(t *testing.T) {
 	// Summary phase gets an error finish → should still add attention
 	// because session ended abnormally overall.
-	oc := &fakeOpencode{message: makeFinishMsg("error")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "failed", RawFinish: "error"}
+
 	sumTime := time.Now()
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Summary: &sumTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Summary: &sumTime}
 	s.totalCount = 1
 
 	s.checkOneFinish(context.Background(), "c1", time.Now())
@@ -325,15 +314,13 @@ func TestCheckOneFinishSummaryAbnormal(t *testing.T) {
 // ---------- doing.out ----------
 
 func TestHandleDoingOut(t *testing.T) {
-	oc := &fakeOpencode{}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default"}
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
 	s.totalCount = 1
 
 	now := time.Now()
@@ -349,9 +336,9 @@ func TestHandleDoingOut(t *testing.T) {
 		t.Error("task.Abort should be set")
 	}
 
-	oc.mu.Lock()
-	aborts := oc.abortCalls
-	oc.mu.Unlock()
+	fakeDriver.mu.Lock()
+	aborts := fakeDriver.abortCalls
+	fakeDriver.mu.Unlock()
 	if len(aborts) != 1 {
 		t.Errorf("abort should be sent once, got %d", len(aborts))
 	}
@@ -373,19 +360,17 @@ func TestHandleDoingOut(t *testing.T) {
 }
 
 func TestHandleDoingOutIdempotent(t *testing.T) {
-	oc := &fakeOpencode{}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
-	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
+	s := newTestServer(t, "http://api.trello.invalid")
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
 
 	abortTime := time.Now()
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Abort: &abortTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Abort: &abortTime}
 
 	s.handleDoingOut(context.Background(), "c1", time.Now())
 
-	oc.mu.Lock()
-	defer oc.mu.Unlock()
-	if len(oc.abortCalls) > 0 {
+	fakeDriver.mu.Lock()
+	defer fakeDriver.mu.Unlock()
+	if len(fakeDriver.abortCalls) > 0 {
 		t.Error("second abort should not be sent")
 	}
 }
@@ -393,14 +378,13 @@ func TestHandleDoingOutIdempotent(t *testing.T) {
 // ---------- doing.in ----------
 
 func TestHandleDoingInStartsSession(t *testing.T) {
-	oc := &fakeOpencode{sessionID: "ses_new"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_new"
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	card := trelloCard{
 		ID:     "c1",
@@ -443,7 +427,7 @@ func TestHandleDoingInStartsSession(t *testing.T) {
 }
 
 func TestHandleDoingInIgnoresNoProjLabel(t *testing.T) {
-	s := newTestServer(t, "http://api.trello.invalid", "http://oc.invalid")
+	s := newTestServer(t, "http://api.trello.invalid")
 	card := trelloCard{ID: "c1", Name: "no proj", Desc: "human task"}
 	s.handleDoingIn(context.Background(), card, time.Now())
 
@@ -459,7 +443,7 @@ func TestHandleDoingInIgnoresNoProjLabel(t *testing.T) {
 
 func TestHandleDoingInIdempotent(t *testing.T) {
 	// Already-tracked cards must not be double-counted.
-	s := newTestServer(t, "http://api.trello.invalid", "http://oc.invalid")
+	s := newTestServer(t, "http://api.trello.invalid")
 	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses_existing"}
 	s.totalCount = 1
 
@@ -474,9 +458,8 @@ func TestHandleDoingInIdempotent(t *testing.T) {
 
 func TestHandleDoingInProjFail(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 
 	card := trelloCard{
@@ -507,22 +490,20 @@ func TestHandleDoingInProjFail(t *testing.T) {
 	}
 }
 
-func TestHandleDoingInModelFail(t *testing.T) {
+func TestHandleDoingInAgentFail(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
-	s.cfg.AllowedModels = []AllowedModel{{Label: "model:ok", ProviderID: "p", ModelID: "m"}}
 
 	card := trelloCard{
 		ID:     "c1",
-		Labels: []trelloLabel{{Name: "proj:agent"}, {Name: "model:notinlist"}},
+		Labels: []trelloLabel{{Name: "proj:agent"}, {Name: "agent:notinlist"}},
 	}
 	s.handleDoingIn(context.Background(), card, time.Now())
 
 	if _, ok := s.tasks["c1"]; ok {
-		t.Error("task should not be created on model parse fail")
+		t.Error("task should not be created on agent parse fail")
 	}
 	trello.mu.Lock()
 	defer trello.mu.Unlock()
@@ -531,20 +512,19 @@ func TestHandleDoingInModelFail(t *testing.T) {
 	}
 	var found bool
 	for _, c := range trello.comments {
-		if strings.Contains(c, "model label is invalid") {
+		if strings.Contains(c, "agent label is invalid") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected model error comment, got %v", trello.comments)
+		t.Errorf("expected agent error comment, got %v", trello.comments)
 	}
 }
 
 func TestHandleDoingInCapFull(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	s.totalCount = s.cfg.MaxDoingTotal // at global cap
 
@@ -572,9 +552,8 @@ func TestHandleDoingInCapFull(t *testing.T) {
 
 func TestHandleDoingInProjCapFull(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	s.projCount["agent"] = s.cfg.MaxDoingPerProject // proj:agent at cap
 
@@ -592,13 +571,12 @@ func TestHandleDoingInProjCapFull(t *testing.T) {
 
 func TestCheckOneTimeoutAbort(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.AbortTimeout = time.Millisecond
 
 	abortTime := time.Now().Add(-time.Second) // set 1s ago
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Abort: &abortTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Abort: &abortTime}
 	s.totalCount = 1
 	s.projCount["default"] = 1
 
@@ -631,13 +609,12 @@ func TestCheckOneTimeoutAbort(t *testing.T) {
 
 func TestCheckOneTimeoutSummary(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	trSrv := newFakeTrelloServer(t, trello)
+	s := newTestServer(t, trSrv)
 	s.cfg.SummaryTimeout = time.Millisecond
 
 	sumTime := time.Now().Add(-time.Second) // set 1s ago
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Summary: &sumTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Summary: &sumTime}
 	s.totalCount = 1
 	s.projCount["default"] = 1
 
@@ -663,12 +640,12 @@ func TestCheckOneTimeoutSummary(t *testing.T) {
 }
 
 func TestCheckOneTimeoutNoTimeout(t *testing.T) {
-	s := newTestServer(t, "http://api.trello.invalid", "http://oc.invalid")
+	s := newTestServer(t, "http://api.trello.invalid")
 	s.cfg.AbortTimeout = time.Hour
 	s.cfg.SummaryTimeout = time.Hour
 
 	abortTime := time.Now()
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Abort: &abortTime}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Abort: &abortTime}
 	s.totalCount = 1
 
 	s.checkOneTimeout(context.Background(), "c1", time.Now())
@@ -682,13 +659,12 @@ func TestCheckOneTimeoutNoTimeout(t *testing.T) {
 
 func TestPromoteTodoBasic(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	oc := &fakeOpencode{sessionID: "ses_promoted"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_promoted"
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	// t1: no proj:* label → silently skipped (not moved, no comment)
 	// t2: unknown proj label → moved to done + attention
@@ -741,13 +717,9 @@ func TestPromoteTodoBasic(t *testing.T) {
 
 func TestPromoteTodoSkipsNoProjLabel(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	oc := &fakeOpencode{sessionID: "ses_x"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
 	// Cards without proj:* label are not AI-managed and must be silently skipped.
 	trello.setCards(testTodoID, []trelloCard{
 		{ID: "t1", Name: "no proj task"},
@@ -772,13 +744,12 @@ func TestPromoteTodoNoProjSkippedNextProjStarts(t *testing.T) {
 	// Cards without proj:* label must be skipped silently; subsequent proj-labeled cards
 	// must still be promoted (continue, not return).
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	oc := &fakeOpencode{sessionID: "ses_y"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_y"
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	trello.setCards(testTodoID, []trelloCard{
 		{ID: "t1", Name: "no proj"}, // silently skipped
@@ -809,13 +780,9 @@ func TestPromoteTodoNoProjSkippedNextProjStarts(t *testing.T) {
 
 func TestPromoteTodoStopsAtGlobalCap(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	oc := &fakeOpencode{sessionID: "ses_x"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
 	s.cfg.MaxDoingTotal = 2
 	s.cfg.MaxDoingPerProject = 3 // high per-project cap
 	s.totalCount = 2             // already at global cap
@@ -832,13 +799,9 @@ func TestPromoteTodoStopsAtGlobalCap(t *testing.T) {
 
 func TestPromoteTodoSkipsWhenProjAtCap(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	oc := &fakeOpencode{sessionID: "ses_x"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
 	s.cfg.MaxDoingTotal = 5
 	s.cfg.MaxDoingPerProject = 1
 	s.cfg.AllowedProjects = []AllowedProject{
@@ -874,18 +837,17 @@ func TestReconcileDoingOutThenIn(t *testing.T) {
 	// doing.out keeps the task (just sets Abort). Capacity is NOT released
 	// until abort is confirmed via finish or timeout. So c_new cannot start
 	// when c_old holds the capacity slot.
-	oc := &fakeOpencode{sessionID: "ses_new"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_new"
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	// c_old is tracked but no longer in doing → doing.out sets abort
 	// c_new has proj:agent and is in doing but c_old holds the capacity slot → c_new moves back to todo
-	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent"}
+	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent", Agent: "test-agent"}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
 
@@ -938,14 +900,10 @@ func TestReconcileDoingOutThenIn(t *testing.T) {
 
 func TestReconcileDoingIgnoresNoProjLabel(t *testing.T) {
 	// Cards without proj:* label in the doing list are not AI-managed and must be ignored.
-	oc := &fakeOpencode{}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
 	trello.setCards(testDoingID, []trelloCard{
 		{ID: "c1", Name: "no proj task"},
 		{ID: "c2", Name: "human task", Labels: []trelloLabel{{Name: "human"}}},
@@ -972,26 +930,21 @@ func TestTickRunsInOrder(t *testing.T) {
 	// Verify tick calls: finish → reconcile → timeout → promote
 	// by observing effects. A card with a stop-finish should be moved to
 	// done in the first tick.
-	oc := &fakeOpencode{
-		sessionID: "ses1",
-		messagesQueue: []map[string]any{
-			makeFinishMsg("stop"),
-			makeSummaryMsg("stop", "all done"),
-		},
-	}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	// First state call: finished → sends summary prompt, sets Summary
+	// But task already has Summary set → goes straight to done
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop", Text: "all done"}
+
 	sumTime := time.Now()
 	s.tasks["c1"] = &Task{
 		CardID:    "c1",
 		SessionID: "ses1",
 		Proj:      "default",
-		Model:     ModelRef{ProviderID: "test", ModelID: "model"},
+		Agent:     "test-agent",
 		Summary:   &sumTime, // summary already sent
 	}
 	s.totalCount = 1
@@ -1014,27 +967,25 @@ func TestTickRunsInOrder(t *testing.T) {
 func TestCapacityReleasedInSameTick(t *testing.T) {
 	// c_old is tracked but not in Trello doing → doing.out releases capacity.
 	// t1 is in todo → can be promoted in the same tick's promoteTodo.
-	oc := &fakeOpencode{
-		sessionID: "ses_old",
-		message:   makeFinishMsg("stop"), // c_old's finish
-	}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
-	// oc needs ses_new for the promoted card
-	oc.mu.Lock()
-	oc.sessionID = "ses_old"
-	oc.mu.Unlock()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	// c_old has abort+stop → abort done, destroy task (total=0)
+	// Use stateQueue: first call for c_old returns finished (abort done)
+	// then t1 will use ses_promoted session id
+	fakeDriver.stateQueue = []AgentState{
+		{Kind: "finished", RawFinish: "stop"},
+	}
+	fakeDriver.sessionID = "ses_promoted"
+
 	s.cfg.MaxDoingTotal = 1
 	s.cfg.MaxDoingPerProject = 1
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 
 	abortTime := time.Now().Add(-2 * s.cfg.AbortTimeout) // already timed out
-	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent", Abort: &abortTime}
+	s.tasks["c_old"] = &Task{CardID: "c_old", SessionID: "ses_old", Proj: "agent", Agent: "test-agent", Abort: &abortTime}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
 
@@ -1042,11 +993,6 @@ func TestCapacityReleasedInSameTick(t *testing.T) {
 	trello.setCards(testTodoID, []trelloCard{
 		{ID: "t1", Name: "T1", Labels: []trelloLabel{{Name: "proj:agent"}}},
 	})
-
-	// oc returns a different session ID for the new promoted card
-	oc.mu.Lock()
-	oc.sessionID = "ses_promoted"
-	oc.mu.Unlock()
 
 	s.tick(context.Background(), time.Now())
 
@@ -1068,51 +1014,13 @@ func TestCapacityReleasedInSameTick(t *testing.T) {
 	}
 }
 
-// ---------- api tests ----------
-
-func TestOcSendPromptUsesModel(t *testing.T) {
-	oc := &fakeOpencode{sessionID: "ses1"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
-	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
-
-	model := ModelRef{ProviderID: "test-prov", ModelID: "test-mod"}
-	err := s.ocSendPrompt(context.Background(), "ses1", model, "hello")
-	if err != nil {
-		t.Fatalf("ocSendPrompt: %v", err)
-	}
-
-	oc.mu.Lock()
-	defer oc.mu.Unlock()
-	if len(oc.promptCalls) != 1 {
-		t.Fatalf("expected 1 prompt call, got %d", len(oc.promptCalls))
-	}
-	if !strings.Contains(oc.promptCalls[0].Model, "test-prov") {
-		t.Errorf("model=%q, want contains test-prov", oc.promptCalls[0].Model)
-	}
-}
-
-func TestOcCreateSessionReturnsID(t *testing.T) {
-	oc := &fakeOpencode{sessionID: "ses_abc"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
-	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
-
-	id, err := s.ocCreateSession(context.Background(), ModelRef{ProviderID: "p", ModelID: "m"}, "")
-	if err != nil {
-		t.Fatalf("ocCreateSession: %v", err)
-	}
-	if id != "ses_abc" {
-		t.Errorf("id=%q, want ses_abc", id)
-	}
-}
+// ---------- api tests (reconcileDoing error) ----------
 
 func TestReconcileDoingError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newFakeHTTPServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	s := newTestServer(t, srv.URL, "http://oc.invalid")
+	})
+	s := newTestServer(t, srv)
 	log := &drainLog{}
 	withLogWriter(t, log)
 
@@ -1126,27 +1034,16 @@ func TestReconcileDoingError(t *testing.T) {
 // ---------- orphan session compensation ----------
 
 func TestHandleDoingInAbortsSessionOnPromptFail(t *testing.T) {
-	// When ocCreateSession succeeds but ocSendPrompt fails,
-	// ocAbortSession must be called to avoid an orphan session.
-	oc := &fakeOpencode{sessionID: "ses_orphan"}
-	// Make prompt_async return 500 to simulate failure.
-	promptFail := false
-	ocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/prompt_async") {
-			if !promptFail {
-				promptFail = true
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-		oc.handler().ServeHTTP(w, r)
-	}))
-	defer ocSrv.Close()
+	// When CreateSession succeeds but SendPrompt fails,
+	// AbortSession must be called to avoid an orphan session.
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_orphan"
+	fakeDriver.promptErr = fmt.Errorf("prompt failed")
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
 
 	card := trelloCard{ID: "c1", Labels: []trelloLabel{{Name: "proj:agent"}}}
@@ -1166,9 +1063,9 @@ func TestHandleDoingInAbortsSessionOnPromptFail(t *testing.T) {
 	}
 
 	// abort must have been called for the created session.
-	oc.mu.Lock()
-	aborts := oc.abortCalls
-	oc.mu.Unlock()
+	fakeDriver.mu.Lock()
+	aborts := fakeDriver.abortCalls
+	fakeDriver.mu.Unlock()
 	if len(aborts) != 1 || aborts[0] != "ses_orphan" {
 		t.Errorf("expected abort of ses_orphan, got abortCalls=%v", aborts)
 	}
@@ -1177,14 +1074,13 @@ func TestHandleDoingInAbortsSessionOnPromptFail(t *testing.T) {
 // ---------- session_new hook integration ----------
 
 func TestHandleDoingInSessionNewHookSuccess(t *testing.T) {
-	oc := &fakeOpencode{sessionID: "ses_new"}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.sessionID = "ses_new"
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo/agent"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 	hook.result = HookResult{Workdir: "/repo/agent/worktree", Comment: "Worktree ready."}
@@ -1242,10 +1138,9 @@ func TestHandleDoingInSessionNewHookSuccess(t *testing.T) {
 
 func TestHandleDoingInSessionNewHookFail(t *testing.T) {
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s := newTestServer(t, trSrv)
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 	hook.err = fmt.Errorf("hook script failed: exit 1")
@@ -1292,10 +1187,9 @@ func TestHandleDoingInSessionNewHookFail(t *testing.T) {
 func TestHandleDoingInPendingTaskCountsCapacity(t *testing.T) {
 	// When the hook fails, the pending task must be destroyed and capacity released.
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, "http://oc.invalid")
+	s := newTestServer(t, trSrv)
 	s.cfg.MaxDoingTotal = 1
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent", Root: "/repo"}}
 	hook := s.hookRunner.(*fakeHookRunner)
@@ -1314,13 +1208,12 @@ func TestHandleDoingInPendingTaskCountsCapacity(t *testing.T) {
 }
 
 func TestCheckSessionFinishSkipsPending(t *testing.T) {
-	oc := &fakeOpencode{message: makeFinishMsg("stop")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
-	s := newTestServer(t, "http://api.trello.invalid", ocSrv.URL)
+	s := newTestServer(t, "http://api.trello.invalid")
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
 
 	// Pending task must be skipped — no API calls made.
-	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "__pending__", Proj: "agent"}
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "__pending__", Proj: "agent", Agent: "test-agent"}
 	s.totalCount = 1
 
 	s.checkSessionFinish(context.Background(), time.Now())
@@ -1333,11 +1226,11 @@ func TestCheckSessionFinishSkipsPending(t *testing.T) {
 		t.Error("pending task should remain untouched in checkSessionFinish")
 	}
 
-	// No API calls made to opencode.
-	oc.mu.Lock()
-	defer oc.mu.Unlock()
-	if len(oc.promptCalls) > 0 || len(oc.abortCalls) > 0 {
-		t.Error("checkSessionFinish should not call opencode for pending tasks")
+	// No API calls made to driver.
+	fakeDriver.mu.Lock()
+	defer fakeDriver.mu.Unlock()
+	if len(fakeDriver.promptCalls) > 0 || len(fakeDriver.abortCalls) > 0 {
+		t.Error("checkSessionFinish should not call driver for pending tasks")
 	}
 }
 
@@ -1345,21 +1238,20 @@ func TestCheckSessionFinishSkipsPending(t *testing.T) {
 
 func TestCheckOneFinishStopWithSummaryRunsFinishHook(t *testing.T) {
 	summaryText := "Done."
-	oc := &fakeOpencode{message: makeSummaryMsg("stop", summaryText)}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop", Text: summaryText}
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 
 	sumTime := time.Now()
 	s.tasks["c1"] = &Task{
 		CardID: "c1", CardTitle: "T1", SessionID: "ses1",
-		Proj: "agent", Summary: &sumTime,
+		Proj: "agent", Agent: "test-agent", Summary: &sumTime,
 	}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
@@ -1386,21 +1278,20 @@ func TestCheckOneFinishStopWithSummaryRunsFinishHook(t *testing.T) {
 }
 
 func TestCheckOneFinishStopWithSummaryHookFail(t *testing.T) {
-	oc := &fakeOpencode{message: makeSummaryMsg("stop", "summary")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop", Text: "summary"}
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 	hook.err = fmt.Errorf("finish hook failed")
 
 	sumTime := time.Now()
 	s.tasks["c1"] = &Task{
-		CardID: "c1", SessionID: "ses1", Proj: "agent", Summary: &sumTime,
+		CardID: "c1", SessionID: "ses1", Proj: "agent", Agent: "test-agent", Summary: &sumTime,
 	}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
@@ -1434,21 +1325,20 @@ func TestCheckOneFinishStopWithSummaryHookFail(t *testing.T) {
 // ---------- session_abort hook ----------
 
 func TestCheckOneFinishAbortDoneRunsAbortHook(t *testing.T) {
-	oc := &fakeOpencode{message: makeFinishMsg("stop")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 
 	abortTime := time.Now()
 	s.tasks["c1"] = &Task{
 		CardID: "c1", CardTitle: "T1", SessionID: "ses1",
-		Proj: "agent", Abort: &abortTime,
+		Proj: "agent", Agent: "test-agent", Abort: &abortTime,
 	}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
@@ -1467,21 +1357,20 @@ func TestCheckOneFinishAbortDoneRunsAbortHook(t *testing.T) {
 }
 
 func TestCheckOneFinishAbortDoneHookFail(t *testing.T) {
-	oc := &fakeOpencode{message: makeFinishMsg("stop")}
-	ocSrv := httptest.NewServer(oc.handler())
-	defer ocSrv.Close()
 	trello := newFakeTrello()
-	trSrv := httptest.NewServer(trello.handler())
-	defer trSrv.Close()
+	trSrv := newFakeTrelloServer(t, trello)
 
-	s := newTestServer(t, trSrv.URL, ocSrv.URL)
+	s := newTestServer(t, trSrv)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "finished", RawFinish: "stop"}
+
 	s.cfg.AllowedProjects = []AllowedProject{{Label: "proj:agent", Name: "agent"}}
 	hook := s.hookRunner.(*fakeHookRunner)
 	hook.err = fmt.Errorf("abort hook failed")
 
 	abortTime := time.Now()
 	s.tasks["c1"] = &Task{
-		CardID: "c1", SessionID: "ses1", Proj: "agent", Abort: &abortTime,
+		CardID: "c1", SessionID: "ses1", Proj: "agent", Agent: "test-agent", Abort: &abortTime,
 	}
 	s.totalCount = 1
 	s.projCount["agent"] = 1
