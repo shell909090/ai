@@ -3,6 +3,7 @@ package kanban
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -200,6 +201,34 @@ func TestControlCreateCardNoCwdNoProject(t *testing.T) {
 	}
 }
 
+func TestControlCreateCardUnknownLabel(t *testing.T) {
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
+
+	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
+		"title":   "Task",
+		"project": "agent",
+		"labels":  []string{"notexist"},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestControlCreateCardBackendLabelError(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.createErr = errors.New("labels backend unavailable")
+	s := newControlServer(t, board)
+
+	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
+		"title":   "Task",
+		"project": "agent",
+	})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // ---------- move card ----------
 
 func TestControlMoveCardUnknownList(t *testing.T) {
@@ -270,6 +299,19 @@ func TestControlAddLabelUnknown(t *testing.T) {
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("code=%d, want 400", rec.Code)
+	}
+}
+
+func TestControlAddLabelBackendError(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.labelErr = errors.New("labels backend unavailable")
+	s := newControlServer(t, board)
+
+	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/labels", testToken, map[string]string{
+		"label": "attention",
+	})
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("code=%d, want 500", rec.Code)
 	}
 }
 

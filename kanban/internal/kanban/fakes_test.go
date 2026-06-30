@@ -24,6 +24,8 @@ type fakeBoardGateway struct {
 	cardsByList  map[string][]CardSnapshot
 	knownLabels  map[string]bool
 	listCardsErr error // if non-nil, ListCards returns this error
+	labelErr     error // if non-nil, label mutations return this error
+	createErr    error // if non-nil, CreateCard returns this error
 }
 
 type moveRec struct {
@@ -92,6 +94,9 @@ func (f *fakeBoardGateway) AddComment(_ context.Context, _ CardID, text string) 
 func (f *fakeBoardGateway) AddLabel(_ context.Context, _ CardID, labelName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.labelErr != nil {
+		return f.labelErr
+	}
 	if !f.knownLabels[labelName] {
 		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
 	}
@@ -102,6 +107,9 @@ func (f *fakeBoardGateway) AddLabel(_ context.Context, _ CardID, labelName strin
 func (f *fakeBoardGateway) RemoveLabel(_ context.Context, _ CardID, labelName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.labelErr != nil {
+		return f.labelErr
+	}
 	if !f.knownLabels[labelName] {
 		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
 	}
@@ -112,6 +120,14 @@ func (f *fakeBoardGateway) RemoveLabel(_ context.Context, _ CardID, labelName st
 func (f *fakeBoardGateway) CreateCard(_ context.Context, listName, title, description string, labels []string) (CardSnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return CardSnapshot{}, f.createErr
+	}
+	for _, labelName := range labels {
+		if !f.knownLabels[labelName] {
+			return CardSnapshot{}, fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
+		}
+	}
 	card := CardSnapshot{
 		ID:          "new_card_id",
 		Title:       title,

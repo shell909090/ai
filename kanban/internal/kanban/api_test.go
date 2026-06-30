@@ -3,6 +3,7 @@ package kanban
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -239,6 +240,9 @@ func TestTrelloGatewayAddLabelUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown label")
 	}
+	if !errors.Is(err, ErrUnknownLabel) {
+		t.Fatalf("error=%v, want ErrUnknownLabel", err)
+	}
 }
 
 func TestTrelloGatewayResolveLabelIDCaching(t *testing.T) {
@@ -278,6 +282,26 @@ func TestTrelloGatewayResolveLabelIDNoBoardID(t *testing.T) {
 	_, err := gw.resolveLabelID(context.Background(), "attention")
 	if err == nil {
 		t.Error("expected error when board_id not configured")
+	}
+	if errors.Is(err, ErrUnknownLabel) {
+		t.Fatalf("error=%v, must not be ErrUnknownLabel", err)
+	}
+}
+
+func TestTrelloGatewayResolveLabelIDBackendError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer srv.Close()
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	_, err := gw.resolveLabelID(context.Background(), "attention")
+	if err == nil {
+		t.Fatal("expected backend error")
+	}
+	if errors.Is(err, ErrUnknownLabel) {
+		t.Fatalf("error=%v, must not be ErrUnknownLabel", err)
 	}
 }
 

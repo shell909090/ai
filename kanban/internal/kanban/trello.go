@@ -152,7 +152,7 @@ func (g *TrelloGateway) AddComment(ctx context.Context, id CardID, text string) 
 func (g *TrelloGateway) AddLabel(ctx context.Context, id CardID, labelName string) error {
 	labelID, err := g.resolveLabelID(ctx, labelName)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
+		return err
 	}
 	u := fmt.Sprintf("https://api.trello.com/1/cards/%s/idLabels?key=%s&token=%s", string(id), g.key, g.token)
 	body, _ := json.Marshal(map[string]string{"value": labelID})
@@ -163,7 +163,7 @@ func (g *TrelloGateway) AddLabel(ctx context.Context, id CardID, labelName strin
 func (g *TrelloGateway) RemoveLabel(ctx context.Context, id CardID, labelName string) error {
 	labelID, err := g.resolveLabelID(ctx, labelName)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
+		return err
 	}
 	u := fmt.Sprintf("https://api.trello.com/1/cards/%s/idLabels/%s?key=%s&token=%s",
 		string(id), labelID, g.key, g.token)
@@ -180,7 +180,7 @@ func (g *TrelloGateway) CreateCard(ctx context.Context, listName, title, descrip
 	for _, name := range labelNames {
 		id, err := g.resolveLabelID(ctx, name)
 		if err != nil {
-			return CardSnapshot{}, fmt.Errorf("%w: %s", ErrUnknownLabel, name)
+			return CardSnapshot{}, err
 		}
 		labelIDs = append(labelIDs, id)
 	}
@@ -237,7 +237,7 @@ func (g *TrelloGateway) resolveLabelID(ctx context.Context, name string) (string
 	g.mu.Unlock()
 
 	if id == "" {
-		return "", fmt.Errorf("label %q not found on board", name)
+		return "", fmt.Errorf("%w: %s", ErrUnknownLabel, name)
 	}
 	return id, nil
 }

@@ -311,6 +311,7 @@ BoardGateway 是调度核心与具体看板后端之间的抽象接口。当前�
 - `list_name` 使用逻辑名，例如 `todo`、`doing`、`done`；具体后端 list id 由 BoardGateway 实现解析。
 - `card_id` 使用 `CardID`；它是不透明的 board-scoped 标识，调用方不得假设其格式是 Trello card id。
 - `CardSnapshot.labels` 使用 label name 数组；具体后端 label id 查询和缓存由 BoardGateway 实现处理。
+- label 操作错误必须保留类别：只有确认 label 名称不存在时返回 `ErrUnknownLabel`；配置缺失、认证失败、网络错误或后端 5xx 等不得包装成 `ErrUnknownLabel`。Control API 对 `ErrUnknownLabel` 返回 400，对后端/配置错误返回 500。
 - `has_label` 不作为接口方法，使用对 `CardSnapshot.labels` 的纯函数判断即可。
 - 所有 comment 应简短、面向人类：说明发生了什么、是否需要人工介入。
 - credential 只允许存在于具体 BoardGateway 实现内部，不得进入 hooks、agent driver、Control API response 或普通日志。
