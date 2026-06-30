@@ -247,6 +247,8 @@ trello:
     todo: "L1"
     doing: "L2"
     done: "L3"
+  labels:
+    attention: "attention"
 kanban:
   default_agent: "my-oc"
 opencode:
@@ -270,6 +272,16 @@ opencode:
 	}
 }
 
+func validTestConfig() Config {
+	return Config{
+		DefaultAgent:  "a",
+		Agents:        map[string]AgentConfig{"a": {Type: "opencode"}},
+		TrelloBoardID: "B1",
+		TrelloLists:   map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
+		TrelloLabels:  map[string]string{"attention": "attention"},
+	}
+}
+
 func TestValidateMissingDefaultAgent(t *testing.T) {
 	c := Config{
 		TrelloLists: map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
@@ -280,59 +292,56 @@ func TestValidateMissingDefaultAgent(t *testing.T) {
 }
 
 func TestValidateMissingTrelloList(t *testing.T) {
-	c := Config{
-		DefaultAgent: "a",
-		Agents:       map[string]AgentConfig{"a": {Type: "opencode"}},
-		TrelloLists:  map[string]string{"todo": "L1", "doing": "L2"},
-	}
+	c := validTestConfig()
+	c.TrelloLists = map[string]string{"todo": "L1", "doing": "L2"}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for missing done list")
 	}
 }
 
-func TestValidateAllowedProjectMissingName(t *testing.T) {
-	c := Config{
-		DefaultAgent:    "a",
-		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
-		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
-		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: ""}},
+func TestValidateMissingTrelloBoardID(t *testing.T) {
+	c := validTestConfig()
+	c.TrelloBoardID = ""
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for missing board_id")
 	}
+}
+
+func TestValidateMissingAttentionLabel(t *testing.T) {
+	c := validTestConfig()
+	c.TrelloLabels = map[string]string{}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for missing attention label")
+	}
+}
+
+func TestValidateAllowedProjectMissingName(t *testing.T) {
+	c := validTestConfig()
+	c.AllowedProjects = []AllowedProject{{Label: "proj:x", Name: ""}}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for allowed project missing name")
 	}
 }
 
 func TestValidateAllowedProjectMissingRoot(t *testing.T) {
-	c := Config{
-		DefaultAgent:    "a",
-		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
-		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
-		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: ""}},
-	}
+	c := validTestConfig()
+	c.AllowedProjects = []AllowedProject{{Label: "proj:x", Name: "x", Root: ""}}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for allowed project missing root")
 	}
 }
 
 func TestValidateAllowedProjectRelativeRoot(t *testing.T) {
-	c := Config{
-		DefaultAgent:    "a",
-		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
-		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
-		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "relative/path"}},
-	}
+	c := validTestConfig()
+	c.AllowedProjects = []AllowedProject{{Label: "proj:x", Name: "x", Root: "relative/path"}}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for relative root path")
 	}
 }
 
 func TestValidateAllowedProjectAbsoluteRootOK(t *testing.T) {
-	c := Config{
-		DefaultAgent:    "a",
-		Agents:          map[string]AgentConfig{"a": {Type: "opencode"}},
-		TrelloLists:     map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
-		AllowedProjects: []AllowedProject{{Label: "proj:x", Name: "x", Root: "/abs/path"}},
-	}
+	c := validTestConfig()
+	c.AllowedProjects = []AllowedProject{{Label: "proj:x", Name: "x", Root: "/abs/path"}}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("unexpected error for valid project: %v", err)
 	}

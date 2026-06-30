@@ -280,10 +280,16 @@ func (c Config) Validate() error {
 			return fmt.Errorf("config: agent %q missing type", name)
 		}
 	}
+	if c.TrelloBoardID == "" {
+		return fmt.Errorf("config: trello.board_id is required")
+	}
 	for _, l := range []string{"todo", "doing", "done"} {
 		if c.TrelloLists[l] == "" {
 			return fmt.Errorf("config: trello.lists.%s is required", l)
 		}
+	}
+	if c.TrelloLabels["attention"] == "" {
+		return fmt.Errorf("config: trello.labels.attention is required")
 	}
 	for i, p := range c.AllowedProjects {
 		if p.Label == "" {
