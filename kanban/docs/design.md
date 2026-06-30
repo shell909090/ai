@@ -145,6 +145,7 @@ timer:
 
 规则：
 
+- 启动配置必须校验 Trello 基础配置完整性：`trello.board_id`、`trello.lists.todo`、`trello.lists.doing`、`trello.lists.done`、`trello.labels.attention` 均为必填；缺失时启动失败并返回明确错误。
 - 无 `proj:*` label 时卡片不归协调器处理，调度流程必须忽略该卡片。
 - 存在一个可识别 `proj:*` label 时使用对应 proj。
 - 解析失败、多个 proj label 或 label 不在 allowlist 中，都视为 proj 解析失败。
@@ -441,6 +442,8 @@ kanbanctl.py label remove <card_id> <label>
 ```
 
 `add-todo` 默认把 `os.getcwd()` 作为 `cwd` 传给 Control API，由协调器推断 project 并添加 `proj:*` label。`--project` 只用于显式覆盖推断结果；`--agent` 添加 `agent:*` label，未提供时由协调器使用 `kanban.default_agent`。脚本允许 `--label` 传其他非 project/agent label，例如 `model:*`；这些标签的含义由具体 agent driver 解释。不建议用 `--label proj:*` 或 `--label agent:*` 绕过显式参数校验。
+
+CLI 参数以 `--label model:<name>` 作为模型标签传递方式，不提供独立 `--model` 参数；如未来新增 `--model`，也只能作为 `--label model:<name>` 的语法糖，Control API payload 仍使用 `labels` 数组。
 
 脚本从环境变量读取控制 API 地址和 token，例如：
 
@@ -750,6 +753,7 @@ Cannot start task: failed to send initial prompt for session <session_id>, proj 
 - prompt 渲染：全量 template 替代默认格式，addons 追加到最终 prompt，summary prompt 包含敏感信息禁止写入要求。
 - hooks：`session_new` 成功返回 workdir、`session_new` 失败不创建 session、`session_finish`/`session_abort` 失败只加 `attention` 且释放 task。
 - 启动失败：`CreateSession` 失败和首个 `SendPrompt` 失败都移动 `done`、添加 `attention`、写 comment、释放容量；summary prompt 发送时保留 task labels。
+- CLI：`scripts/kanbanctl_test.py` 必须覆盖参数解析、Control API 路径、错误输出格式；`make unittest` 必须同时运行 Go 单元测试和 Python CLI 单元测试，避免 CLI 测试游离在质量门限之外。
 
 集成测试建议覆盖：
 

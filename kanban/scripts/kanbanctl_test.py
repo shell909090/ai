@@ -112,7 +112,7 @@ class TestAddTodo(unittest.TestCase):
         self.assertEqual(called_body.get("project"), "myproj")
         self.assertNotIn("cwd", called_body)
 
-    def test_model_flag(self):
+    def test_model_label(self):
         called_body = {}
 
         def fake_request(method, path, body=None):
@@ -120,10 +120,10 @@ class TestAddTodo(unittest.TestCase):
             return {"id": "new"}
 
         with patch("kanbanctl.request", side_effect=fake_request), patch("builtins.print"):
-            args = kanbanctl._parse(["add-todo", "--title", "T", "--project", "p", "--model", "sonnet"])
+            args = kanbanctl._parse(["add-todo", "--title", "T", "--project", "p", "--label", "model:sonnet"])
             args.func(args)
 
-        self.assertEqual(called_body.get("model"), "sonnet")
+        self.assertIn("model:sonnet", called_body.get("labels", []))
 
     def test_extra_labels(self):
         called_body = {}
