@@ -149,14 +149,16 @@ Hook stdout/stderr is captured for debug logging only; it is never written to Tr
 | Label | Meaning |
 |---|---|
 | `proj:NAME` | Marks a card as AI-managed and assigns it to a named project for capacity accounting. Cards without this label are not touched by the coordinator. |
-| `model:NAME` | opencode model for this card. Uses config default if absent. |
+| `agent:NAME` | Selects a configured agent; if absent, `kanban.default_agent` is used. |
+| `model:NAME` | Driver-level label such as an opencode model selector; the coordinator passes it through without validation. |
 | `attention` | Needs human review — added by coordinator on errors or timeouts. |
 
 Only cards that carry a `proj:*` label are managed by the coordinator. Cards without one
 are left untouched regardless of which list they are in.
 
-Unknown or ambiguous `proj:*` / `model:*` labels move the card to **done** with the
-`attention` label and a comment explaining the reason.
+Unknown or ambiguous scheduler labels (`proj:*` / `agent:*`) move the card to **done** with the
+`attention` label and a comment explaining the reason. Other labels, including `model:*`, are
+interpreted by the selected agent driver and do not cause coordinator-level rejection.
 
 ## AI-driven kanban control
 

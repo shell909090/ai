@@ -140,12 +140,13 @@ fd 3 为空表示无结果。非零退出、超时、JSON 非法或 `workdir` �
 | 标签 | 含义 |
 |---|---|
 | `proj:NAME` | 将卡片标记为 AI 管理，并指定所属项目（用于容量计数）。没有此标签的卡片协调器不会触碰。 |
-| `model:NAME` | 指定 opencode 模型，无标签时使用配置默认。 |
+| `agent:NAME` | 选择已配置的 agent；无此标签时使用 `kanban.default_agent`。 |
+| `model:NAME` | driver 级标签，例如 opencode 模型选择；协调器只透传，不校验。 |
 | `attention` | 需要人工关注，在异常或超时时由协调器添加。 |
 
 只有带 `proj:*` 标签的卡片才归协调器管理。没有 `proj:*` 标签的卡片无论在哪个列表，协调器均不移动、不写 comment、不占用容量。
 
-`proj:*` 或 `model:*` 标签未知或有多个时，卡片移到 **done** 并加 `attention`，comment 说明原因。
+`proj:*` 或 `agent:*` 等调度标签未知或有多个时，卡片移到 **done** 并加 `attention`，comment 说明原因。其他标签（包括 `model:*`）由选中的 agent driver 解释，不会触发协调器层面的拒绝。
 
 ## AI 看板控制
 
