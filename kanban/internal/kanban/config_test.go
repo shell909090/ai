@@ -475,18 +475,18 @@ func TestFindProject(t *testing.T) {
 func TestHasProjLabel(t *testing.T) {
 	cases := []struct {
 		name   string
-		labels []trelloLabel
+		labels []string
 		want   bool
 	}{
 		{"no labels", nil, false},
-		{"attention only", []trelloLabel{{Name: "attention"}}, false},
-		{"proj:agent", []trelloLabel{{Name: "proj:agent"}}, true},
-		{"proj:agent + attention", []trelloLabel{{Name: "proj:agent"}, {Name: "attention"}}, true},
-		{"multiple proj", []trelloLabel{{Name: "proj:a"}, {Name: "proj:b"}}, true},
+		{"attention only", []string{"attention"}, false},
+		{"proj:agent", []string{"proj:agent"}, true},
+		{"proj:agent + attention", []string{"proj:agent", "attention"}, true},
+		{"multiple proj", []string{"proj:a", "proj:b"}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			card := trelloCard{Labels: c.labels}
+			card := CardSnapshot{Labels: c.labels}
 			if got := hasProjLabel(card); got != c.want {
 				t.Errorf("hasProjLabel = %v, want %v", got, c.want)
 			}
@@ -505,7 +505,7 @@ func TestParseProj(t *testing.T) {
 	}
 	cases := []struct {
 		name    string
-		labels  []trelloLabel
+		labels  []string
 		want    string
 		wantErr bool
 	}{
@@ -515,28 +515,28 @@ func TestParseProj(t *testing.T) {
 		},
 		{
 			name:   "known proj:agent",
-			labels: []trelloLabel{{Name: "proj:agent"}},
+			labels: []string{"proj:agent"},
 			want:   "agent",
 		},
 		{
 			name:    "unrelated label is error (no proj:*)",
-			labels:  []trelloLabel{{Name: "attention"}},
+			labels:  []string{"attention"},
 			wantErr: true,
 		},
 		{
 			name:    "unknown proj label",
-			labels:  []trelloLabel{{Name: "proj:unknown"}},
+			labels:  []string{"proj:unknown"},
 			wantErr: true,
 		},
 		{
 			name:    "multiple proj labels",
-			labels:  []trelloLabel{{Name: "proj:agent"}, {Name: "proj:ai"}},
+			labels:  []string{"proj:agent", "proj:ai"},
 			wantErr: true,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			card := trelloCard{Labels: c.labels}
+			card := CardSnapshot{Labels: c.labels}
 			got, err := parseProj(card, cfg)
 			if c.wantErr {
 				if err == nil {
@@ -566,7 +566,7 @@ func TestParseAgent(t *testing.T) {
 	}
 	cases := []struct {
 		name    string
-		labels  []trelloLabel
+		labels  []string
 		want    string
 		wantErr bool
 	}{
@@ -576,17 +576,17 @@ func TestParseAgent(t *testing.T) {
 		},
 		{
 			name:   "known agent:other-agent",
-			labels: []trelloLabel{{Name: "agent:other-agent"}},
+			labels: []string{"agent:other-agent"},
 			want:   "other-agent",
 		},
 		{
 			name:    "unknown agent label",
-			labels:  []trelloLabel{{Name: "agent:unknown"}},
+			labels:  []string{"agent:unknown"},
 			wantErr: true,
 		},
 		{
 			name:    "multiple agent labels",
-			labels:  []trelloLabel{{Name: "agent:test-agent"}, {Name: "agent:other-agent"}},
+			labels:  []string{"agent:test-agent", "agent:other-agent"},
 			wantErr: true,
 		},
 		{
@@ -601,7 +601,7 @@ func TestParseAgent(t *testing.T) {
 					Agents: map[string]AgentConfig{"test-agent": {Type: "opencode"}},
 				}
 			}
-			card := trelloCard{Labels: c.labels}
+			card := CardSnapshot{Labels: c.labels}
 			got, err := parseAgent(card, useCfg)
 			if c.wantErr || c.name == "no default configured" {
 				if err == nil {

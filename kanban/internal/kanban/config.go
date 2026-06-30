@@ -305,11 +305,11 @@ func (c Config) Validate() error {
 // parseAgent extracts the agent name from a card's agent:* label.
 // Returns (defaultAgent, nil) if no agent:* label is present.
 // Returns ("", error) if parsing fails (multiple or unknown label).
-func parseAgent(card trelloCard, cfg Config) (string, error) {
+func parseAgent(card CardSnapshot, cfg Config) (string, error) {
 	var matches []string
 	for _, l := range card.Labels {
-		if strings.HasPrefix(l.Name, "agent:") {
-			matches = append(matches, l.Name)
+		if strings.HasPrefix(l, "agent:") {
+			matches = append(matches, l)
 		}
 	}
 	if len(matches) == 0 {
@@ -333,9 +333,9 @@ func parseAgent(card trelloCard, cfg Config) (string, error) {
 
 // hasProjLabel reports whether a card has at least one proj:* label.
 // Cards without a proj:* label are not AI-managed and must be ignored by the scheduler.
-func hasProjLabel(card trelloCard) bool {
+func hasProjLabel(card CardSnapshot) bool {
 	for _, l := range card.Labels {
-		if strings.HasPrefix(l.Name, "proj:") {
+		if strings.HasPrefix(l, "proj:") {
 			return true
 		}
 	}
@@ -345,11 +345,11 @@ func hasProjLabel(card trelloCard) bool {
 // parseProj extracts the project name from a card's proj:* label.
 // Callers must check hasProjLabel first; cards without a proj:* label are not AI-managed.
 // Returns ("", error) if no proj:* label is present, or if there are multiple or unknown labels.
-func parseProj(card trelloCard, cfg Config) (string, error) {
+func parseProj(card CardSnapshot, cfg Config) (string, error) {
 	var matches []string
 	for _, l := range card.Labels {
-		if strings.HasPrefix(l.Name, "proj:") {
-			matches = append(matches, l.Name)
+		if strings.HasPrefix(l, "proj:") {
+			matches = append(matches, l)
 		}
 	}
 	if len(matches) == 0 {

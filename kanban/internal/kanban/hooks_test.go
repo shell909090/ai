@@ -139,7 +139,7 @@ func TestRunHookNoCommand(t *testing.T) {
 	r := newTestHookRunner(t)
 	pc := ProjectConfig{}
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestRunHookSuccess(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1", Name: "T"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1", Title: "T"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRunHookExitNonZero(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for non-zero exit")
 	}
@@ -198,7 +198,7 @@ func TestRunHookTimeout(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -216,7 +216,7 @@ func TestRunHookBadJSON(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for bad JSON")
 	}
@@ -234,7 +234,7 @@ func TestRunHookRelativeWorkdir(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for relative workdir")
 	}
@@ -253,7 +253,7 @@ func TestRunHookEmptyFd3Result(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	result, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -277,7 +277,7 @@ echo "AGENT_TYPE=$KANBAN_AGENT_TYPE" >> `+outFile)
 	pc.Hooks.SessionNew.Command = []string{script}
 
 	r := newTestHookRunner(t)
-	card := trelloCard{ID: "card42", Name: "My Task", URL: "https://trello.com/c/test"}
+	card := CardSnapshot{ID: "card42", Title: "My Task", URL: "https://trello.com/c/test"}
 	proj := AllowedProject{Name: "myproj", Label: "proj:myproj"}
 	task := &Task{SessionID: "__pending__"}
 	_, err := r.RunHook(context.Background(), "session_new", task, card, proj, "my-agent", "opencode", "/work", pc)
@@ -327,7 +327,7 @@ func TestRunHookDoesNotLeakSensitiveEnv(t *testing.T) {
 
 	r := newTestHookRunner(t)
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestRunHookFd3Overflow(t *testing.T) {
 
 	r := realHookRunner{defaultTimeout: 5 * time.Second, maxOutputBytes: 4096}
 	_, err := r.RunHook(context.Background(), "session_new", testTask(),
-		trelloCard{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
+		CardSnapshot{ID: "c1"}, AllowedProject{}, "test-agent", "opencode", "/tmp", pc)
 	if err == nil {
 		t.Fatal("expected error for fd3 overflow")
 	}

@@ -21,12 +21,8 @@ func TestRenderSummaryPromptContainsSensitiveInfoWarning(t *testing.T) {
 
 // ---------- renderInitialPrompt ----------
 
-func testCard(id, title, desc, url string, labels ...string) trelloCard {
-	ls := make([]trelloLabel, len(labels))
-	for i, l := range labels {
-		ls[i] = trelloLabel{Name: l}
-	}
-	return trelloCard{ID: id, Name: title, Desc: desc, URL: url, Labels: ls}
+func testCard(id, title, desc, url string, labels ...string) CardSnapshot {
+	return CardSnapshot{ID: CardID(id), Title: title, Description: desc, URL: url, Labels: labels}
 }
 
 func testProj(name, label string) AllowedProject {

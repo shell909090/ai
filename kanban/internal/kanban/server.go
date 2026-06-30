@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// Task tracks an in-flight agent session paired with a Trello card.
+// Task tracks an in-flight agent session paired with a board card.
 type Task struct {
-	CardID    string
+	CardID    CardID
 	CardTitle string // snapshot for hook env vars
 	CardURL   string // snapshot for hook env vars
 	SessionID string // "__pending__" during session_new hook execution
@@ -22,23 +22,6 @@ type Task struct {
 	Labels    []string   // card label names captured at start; passed to later driver prompts
 	Abort     *time.Time // set when abort was requested
 	Summary   *time.Time // set when summary prompt was sent
-}
-
-// Trello HTTP API shapes we consume.
-type trelloCard struct {
-	ID     string        `json:"id"`
-	Name   string        `json:"name"`
-	Desc   string        `json:"desc"`
-	IDList string        `json:"idList"`
-	URL    string        `json:"url"`
-	Labels []trelloLabel `json:"labels"`
-}
-
-type trelloLabel struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Color   string `json:"color"`
-	IDBoard string `json:"idBoard"`
 }
 
 // ocSession is the response from POST /session.
@@ -57,17 +40,17 @@ type logRec struct {
 }
 
 // Server is the kanban scheduler. One Server per process; it owns the
-// Trello poll loop, the agent session registry, and the HTTP /health
+// board poll loop, the agent session registry, and the HTTP /health
 // endpoint. State is in-memory; restart loses in-flight session mappings.
 type Server struct {
 	cfg        Config
 	mu         sync.Mutex
-	tasks      map[string]*Task // keyed by card_id
+	tasks      map[CardID]*Task
 	totalCount int
 	projCount  map[string]int
-	labelIDs   map[string]string // Trello label name → Trello label ID (cached)
-	httpc      *http.Client
-	hookRunner HookRunner             // injectable; defaults to realHookRunner in New()
+	board      BoardGateway
+	httpc      *http.Client // used by opencode driver tests; nil after full integration
+	hookRunner HookRunner
 	drivers    map[string]AgentDriver // agent name → driver
 }
 
@@ -101,13 +84,14 @@ func New(cfg Config) (*Server, error) {
 	if cfg.HookMaxOutputBytes <= 0 {
 		cfg.HookMaxOutputBytes = 8192
 	}
+	httpc := &http.Client{Timeout: cfg.HTTPTimeout}
 	return &Server{
 		cfg:       cfg,
-		tasks:     make(map[string]*Task),
+		tasks:     make(map[CardID]*Task),
 		projCount: make(map[string]int),
-		labelIDs:  make(map[string]string),
+		board:     NewTrelloGateway(cfg, httpc),
+		httpc:     httpc,
 		drivers:   make(map[string]AgentDriver),
-		httpc:     &http.Client{Timeout: cfg.HTTPTimeout},
 		hookRunner: realHookRunner{
 			defaultTimeout: cfg.HookDefaultTimeout,
 			maxOutputBytes: cfg.HookMaxOutputBytes,
@@ -120,6 +104,13 @@ func (s *Server) SetDrivers(drivers map[string]AgentDriver) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.drivers = drivers
+}
+
+// SetBoard replaces the board gateway. Used in tests to inject a fake.
+func (s *Server) SetBoard(b BoardGateway) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.board = b
 }
 
 // Run starts the HTTP server and the single timer loop, blocking until
@@ -163,23 +154,13 @@ func (s *Server) HTTPHandler() http.Handler {
 	return mux
 }
 
-// listIDFor returns the Trello list ID for a logical list name (todo/doing/done).
-func (s *Server) listIDFor(name string) string {
-	return s.cfg.TrelloLists[name]
-}
-
-// labelNameFor returns the Trello label name for a logical key (human/attention).
-func (s *Server) labelNameFor(key string) string {
-	return s.cfg.TrelloLabels[key]
-}
-
 // hasLabel reports whether a card has a label with the given name.
-func hasLabel(card trelloCard, name string) bool {
+func hasLabel(card CardSnapshot, name string) bool {
 	if name == "" {
 		return false
 	}
 	for _, l := range card.Labels {
-		if l.Name == name {
+		if l == name {
 			return true
 		}
 	}
@@ -188,7 +169,7 @@ func hasLabel(card trelloCard, name string) bool {
 
 // destroyTask removes a task and decrements capacity counters.
 // Counters are guarded to never go negative.
-func (s *Server) destroyTask(cardID string) {
+func (s *Server) destroyTask(cardID CardID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	task, ok := s.tasks[cardID]

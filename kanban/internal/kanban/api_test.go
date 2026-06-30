@@ -2,166 +2,289 @@ package kanban
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestTrelloListCards(t *testing.T) {
-	trello := newFakeTrello()
-	trello.setCards(testDoingID, []trelloCard{{ID: "c1", Name: "first"}})
-	srv := httptest.NewServer(trello.handler())
+// ---------- trelloTestServer ----------
+
+// trelloTestServer is a minimal fake Trello HTTP server for TrelloGateway unit tests.
+type trelloTestServer struct {
+	comments  []string
+	moves     []struct{ cardID, listID string }
+	labelAdds []string
+}
+
+func (f *trelloTestServer) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/1/cards", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct{ Name, Desc string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "new_card", "name": body.Name, "idList": "list_todo"})
+	})
+	mux.HandleFunc("/1/cards/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/1/cards/")
+		parts := strings.SplitN(path, "/", 2)
+		cardID := parts[0]
+		suffix := ""
+		if len(parts) == 2 {
+			suffix = "/" + parts[1]
+		}
+		switch {
+		case suffix == "/actions/comments" && r.Method == http.MethodPost:
+			var body struct {
+				Text string `json:"text"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.comments = append(f.comments, body.Text)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		case suffix == "" && r.Method == http.MethodPut:
+			var body struct {
+				IDList string `json:"idList"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.moves = append(f.moves, struct{ cardID, listID string }{cardID, body.IDList})
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		case suffix == "/idLabels" && r.Method == http.MethodPost:
+			var body struct {
+				Value string `json:"value"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.labelAdds = append(f.labelAdds, body.Value)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	mux.HandleFunc("/1/lists/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		// Return a fixed list of cards.
+		cards := []map[string]any{
+			{"id": "c1", "name": "First", "desc": "", "idList": "list_doing", "url": "", "labels": []any{}},
+		}
+		_ = json.NewEncoder(w).Encode(cards)
+	})
+	mux.HandleFunc("/1/boards/", func(w http.ResponseWriter, r *http.Request) {
+		labels := []map[string]string{
+			{"id": "lbl_attn", "name": "attention", "color": "red"},
+			{"id": "lbl_human", "name": "human", "color": "green"},
+		}
+		_ = json.NewEncoder(w).Encode(labels)
+	})
+	return mux
+}
+
+func newTrelloGatewayForTest(t *testing.T, serverURL string) *TrelloGateway {
+	t.Helper()
+	cfg := Config{
+		TrelloKey:     "k",
+		TrelloToken:   "t",
+		TrelloBoardID: "board_test",
+		TrelloLists: map[string]string{
+			"todo":  "list_todo",
+			"doing": "list_doing",
+			"done":  "list_done",
+		},
+		TrelloLabels: map[string]string{
+			"attention": "attention",
+		},
+	}
+	httpc := &http.Client{
+		Transport: &rewriteTransport{base: http.DefaultTransport, target: serverURL},
+	}
+	return NewTrelloGateway(cfg, httpc)
+}
+
+// rewriteTransport redirects api.trello.com to the test server.
+type rewriteTransport struct {
+	base   http.RoundTripper
+	target string
+}
+
+func (r *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasPrefix(req.URL.String(), "https://api.trello.com/") {
+		newURL := r.target + strings.TrimPrefix(req.URL.String(), "https://api.trello.com")
+		req = req.Clone(req.Context())
+		req.URL, _ = req.URL.Parse(newURL)
+		req.Host = req.URL.Host
+	}
+	return r.base.RoundTrip(req)
+}
+
+// ---------- TrelloGateway tests ----------
+
+func TestTrelloGatewayListCards(t *testing.T) {
+	fake := &trelloTestServer{}
+	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	got, err := s.trelloListCards(context.Background(), testDoingID)
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	cards, err := gw.ListCards(context.Background(), "doing")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].ID != "c1" {
-		t.Errorf("got %v, want [c1]", got)
+	if len(cards) != 1 || string(cards[0].ID) != "c1" {
+		t.Errorf("cards=%v", cards)
 	}
 }
 
-func TestTrelloListCardsError(t *testing.T) {
+func TestTrelloGatewayListCardsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	_, err := s.trelloListCards(context.Background(), testDoingID)
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	_, err := gw.ListCards(context.Background(), "doing")
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
 }
 
-func TestTrelloAddComment(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if err := s.trelloAddComment(context.Background(), "c1", "hi"); err != nil {
-		t.Fatal(err)
-	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.comments) != 1 || trello.comments[0] != "hi" {
-		t.Errorf("comments=%v, want [hi]", trello.comments)
+func TestTrelloGatewayListCardsUnknownList(t *testing.T) {
+	gw := newTrelloGatewayForTest(t, "http://trello.invalid")
+	_, err := gw.ListCards(context.Background(), "nosuchlist")
+	if err == nil {
+		t.Fatal("expected error for unknown list")
 	}
 }
 
-func TestTrelloAddCommentError(t *testing.T) {
+func TestTrelloGatewayAddComment(t *testing.T) {
+	fake := &trelloTestServer{}
+	srv := httptest.NewServer(fake.handler())
+	defer srv.Close()
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	if err := gw.AddComment(context.Background(), "c1", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.comments) != 1 || fake.comments[0] != "hello" {
+		t.Errorf("comments=%v", fake.comments)
+	}
+}
+
+func TestTrelloGatewayAddCommentError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if err := s.trelloAddComment(context.Background(), "c1", "hi"); err == nil {
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	if err := gw.AddComment(context.Background(), "c1", "hi"); err == nil {
 		t.Error("expected error on 500")
 	}
 }
 
-func TestTrelloMoveCard(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
+func TestTrelloGatewayMoveCard(t *testing.T) {
+	fake := &trelloTestServer{}
+	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if err := s.trelloMoveCard(context.Background(), "c1", testDoneID); err != nil {
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	if err := gw.MoveCard(context.Background(), "c1", "done"); err != nil {
 		t.Fatal(err)
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.moves) != 1 || trello.moves[0] != (moveRec{cardID: "c1", listID: testDoneID}) {
-		t.Errorf("moves=%v, want [{c1 %s}]", trello.moves, testDoneID)
+	if len(fake.moves) != 1 || fake.moves[0].listID != "list_done" {
+		t.Errorf("moves=%v", fake.moves)
 	}
 }
 
-func TestTrelloMoveCardError(t *testing.T) {
+func TestTrelloGatewayMoveCardError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if err := s.trelloMoveCard(context.Background(), "c1", testDoneID); err == nil {
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	if err := gw.MoveCard(context.Background(), "c1", "done"); err == nil {
 		t.Error("expected error on 500")
 	}
 }
 
-func TestTrelloAddLabel(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
+func TestTrelloGatewayAddLabel(t *testing.T) {
+	fake := &trelloTestServer{}
+	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if err := s.trelloAddLabel(context.Background(), "c1", "lbl_x"); err != nil {
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	// "attention" label name should be resolved to "lbl_attn" internally.
+	if err := gw.AddLabel(context.Background(), "c1", "attention"); err != nil {
 		t.Fatal(err)
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.labelAdds) != 1 || trello.labelAdds[0] != "lbl_x" {
-		t.Errorf("labelAdds=%v, want [lbl_x]", trello.labelAdds)
+	if len(fake.labelAdds) != 1 || fake.labelAdds[0] != "lbl_attn" {
+		t.Errorf("labelAdds=%v, want [lbl_attn]", fake.labelAdds)
 	}
 }
 
-func TestTrelloListBoardLabels(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
+func TestTrelloGatewayAddLabelUnknown(t *testing.T) {
+	fake := &trelloTestServer{}
+	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	got, err := s.trelloListBoardLabels(context.Background(), testBoardID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// fakeTrello returns attention, human, proj:agent, proj:kanban labels
-	if len(got) < 2 {
-		t.Errorf("len=%d, want at least 2", len(got))
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	err := gw.AddLabel(context.Background(), "c1", "notexist")
+	if err == nil {
+		t.Fatal("expected error for unknown label")
 	}
 }
 
-func TestTrelloListBoardLabelsError(t *testing.T) {
+func TestTrelloGatewayResolveLabelIDCaching(t *testing.T) {
+	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		if strings.Contains(r.URL.Path, "/boards/") {
+			calls++
+		}
+		labels := []map[string]string{{"id": "lbl_attn", "name": "attention", "color": "red"}}
+		_ = json.NewEncoder(w).Encode(labels)
 	}))
 	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-	if _, err := s.trelloListBoardLabels(context.Background(), testBoardID); err == nil {
-		t.Error("expected error on 500")
+
+	gw := newTrelloGatewayForTest(t, srv.URL)
+	// First resolution fetches from board.
+	id1, err := gw.resolveLabelID(context.Background(), "attention")
+	if err != nil || id1 != "lbl_attn" {
+		t.Fatalf("first resolve: err=%v id=%q", err, id1)
+	}
+	// Second resolution uses cache — no additional board API call.
+	id2, err := gw.resolveLabelID(context.Background(), "attention")
+	if err != nil || id2 != id1 {
+		t.Fatalf("second resolve: err=%v id=%q", err, id2)
+	}
+	if calls > 1 {
+		t.Errorf("board labels fetched %d times, want 1 (cached)", calls)
 	}
 }
 
-func TestResolveLabelID(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newTestServer(t, srv.URL)
-
-	id, err := s.resolveLabelID(context.Background(), testAttentionName)
-	if err != nil {
-		t.Fatalf("resolveLabelID: %v", err)
+func TestTrelloGatewayResolveLabelIDNoBoardID(t *testing.T) {
+	cfg := Config{
+		TrelloKey:   "k",
+		TrelloToken: "t",
+		TrelloLists: map[string]string{"todo": "L1", "doing": "L2", "done": "L3"},
 	}
-	if id != testAttentionID {
-		t.Errorf("id=%q, want %q", id, testAttentionID)
-	}
-	// Second call uses cache.
-	id2, err := s.resolveLabelID(context.Background(), testAttentionName)
-	if err != nil {
-		t.Fatalf("resolveLabelID (cached): %v", err)
-	}
-	if id2 != id {
-		t.Errorf("cached id=%q, want %q", id2, id)
-	}
-}
-
-func TestResolveLabelIDNoBoardID(t *testing.T) {
-	s := newTestServer(t, "http://api.trello.invalid")
-	s.cfg.TrelloBoardID = ""
-	_, err := s.resolveLabelID(context.Background(), "attention")
+	gw := NewTrelloGateway(cfg, &http.Client{})
+	_, err := gw.resolveLabelID(context.Background(), "attention")
 	if err == nil {
 		t.Error("expected error when board_id not configured")
 	}
 }
 
+// ---------- HTTPHandler ----------
+
 func TestHTTPHandler(t *testing.T) {
-	s := newTestServer(t, "http://api.trello.invalid")
+	s := newTestServer(t, newFakeBoardGateway())
 	h := s.HTTPHandler()
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()

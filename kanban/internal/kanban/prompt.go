@@ -48,18 +48,14 @@ type promptAgent struct {
 // renderInitialPrompt builds the initial prompt for an agent session.
 // It uses pc.Prompt.Template if set, otherwise the built-in default template.
 // pc.Prompt.Addons are appended after the base prompt.
-func renderInitialPrompt(card trelloCard, proj AllowedProject, agentName, agentType string, pc ProjectConfig) (string, error) {
-	labelNames := make([]string, 0, len(card.Labels))
-	for _, l := range card.Labels {
-		labelNames = append(labelNames, l.Name)
-	}
+func renderInitialPrompt(card CardSnapshot, proj AllowedProject, agentName, agentType string, pc ProjectConfig) (string, error) {
 	ctx := promptContext{
 		Card: promptCard{
-			ID:          card.ID,
-			Title:       card.Name,
-			Description: card.Desc,
+			ID:          string(card.ID),
+			Title:       card.Title,
+			Description: card.Description,
 			URL:         card.URL,
-			Labels:      labelNames,
+			Labels:      append([]string(nil), card.Labels...),
 		},
 		Project: promptProject{
 			Name:  proj.Name,

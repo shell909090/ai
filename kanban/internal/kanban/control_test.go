@@ -15,9 +15,9 @@ import (
 
 const testToken = "test-control-token"
 
-func newControlServer(t *testing.T, trelloURL string) *Server {
+func newControlServer(t *testing.T, board BoardGateway) *Server {
 	t.Helper()
-	s := newTestServer(t, trelloURL)
+	s := newTestServer(t, board)
 	s.cfg.ControlToken = testToken
 	s.cfg.AllowedProjects = []AllowedProject{
 		{Label: "proj:agent", Name: "agent", Root: "/repo/agent"},
@@ -48,7 +48,7 @@ func controlDo(t *testing.T, s *Server, method, path, token string, body any) *h
 // ---------- authentication ----------
 
 func TestControlAuthMissingToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "GET", "/control/v1/lists", "", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("code=%d, want 401", rec.Code)
@@ -56,7 +56,7 @@ func TestControlAuthMissingToken(t *testing.T) {
 }
 
 func TestControlAuthWrongToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "GET", "/control/v1/lists", "wrong-token", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("code=%d, want 401", rec.Code)
@@ -64,7 +64,7 @@ func TestControlAuthWrongToken(t *testing.T) {
 }
 
 func TestControlAuthEmptyBearer(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	req := httptest.NewRequest("GET", "/control/v1/lists", nil)
 	req.Header.Set("Authorization", "Bearer ")
 	rec := httptest.NewRecorder()
@@ -75,9 +75,8 @@ func TestControlAuthEmptyBearer(t *testing.T) {
 }
 
 func TestControlAuthCorrectToken(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
-	// Should not be 401
 	if rec.Code == http.StatusUnauthorized {
 		t.Error("valid token should not get 401")
 	}
@@ -86,7 +85,7 @@ func TestControlAuthCorrectToken(t *testing.T) {
 // ---------- list lists ----------
 
 func TestControlListLists(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -94,7 +93,6 @@ func TestControlListLists(t *testing.T) {
 	var resp struct {
 		Lists []struct {
 			Name string `json:"name"`
-			ID   string `json:"id"`
 		} `json:"lists"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
@@ -108,7 +106,7 @@ func TestControlListLists(t *testing.T) {
 // ---------- list cards ----------
 
 func TestControlListCardsUnknownList(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "GET", "/control/v1/cards?list=unknown", testToken, nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("code=%d, want 400", rec.Code)
@@ -116,15 +114,13 @@ func TestControlListCardsUnknownList(t *testing.T) {
 }
 
 func TestControlListCards(t *testing.T) {
-	trello := newFakeTrello()
-	trello.setCards(testTodoID, []trelloCard{
-		{ID: "c1", Name: "T1", Labels: []trelloLabel{{Name: "proj:agent"}}},
-		{ID: "c2", Name: "T2"},
+	board := newFakeBoardGateway()
+	board.setCards("todo", []CardSnapshot{
+		{ID: "c1", Title: "T1", Labels: []string{"proj:agent"}},
+		{ID: "c2", Title: "T2"},
 	})
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
 
-	s := newControlServer(t, srv.URL)
+	s := newControlServer(t, board)
 	rec := controlDo(t, s, "GET", "/control/v1/cards?list=todo", testToken, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
@@ -141,7 +137,7 @@ func TestControlListCards(t *testing.T) {
 // ---------- create card ----------
 
 func TestControlCreateCardEmptyTitle(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]string{
 		"title": "", "cwd": "/repo/agent",
 	})
@@ -154,7 +150,7 @@ func TestControlCreateCardEmptyTitle(t *testing.T) {
 }
 
 func TestControlCreateCardUnknownProject(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]string{
 		"title": "T", "project": "nonexistent",
 	})
@@ -164,11 +160,11 @@ func TestControlCreateCardUnknownProject(t *testing.T) {
 }
 
 func TestControlCreateCardCwdInference(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
+	board := newFakeBoardGateway()
+	// Add proj:agent to known labels so CreateCard can resolve it.
+	board.knownLabels["proj:agent"] = true
 
-	s := newControlServer(t, srv.URL)
+	s := newControlServer(t, board)
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title":       "New task",
 		"description": "desc",
@@ -177,18 +173,13 @@ func TestControlCreateCardCwdInference(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	// A new card create request should have been made.
-	// (fakeTrello doesn't track creates, so just verify status code is right)
 }
 
 func TestControlCreateCardExplicitProject(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
+	board := newFakeBoardGateway()
+	board.knownLabels["proj:kanban"] = true
 
-	s := newControlServer(t, srv.URL)
+	s := newControlServer(t, board)
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title":   "Task",
 		"project": "kanban",
@@ -199,7 +190,7 @@ func TestControlCreateCardExplicitProject(t *testing.T) {
 }
 
 func TestControlCreateCardNoCwdNoProject(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "POST", "/control/v1/cards", testToken, map[string]any{
 		"title": "Task",
 		// neither cwd nor project
@@ -212,7 +203,7 @@ func TestControlCreateCardNoCwdNoProject(t *testing.T) {
 // ---------- move card ----------
 
 func TestControlMoveCardUnknownList(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/move", testToken, map[string]string{
 		"list": "nonexistent",
 	})
@@ -222,10 +213,8 @@ func TestControlMoveCardUnknownList(t *testing.T) {
 }
 
 func TestControlMoveCard(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/move", testToken, map[string]string{
 		"list": "done",
@@ -233,17 +222,17 @@ func TestControlMoveCard(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.moves) != 1 || trello.moves[0].listID != testDoneID {
-		t.Errorf("moves=%v", trello.moves)
+	board.mu.Lock()
+	defer board.mu.Unlock()
+	if len(board.moves) != 1 || board.moves[0].list != "done" {
+		t.Errorf("moves=%v", board.moves)
 	}
 }
 
 // ---------- add comment ----------
 
 func TestControlAddCommentTooLong(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
+	s := newControlServer(t, newFakeBoardGateway())
 	longText := strings.Repeat("x", controlMaxCommentLen+1)
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/comments", testToken, map[string]string{
 		"text": longText,
@@ -254,10 +243,8 @@ func TestControlAddCommentTooLong(t *testing.T) {
 }
 
 func TestControlAddComment(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/comments", testToken, map[string]string{
 		"text": "Hello!",
@@ -265,20 +252,18 @@ func TestControlAddComment(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.comments) != 1 || trello.comments[0] != "Hello!" {
-		t.Errorf("comments=%v", trello.comments)
+	board.mu.Lock()
+	defer board.mu.Unlock()
+	if len(board.comments) != 1 || board.comments[0] != "Hello!" {
+		t.Errorf("comments=%v", board.comments)
 	}
 }
 
 // ---------- add/remove label ----------
 
 func TestControlAddLabelUnknown(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/labels", testToken, map[string]string{
 		"label": "notexist",
@@ -289,29 +274,25 @@ func TestControlAddLabelUnknown(t *testing.T) {
 }
 
 func TestControlAddLabel(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 
 	rec := controlDo(t, s, "POST", "/control/v1/cards/c1/labels", testToken, map[string]string{
-		"label": testAttentionName,
+		"label": "attention",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
-	trello.mu.Lock()
-	defer trello.mu.Unlock()
-	if len(trello.labelAdds) != 1 {
-		t.Errorf("labelAdds=%v", trello.labelAdds)
+	board.mu.Lock()
+	defer board.mu.Unlock()
+	if len(board.labelAdds) != 1 {
+		t.Errorf("labelAdds=%v", board.labelAdds)
 	}
 }
 
 func TestControlRemoveLabelUnknown(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 
 	rec := controlDo(t, s, "DELETE", "/control/v1/cards/c1/labels/unknownlabel", testToken, nil)
 	if rec.Code != http.StatusBadRequest {
@@ -346,7 +327,6 @@ func TestInferProjectSubdir(t *testing.T) {
 }
 
 func TestInferProjectNoBoundaryMismatch(t *testing.T) {
-	// /repo/agent should NOT match /repo/agent2
 	cfg := Config{
 		AllowedProjects: []AllowedProject{
 			{Label: "proj:agent", Name: "agent", Root: "/repo/agent"},
@@ -412,7 +392,6 @@ func TestInferProjectFromTaskWorkdir(t *testing.T) {
 }
 
 func TestInferProjectTwoAmbiguousRoots(t *testing.T) {
-	// Two DIFFERENT projects match at the same length — ambiguous.
 	cfg := Config{
 		AllowedProjects: []AllowedProject{
 			{Label: "proj:a", Name: "a", Root: "/shared/a"},
@@ -425,30 +404,10 @@ func TestInferProjectTwoAmbiguousRoots(t *testing.T) {
 	}
 }
 
-// ---------- fakeTrello extension for create card ----------
-
-func init() {
-	// Extend the fake to handle POST /1/cards (card creation).
-	// Already handled in fakes_test.go? Check — if not, add it here.
-}
-
-// TestControlCreateCardRegistersRoute verifies the route is wired.
-func TestControlCreateCardRegistersRoute(t *testing.T) {
-	s := newControlServer(t, "http://trello.invalid")
-	// With no token in request, should get 401 (not 404).
-	rec := controlDo(t, s, "POST", "/control/v1/cards", "", nil)
-	if rec.Code == http.StatusNotFound {
-		t.Error("route should be registered (got 404)")
-	}
-}
-
 // Verify audit log output contains expected fields.
 func TestControlAuditLog(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
-	// Use a distinctive token value to check it doesn't appear in logs.
-	s := newControlServer(t, srv.URL)
+	board := newFakeBoardGateway()
+	s := newControlServer(t, board)
 	s.cfg.TrelloToken = "TRELLO_SECRET_9876"
 
 	log := &drainLog{}
@@ -466,36 +425,23 @@ func TestControlAuditLog(t *testing.T) {
 
 // verify control API routes are NOT registered when token is empty
 func TestControlRoutesRequireToken(t *testing.T) {
-	s := newTestServer(t, "http://trello.invalid")
+	s := newTestServer(t, newFakeBoardGateway())
 	// ControlToken is empty → routes not registered.
 	rec := controlDo(t, s, "GET", "/control/v1/lists", testToken, nil)
-	// Should be 404 because the route is not registered.
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("control routes should not exist without ControlToken, got %d", rec.Code)
 	}
 }
 
-// ---------- fakeTrello: support card creation ----------
-
-// Note: fakeTrello.cardsHandler already handles POST at the card level
-// (for comments and labels). We need to add POST at /1/cards (top-level)
-// for card creation. Check if the handler already covers it.
-//
-// Looking at fakes_test.go: the handler is mux.HandleFunc("/1/cards/", ...)
-// which only matches paths with a trailing segment. POST /1/cards would
-// NOT match /1/cards/. So we need to add a separate handler.
-//
-// However, adding more handlers to fakeTrello requires modifying fakes_test.go.
-// For now, TestControlCreateCardCwdInference relies on 201 being returned,
-// but the fake doesn't support card creation — it will return 404.
-//
-// We handle this by making trelloCreateCard return an error, and the test
-// checks that the inference code ran correctly (we won't test Trello create).
-// Actually we need the create to succeed for the test to pass. Let me add
-// card creation support to fakeTrello in fakes_test.go.
+func TestControlCreateCardRegistersRoute(t *testing.T) {
+	s := newControlServer(t, newFakeBoardGateway())
+	rec := controlDo(t, s, "POST", "/control/v1/cards", "", nil)
+	if rec.Code == http.StatusNotFound {
+		t.Error("route should be registered (got 404)")
+	}
+}
 
 func TestInferProjectSymlink(t *testing.T) {
-	// A symlink to the project root should still match.
 	realDir := t.TempDir()
 	linkDir := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(realDir, linkDir); err != nil {
@@ -506,7 +452,6 @@ func TestInferProjectSymlink(t *testing.T) {
 			{Label: "proj:a", Name: "a", Root: realDir},
 		},
 	}
-	// cwd is inside the symlink path; should resolve to realDir and match.
 	proj, err := inferProject(linkDir, cfg, nil)
 	if err != nil || proj.Name != "a" {
 		t.Errorf("expected proj 'a' via symlink, got err=%v proj=%+v", err, proj)
@@ -521,14 +466,11 @@ func TestInferProjectEmptyCwd(t *testing.T) {
 	}
 }
 
-// Verify path inference for Control API create card endpoint with workdir match.
 func TestControlCreateCardFromTaskWorkdir(t *testing.T) {
-	trello := newFakeTrello()
-	srv := httptest.NewServer(trello.handler())
-	defer srv.Close()
+	board := newFakeBoardGateway()
+	board.knownLabels["proj:agent"] = true
 
-	s := newControlServer(t, srv.URL)
-	// Add a task with a workdir the cwd will match.
+	s := newControlServer(t, board)
 	s.mu.Lock()
 	s.tasks["c_existing"] = &Task{
 		CardID:  "c_existing",
@@ -541,10 +483,29 @@ func TestControlCreateCardFromTaskWorkdir(t *testing.T) {
 		"title": "New from workdir",
 		"cwd":   "/repo/worktrees/wt1/src",
 	})
-	// We expect 201 if creation succeeded, or 500 if fakeTrello doesn't support POST /1/cards.
-	// Check that we got a proj inference (not a 400 "cwd not matched" error).
 	if rec.Code == http.StatusBadRequest && strings.Contains(rec.Body.String(), "not under any") {
 		t.Errorf("cwd inference failed: %s", rec.Body.String())
 	}
-	_ = rec // inference success is the key check; Trello create may fail in fake
+}
+
+// ---------- fakeBoardGateway show-card support ----------
+
+func TestControlShowCard(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.setCards("todo", []CardSnapshot{
+		{ID: "c1", Title: "My card", List: "todo", Labels: []string{"proj:agent"}},
+	})
+	s := newControlServer(t, board)
+
+	rec := controlDo(t, s, "GET", "/control/v1/cards/c1", testToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var card controlCardJSON
+	if err := json.NewDecoder(rec.Body).Decode(&card); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if card.ID != "c1" || card.Name != "My card" {
+		t.Errorf("card=%+v", card)
+	}
 }

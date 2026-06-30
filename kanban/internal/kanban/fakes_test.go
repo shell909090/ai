@@ -3,151 +3,127 @@ package kanban
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Test list and label IDs used consistently across all tests.
-const (
-	testTodoID        = "list_todo"
-	testDoingID       = "list_doing"
-	testDoneID        = "list_done"
-	testBoardID       = "board_test"
-	testAttentionName = "attention"
-	testHumanName     = "human"
-	testAttentionID   = "lbl_attention"
-)
+// ---------- fakeBoardGateway ----------
 
-// fakeTrello is a minimal Trello stand-in for tests.
-type fakeTrello struct {
-	mu          sync.Mutex
-	comments    []string
-	labelAdds   []string
-	moves       []moveRec
-	cardsByList map[string][]trelloCard
+// fakeBoardGateway implements BoardGateway for tests.
+// It records all operations and lets tests inspect and seed board state.
+type fakeBoardGateway struct {
+	mu           sync.Mutex
+	comments     []string
+	labelAdds    []string
+	labelRemoves []string
+	moves        []moveRec
+	cardsByList  map[string][]CardSnapshot
+	knownLabels  map[string]bool
+	listCardsErr error // if non-nil, ListCards returns this error
 }
 
 type moveRec struct {
-	cardID string
-	listID string
+	cardID CardID
+	list   string // logical list name
 }
 
-func newFakeTrello() *fakeTrello {
-	return &fakeTrello{
-		cardsByList: map[string][]trelloCard{},
+func newFakeBoardGateway() *fakeBoardGateway {
+	return &fakeBoardGateway{
+		cardsByList: make(map[string][]CardSnapshot),
+		knownLabels: map[string]bool{
+			"attention":   true,
+			"human":       true,
+			"proj:agent":  true,
+			"proj:kanban": true,
+		},
 	}
 }
 
-func (f *fakeTrello) setCards(listID string, cards []trelloCard) {
+func (f *fakeBoardGateway) setCards(listName string, cards []CardSnapshot) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cardsByList[listID] = cards
+	f.cardsByList[listName] = cards
 }
 
-func (f *fakeTrello) handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/1/cards", f.createCardHandler) // card creation (no trailing slash)
-	mux.HandleFunc("/1/cards/", f.cardsHandler)
-	mux.HandleFunc("/1/boards/", f.boardsHandler)
-	mux.HandleFunc("/1/lists/", f.listsHandler)
-	return mux
-}
-
-func (f *fakeTrello) createCardHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	var body struct {
-		Name string `json:"name"`
-		Desc string `json:"desc"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	card := trelloCard{ID: "new_card_id", Name: body.Name, Desc: body.Desc}
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(card)
-}
-
-func (f *fakeTrello) cardsHandler(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/1/cards/")
-	parts := strings.SplitN(path, "/", 2)
-	cardID := parts[0]
-	suffix := ""
-	if len(parts) == 2 {
-		suffix = "/" + parts[1]
-	}
-	switch {
-	case strings.HasSuffix(suffix, "/actions/comments") && r.Method == http.MethodPost:
-		var body struct {
-			Text string `json:"text"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.comments = append(f.comments, body.Text)
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"ac1","data":{"text":"x"}}`))
-	case suffix == "" && r.Method == http.MethodPut:
-		var body struct {
-			IDList string `json:"idList"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.moves = append(f.moves, moveRec{cardID: cardID, listID: body.IDList})
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"` + cardID + `"}`))
-	case suffix == "/idLabels" && r.Method == http.MethodPost:
-		var body struct {
-			Value string `json:"value"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.labelAdds = append(f.labelAdds, body.Value)
-		f.mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"lb1"}`))
-	default:
-		w.WriteHeader(http.StatusNotFound)
-	}
-	_ = cardID
-}
-
-func (f *fakeTrello) boardsHandler(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasSuffix(r.URL.Path, "/labels") || r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	// Return labels so resolveLabelID can find them.
-	labels := []map[string]string{
-		{"id": testAttentionID, "name": testAttentionName, "color": "red", "idBoard": testBoardID},
-		{"id": "lbl_human", "name": testHumanName, "color": "green", "idBoard": testBoardID},
-		{"id": "lbl_proj_agent", "name": "proj:agent", "color": "blue", "idBoard": testBoardID},
-		{"id": "lbl_proj_kanban", "name": "proj:kanban", "color": "purple", "idBoard": testBoardID},
-	}
-	_ = json.NewEncoder(w).Encode(labels)
-}
-
-func (f *fakeTrello) listsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/cards") {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	path := strings.TrimPrefix(r.URL.Path, "/1/lists/")
-	listID := strings.TrimSuffix(path, "/cards")
+func (f *fakeBoardGateway) ListCards(_ context.Context, listName string) ([]CardSnapshot, error) {
 	f.mu.Lock()
-	cards := f.cardsByList[listID]
-	f.mu.Unlock()
-	if cards == nil {
-		_, _ = w.Write([]byte(`[]`))
-		return
+	defer f.mu.Unlock()
+	if f.listCardsErr != nil {
+		return nil, f.listCardsErr
 	}
-	_ = json.NewEncoder(w).Encode(cards)
+	cards := f.cardsByList[listName]
+	if cards == nil {
+		return []CardSnapshot{}, nil
+	}
+	return append([]CardSnapshot(nil), cards...), nil
 }
+
+func (f *fakeBoardGateway) GetCard(_ context.Context, id CardID) (CardSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cards := range f.cardsByList {
+		for _, c := range cards {
+			if c.ID == id {
+				return c, nil
+			}
+		}
+	}
+	return CardSnapshot{}, fmt.Errorf("card %s not found", id)
+}
+
+func (f *fakeBoardGateway) MoveCard(_ context.Context, id CardID, listName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.moves = append(f.moves, moveRec{cardID: id, list: listName})
+	return nil
+}
+
+func (f *fakeBoardGateway) AddComment(_ context.Context, _ CardID, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.comments = append(f.comments, text)
+	return nil
+}
+
+func (f *fakeBoardGateway) AddLabel(_ context.Context, _ CardID, labelName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.knownLabels[labelName] {
+		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
+	}
+	f.labelAdds = append(f.labelAdds, labelName)
+	return nil
+}
+
+func (f *fakeBoardGateway) RemoveLabel(_ context.Context, _ CardID, labelName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.knownLabels[labelName] {
+		return fmt.Errorf("%w: %s", ErrUnknownLabel, labelName)
+	}
+	f.labelRemoves = append(f.labelRemoves, labelName)
+	return nil
+}
+
+func (f *fakeBoardGateway) CreateCard(_ context.Context, listName, title, description string, labels []string) (CardSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	card := CardSnapshot{
+		ID:          "new_card_id",
+		Title:       title,
+		Description: description,
+		List:        listName,
+		Labels:      append([]string(nil), labels...),
+	}
+	f.cardsByList[listName] = append(f.cardsByList[listName], card)
+	return card, nil
+}
+
+// ---------- fakeOpencode ----------
 
 // fakeOpencode is a minimal opencode stand-in for tests.
 // Used by opencode driver tests in api_test.go.
@@ -256,6 +232,8 @@ func (f *fakeOpencode) subHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ---------- fakeAgentDriver ----------
+
 // fakeAgentDriver implements AgentDriver for tests.
 type fakeAgentDriver struct {
 	mu          sync.Mutex
@@ -313,23 +291,7 @@ func (f *fakeAgentDriver) SessionState(_ context.Context, _ string) (AgentState,
 	return f.state, nil
 }
 
-// rewriteTransport intercepts requests to https://api.trello.com and
-// rewrites the host to the fake test server.
-type rewriteTransport struct {
-	base   http.RoundTripper
-	target string
-}
-
-func (r *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if strings.HasPrefix(req.URL.String(), "https://api.trello.com/") {
-		newURL := r.target + strings.TrimPrefix(req.URL.String(), "https://api.trello.com")
-		if u, err := url.Parse(newURL); err == nil {
-			req.URL = u
-			req.Host = u.Host
-		}
-	}
-	return r.base.RoundTrip(req)
-}
+// ---------- drainLog ----------
 
 // drainLog captures log output for assertions.
 type drainLog struct {
@@ -361,6 +323,8 @@ type testingTB interface {
 	Cleanup(func())
 }
 
+// ---------- fakeHookRunner ----------
+
 // fakeHookRunner is an injectable HookRunner for tests.
 type fakeHookRunner struct {
 	mu     sync.Mutex
@@ -371,12 +335,12 @@ type fakeHookRunner struct {
 
 type hookCall struct {
 	Event   string
-	CardID  string
+	CardID  CardID
 	Proj    string
 	Workdir string
 }
 
-func (f *fakeHookRunner) RunHook(_ context.Context, event string, _ *Task, card trelloCard,
+func (f *fakeHookRunner) RunHook(_ context.Context, event string, _ *Task, card CardSnapshot,
 	proj AllowedProject, agentName, agentType string, workdir string, _ ProjectConfig) (HookResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -384,20 +348,18 @@ func (f *fakeHookRunner) RunHook(_ context.Context, event string, _ *Task, card 
 	return f.result, f.err
 }
 
-// newTestServer builds a Server wired to the given fake Trello URL.
+// ---------- test server helpers ----------
+
+// newTestServer builds a Server wired to the given fake BoardGateway.
 func newTestServer(t interface {
 	testingTB
 	Fatal(...any)
-}, trelloURL string) *Server {
+}, board BoardGateway) *Server {
 	t.Helper()
-	httpc := &http.Client{
-		Timeout:   2 * time.Second,
-		Transport: &rewriteTransport{base: http.DefaultTransport, target: trelloURL},
-	}
 	cfg := Config{
 		TrelloKey:          "k",
 		TrelloToken:        "t",
-		TrelloBoardID:      testBoardID,
+		TrelloBoardID:      "board_test",
 		HTTPTimeout:        2 * time.Second,
 		HTTPListen:         "127.0.0.1:0",
 		PollInterval:       time.Second,
@@ -410,38 +372,27 @@ func newTestServer(t interface {
 		MaxDoingTotal:      2,
 		MaxDoingPerProject: 1,
 		TrelloLists: map[string]string{
-			"todo":  testTodoID,
-			"doing": testDoingID,
-			"done":  testDoneID,
+			"todo":  "list_todo",
+			"doing": "list_doing",
+			"done":  "list_done",
 		},
 		TrelloLabels: map[string]string{
-			"human":     testHumanName,
-			"attention": testAttentionName,
+			"human":     "human",
+			"attention": "attention",
 		},
 	}
 	s, err := New(cfg)
 	if err != nil {
 		t.Fatal("New failed:", err)
 	}
-	s.httpc = httpc
+	s.SetBoard(board)
 	s.hookRunner = &fakeHookRunner{}
 	s.drivers = map[string]AgentDriver{"test-agent": &fakeAgentDriver{}}
 	return s
 }
 
-// newFakeTrelloServer starts an httptest.Server for a fakeTrello and registers cleanup.
-func newFakeTrelloServer(t interface {
-	testingTB
-	Helper()
-	Cleanup(func())
-}, ft *fakeTrello) string {
-	t.Helper()
-	srv := httptest.NewServer(ft.handler())
-	t.Cleanup(srv.Close)
-	return srv.URL
-}
-
 // newFakeHTTPServer starts an httptest.Server with the given handler and registers cleanup.
+// Used by opencode driver tests.
 func newFakeHTTPServer(t interface {
 	testingTB
 	Helper()

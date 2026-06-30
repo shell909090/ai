@@ -49,7 +49,7 @@ type HookResult struct {
 
 // HookRunner executes a lifecycle hook for a given event.
 type HookRunner interface {
-	RunHook(ctx context.Context, event string, task *Task, card trelloCard,
+	RunHook(ctx context.Context, event string, task *Task, card CardSnapshot,
 		proj AllowedProject, agentName, agentType string, workdir string,
 		pc ProjectConfig) (HookResult, error)
 }
@@ -149,7 +149,7 @@ type realHookRunner struct {
 
 // RunHook executes the hook for the given event.
 // Returns (HookResult{}, nil) when no command is configured for the event.
-func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, card trelloCard,
+func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, card CardSnapshot,
 	proj AllowedProject, agentName, agentType string, workdir string, pc ProjectConfig) (HookResult, error) {
 
 	hc := hookConfigForEvent(event, pc)
@@ -179,18 +179,13 @@ func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, c
 	cmd.Stdout = lw
 	cmd.Stderr = lw
 
-	// Collect label names for the env var.
-	var labelNames []string
-	for _, l := range card.Labels {
-		labelNames = append(labelNames, l.Name)
-	}
 	// Build a minimal env: only safe system variables plus KANBAN_* context.
-	// Never pass the full os.Environ() to avoid leaking Trello/opencode credentials
+	// Never pass the full os.Environ() to avoid leaking board/agent credentials
 	// or the control token to arbitrary project scripts.
 	cmd.Env = append(safeBaseEnv(),
 		"KANBAN_EVENT="+event,
-		"KANBAN_CARD_ID="+card.ID,
-		"KANBAN_CARD_TITLE="+card.Name,
+		"KANBAN_CARD_ID="+string(card.ID),
+		"KANBAN_CARD_TITLE="+card.Title,
 		"KANBAN_CARD_URL="+card.URL,
 		"KANBAN_PROJECT="+proj.Name,
 		"KANBAN_PROJECT_LABEL="+proj.Label,
@@ -199,7 +194,7 @@ func (r realHookRunner) RunHook(ctx context.Context, event string, task *Task, c
 		"KANBAN_SESSION_ID="+task.SessionID,
 		"KANBAN_WORKDIR="+workdir,
 		"KANBAN_HOOK_RESULT_FD=3",
-		"KANBAN_CARD_LABELS="+strings.Join(labelNames, ","),
+		"KANBAN_CARD_LABELS="+strings.Join(card.Labels, ","),
 	)
 
 	if err := cmd.Start(); err != nil {

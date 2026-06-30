@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -22,31 +23,16 @@ type controlCardJSON struct {
 	Labels []string `json:"labels"`
 }
 
-// cardToJSON converts a trelloCard to the control API JSON shape.
-func (s *Server) cardToJSON(card trelloCard) controlCardJSON {
-	labels := make([]string, 0, len(card.Labels))
-	for _, l := range card.Labels {
-		labels = append(labels, l.Name)
-	}
-	listName := s.listNameFor(card.IDList)
+// cardToControlJSON converts a CardSnapshot to the control API JSON shape.
+func cardToControlJSON(card CardSnapshot) controlCardJSON {
 	return controlCardJSON{
-		ID:     card.ID,
-		Name:   card.Name,
-		Desc:   card.Desc,
+		ID:     string(card.ID),
+		Name:   card.Title,
+		Desc:   card.Description,
 		URL:    card.URL,
-		List:   listName,
-		Labels: labels,
+		List:   card.List,
+		Labels: append([]string(nil), card.Labels...),
 	}
-}
-
-// listNameFor returns the logical list name ("todo"/"doing"/"done") for a Trello list ID.
-func (s *Server) listNameFor(listID string) string {
-	for name, id := range s.cfg.TrelloLists {
-		if id == listID {
-			return name
-		}
-	}
-	return ""
 }
 
 // registerControlRoutes adds Control API handlers to the mux.
@@ -89,11 +75,10 @@ func (s *Server) controlAuditLog(op, cardID, target string) {
 func (s *Server) handleControlListLists(w http.ResponseWriter, r *http.Request) {
 	type listItem struct {
 		Name string `json:"name"`
-		ID   string `json:"id"`
 	}
 	var lists []listItem
-	for name, id := range s.cfg.TrelloLists {
-		lists = append(lists, listItem{Name: name, ID: id})
+	for name := range s.cfg.TrelloLists {
+		lists = append(lists, listItem{Name: name})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lists": lists})
 }
@@ -102,31 +87,30 @@ func (s *Server) handleControlListLists(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleControlListCards(w http.ResponseWriter, r *http.Request) {
 	listName := r.URL.Query().Get("list")
-	listID := s.cfg.TrelloLists[listName]
-	if listID == "" {
+	if _, ok := s.cfg.TrelloLists[listName]; !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown list: " + listName})
 		return
 	}
-	cards, err := s.trelloListCards(r.Context(), listID)
+	cards, err := s.board.ListCards(r.Context(), listName)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	result := make([]controlCardJSON, 0, len(cards))
 	for _, c := range cards {
-		result = append(result, s.cardToJSON(c))
+		result = append(result, cardToControlJSON(c))
 	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleControlShowCard(w http.ResponseWriter, r *http.Request) {
-	cardID := r.PathValue("id")
-	card, err := s.trelloGetCard(r.Context(), cardID)
+	cardID := CardID(r.PathValue("id"))
+	card, err := s.board.GetCard(r.Context(), cardID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.cardToJSON(card))
+	writeJSON(w, http.StatusOK, cardToControlJSON(card))
 }
 
 func (s *Server) handleControlCreateCard(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +145,7 @@ func (s *Server) handleControlCreateCard(w http.ResponseWriter, r *http.Request)
 		tasksCopy := make(map[string]*Task, len(s.tasks))
 		for k, v := range s.tasks {
 			t := *v
-			tasksCopy[k] = &t
+			tasksCopy[string(k)] = &t
 		}
 		s.mu.Unlock()
 		var err error
@@ -175,21 +159,20 @@ func (s *Server) handleControlCreateCard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Collect label IDs.
-	labelIDs, err := s.resolveLabelIDsForCreate(r.Context(), proj, req.Agent, req.Labels)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
+	// Collect label names for the new card.
+	labelNames := collectCreateLabels(proj, req.Agent, req.Labels)
 
-	todoID := s.cfg.TrelloLists["todo"]
-	card, err := s.trelloCreateCard(r.Context(), todoID, req.Title, req.Description, labelIDs)
+	card, err := s.board.CreateCard(r.Context(), "todo", req.Title, req.Description, labelNames)
 	if err != nil {
+		if errors.Is(err, ErrUnknownLabel) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	s.controlAuditLog("create_card", card.ID, "todo proj="+proj.Name)
-	writeJSON(w, http.StatusCreated, s.cardToJSON(card))
+	s.controlAuditLog("create_card", string(card.ID), "todo proj="+proj.Name)
+	writeJSON(w, http.StatusCreated, cardToControlJSON(card))
 }
 
 func (s *Server) handleControlMoveCard(w http.ResponseWriter, r *http.Request) {
@@ -201,12 +184,11 @@ func (s *Server) handleControlMoveCard(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 		return
 	}
-	listID := s.cfg.TrelloLists[req.List]
-	if listID == "" {
+	if _, ok := s.cfg.TrelloLists[req.List]; !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown list: " + req.List})
 		return
 	}
-	if err := s.trelloMoveCard(r.Context(), cardID, listID); err != nil {
+	if err := s.board.MoveCard(r.Context(), CardID(cardID), req.List); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -227,7 +209,7 @@ func (s *Server) handleControlAddComment(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("comment exceeds max length %d", controlMaxCommentLen)})
 		return
 	}
-	if err := s.trelloAddComment(r.Context(), cardID, req.Text); err != nil {
+	if err := s.board.AddComment(r.Context(), CardID(cardID), req.Text); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -248,12 +230,11 @@ func (s *Server) handleControlAddLabel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "label is required"})
 		return
 	}
-	labelID, err := s.resolveLabelID(r.Context(), req.Label)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown label: " + req.Label})
-		return
-	}
-	if err := s.trelloAddLabel(r.Context(), cardID, labelID); err != nil {
+	if err := s.board.AddLabel(r.Context(), CardID(cardID), req.Label); err != nil {
+		if errors.Is(err, ErrUnknownLabel) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown label: " + req.Label})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -268,12 +249,11 @@ func (s *Server) handleControlRemoveLabel(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "label name is required"})
 		return
 	}
-	labelID, err := s.resolveLabelID(r.Context(), labelName)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown label: " + labelName})
-		return
-	}
-	if err := s.trelloRemoveLabel(r.Context(), cardID, labelID); err != nil {
+	if err := s.board.RemoveLabel(r.Context(), CardID(cardID), labelName); err != nil {
+		if errors.Is(err, ErrUnknownLabel) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown label: " + labelName})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -378,37 +358,21 @@ func pathContainsDir(root, dir string) bool {
 	return strings.HasPrefix(dir, root+string(filepath.Separator))
 }
 
-// resolveLabelIDsForCreate collects Trello label IDs for a new todo card.
-func (s *Server) resolveLabelIDsForCreate(ctx context.Context, proj AllowedProject, agentName string, extraLabels []string) ([]string, error) {
-	var ids []string
-
-	// proj:* label
+// collectCreateLabels assembles the label name list for a new todo card.
+func collectCreateLabels(proj AllowedProject, agentName string, extraLabels []string) []string {
+	var labels []string
 	if proj.Label != "" {
-		id, err := s.resolveLabelID(ctx, proj.Label)
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve proj label %q: %w", proj.Label, err)
-		}
-		ids = append(ids, id)
+		labels = append(labels, proj.Label)
 	}
-
-	// agent:* label (optional)
 	if agentName != "" {
-		agentLabel := "agent:" + agentName
-		id, err := s.resolveLabelID(ctx, agentLabel)
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve agent label %q: %w", agentLabel, err)
-		}
-		ids = append(ids, id)
+		labels = append(labels, "agent:"+agentName)
 	}
+	labels = append(labels, extraLabels...)
+	return labels
+}
 
-	// extra labels (non-proj labels like "attention")
-	for _, labelName := range extraLabels {
-		id, err := s.resolveLabelID(ctx, labelName)
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve label %q: %w", labelName, err)
-		}
-		ids = append(ids, id)
-	}
-
-	return ids, nil
+// controlShowCardDirect fetches a card from the board for the Control API show endpoint.
+// Exists as a thin wrapper to allow easy injection in tests if needed.
+func (s *Server) controlShowCardDirect(ctx context.Context, id CardID) (CardSnapshot, error) {
+	return s.board.GetCard(ctx, id)
 }
