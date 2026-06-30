@@ -24,6 +24,8 @@ type fakeBoardGateway struct {
 	cardsByList  map[string][]CardSnapshot
 	knownLabels  map[string]bool
 	listCardsErr error // if non-nil, ListCards returns this error
+	moveErr      error // if non-nil, MoveCard returns this error
+	commentErr   error // if non-nil, AddComment returns this error
 	labelErr     error // if non-nil, label mutations return this error
 	createErr    error // if non-nil, CreateCard returns this error
 }
@@ -80,6 +82,9 @@ func (f *fakeBoardGateway) GetCard(_ context.Context, id CardID) (CardSnapshot, 
 func (f *fakeBoardGateway) MoveCard(_ context.Context, id CardID, listName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.moveErr != nil {
+		return f.moveErr
+	}
 	f.moves = append(f.moves, moveRec{cardID: id, list: listName})
 	return nil
 }
@@ -87,6 +92,9 @@ func (f *fakeBoardGateway) MoveCard(_ context.Context, id CardID, listName strin
 func (f *fakeBoardGateway) AddComment(_ context.Context, _ CardID, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.commentErr != nil {
+		return f.commentErr
+	}
 	f.comments = append(f.comments, text)
 	return nil
 }

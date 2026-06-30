@@ -732,7 +732,7 @@ Cannot start task: failed to send initial prompt for session <session_id>, proj 
 - 已设置 summary 的 task 不重复发送 summary prompt；只等待下一次 finish 或 timeout。
 - `session_new` hook 只在 pending task 阶段运行一次；pending task 占用容量。失败后销毁 pending task 并释放容量，避免下一轮重复创建同一个 pending task。
 - `session_finish` 和 `session_abort` hook 失败不阻止 task 销毁，避免卡片因项目脚本失败而永久占用容量。
-- Trello move 或 comment 失败时应记录错误，下一轮 timer 重试安全流程。
+- BoardGateway 写失败必须记录错误。对需要把卡片移到 `done` 的终态流程，`move done` 是释放 task 的前置条件：如果 move 失败，不得销毁 task 或释放容量，下一轮 timer 继续重试；`attention`/comment 写失败只记录日志，不阻止已经成功完成关键状态迁移的 task 释放。
 - agent create session 失败时，必须把卡片移到 `done`、添加 `attention`、写 comment 并释放 pending task，避免 `doing.in` 循环重试。
 - agent create session 成功但 send initial prompt 失败时，应尽量 abort session，并把卡片移到 `done`、添加 `attention`、写 comment、释放 pending task。
 - agent create session 成功但写 task 失败时，应尽量 abort session 并写错误日志。

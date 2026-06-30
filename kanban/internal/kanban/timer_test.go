@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -306,6 +307,31 @@ func TestCheckOneFinishSummaryAbnormal(t *testing.T) {
 	}
 	if len(board.labelAdds) != 1 {
 		t.Errorf("attention should be added, labelAdds=%v", board.labelAdds)
+	}
+}
+
+func TestCheckOneFinishAbnormalMoveFailureKeepsTask(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.moveErr = errors.New("move failed")
+	s := newTestServer(t, board)
+	fakeDriver := s.drivers["test-agent"].(*fakeAgentDriver)
+	fakeDriver.state = AgentState{Kind: "failed", RawFinish: "error"}
+
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent"}
+	s.totalCount = 1
+
+	s.checkOneFinish(context.Background(), "c1", time.Now())
+
+	if _, ok := s.tasks["c1"]; !ok {
+		t.Error("task should remain when move-to-done fails")
+	}
+	if s.totalCount != 1 {
+		t.Errorf("totalCount=%d, want 1", s.totalCount)
+	}
+	board.mu.Lock()
+	defer board.mu.Unlock()
+	if len(board.labelAdds) != 0 || len(board.comments) != 0 {
+		t.Errorf("label/comment should wait until move succeeds, labels=%v comments=%v", board.labelAdds, board.comments)
 	}
 }
 
@@ -626,6 +652,45 @@ func TestCheckOneTimeoutSummary(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected 'Summary timeout' comment, got %v", board.comments)
+	}
+}
+
+func TestCheckOneTimeoutSummaryMoveFailureKeepsTask(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.moveErr = errors.New("move failed")
+	s := newTestServer(t, board)
+	s.cfg.SummaryTimeout = time.Millisecond
+
+	sumTime := time.Now().Add(-time.Second)
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Summary: &sumTime}
+	s.totalCount = 1
+	s.projCount["default"] = 1
+
+	s.checkOneTimeout(context.Background(), "c1", time.Now())
+
+	if _, ok := s.tasks["c1"]; !ok {
+		t.Error("task should remain when summary timeout move-to-done fails")
+	}
+	if s.totalCount != 1 {
+		t.Errorf("totalCount=%d, want 1", s.totalCount)
+	}
+}
+
+func TestCheckOneTimeoutSummaryCommentFailureReleasesTask(t *testing.T) {
+	board := newFakeBoardGateway()
+	board.commentErr = errors.New("comment failed")
+	s := newTestServer(t, board)
+	s.cfg.SummaryTimeout = time.Millisecond
+
+	sumTime := time.Now().Add(-time.Second)
+	s.tasks["c1"] = &Task{CardID: "c1", SessionID: "ses1", Proj: "default", Agent: "test-agent", Summary: &sumTime}
+	s.totalCount = 1
+	s.projCount["default"] = 1
+
+	s.checkOneTimeout(context.Background(), "c1", time.Now())
+
+	if _, ok := s.tasks["c1"]; ok {
+		t.Error("task should be destroyed when move succeeds even if comment fails")
 	}
 }
 
