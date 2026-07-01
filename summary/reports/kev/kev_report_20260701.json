@@ -1,0 +1,1111 @@
+{
+  "generated_at_utc": "2026-07-01T05:55:16.871355+00:00",
+  "window_days": 31,
+  "inventory_count": 0,
+  "kev_entries_in_window": 23,
+  "report_count": 23,
+  "rows": [
+    {
+      "cve_id": "CVE-2026-48558",
+      "date_added": "2026-06-29",
+      "kev_vendor_project": "SimpleHelp",
+      "kev_product": "SimpleHelp",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-02",
+      "kev_notes": "https://simple-help.com/security/simplehelp-security-update-2026-05 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-48558",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "simple-help:simplehelp",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.5.16",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "simple-help:simplehelp",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-12569",
+      "date_added": "2026-06-25",
+      "kev_vendor_project": "PTC",
+      "kev_product": "Windchill and FlexPLM",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-28",
+      "kev_notes": "https://www.ptc.com/en/support/article/CS473270 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-12569",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "ptc:flexplm",
+          "ecosystem": "cpe",
+          "min_safe_version": ">11.0m030",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ptc:flexplm",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ptc:windchill_pdmlink",
+          "ecosystem": "cpe",
+          "min_safe_version": "11.0m030",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ptc:windchill_pdmlink",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20230",
+      "date_added": "2026-06-25",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Unified Communications Manager",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-28",
+      "kev_notes": "https://www.cisco.com/c/en/us/support/docs/csa/cisco-sa-cucm-ssrf-cXPnHcW.html ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-20230",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cisco:unified_communications_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "14su6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:unified_communications_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": ">15su4a",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2025-67038",
+      "date_added": "2026-06-23",
+      "kev_vendor_project": "Lantronix",
+      "kev_product": "EDS5000",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-26",
+      "kev_notes": "https://ltrxdev.atlassian.net/wiki/spaces/LTRXTS/pages/2538438657/Latest+Firmware+for+the+EDS5000+series+EDS5008+EDS5016+EDS5032 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2025-67038",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "lantronix:eds5032_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "lantronix:eds5008_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "lantronix:eds5016_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-34910",
+      "date_added": "2026-06-23",
+      "kev_vendor_project": "Ubiquiti",
+      "kev_product": "UniFi OS",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-26",
+      "kev_notes": "https://community.ui.com/releases/Security-Advisory-Bulletin-064-064/84811c09-4cf4-42ab-bd61-cc994445963b ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-34910",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "ui:unifi_os_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_industrial_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_special_edition_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_fortress_gateway_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_wall_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_express_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_instant_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_ultra_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_fiber_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_5g_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_core_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_key_plus_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_enterprise_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_beast_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.11",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_8_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-34909",
+      "date_added": "2026-06-23",
+      "kev_vendor_project": "Ubiquiti",
+      "kev_product": "UniFi OS",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-26",
+      "kev_notes": "https://community.ui.com/releases/Security-Advisory-Bulletin-064-064/84811c09-4cf4-42ab-bd61-cc994445963b ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-34909",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "ui:unifi_os_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_industrial_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_special_edition_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_fortress_gateway_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_wall_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_express_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_instant_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_ultra_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_fiber_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_5g_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_core_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_key_plus_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_enterprise_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_beast_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.11",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_8_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_express_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "4.0.14",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-34908",
+      "date_added": "2026-06-23",
+      "kev_vendor_project": "Ubiquiti",
+      "kev_product": "UniFi OS",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-26",
+      "kev_notes": "https://community.ui.com/releases/Security-Advisory-Bulletin-064-064/84811c09-4cf4-42ab-bd61-cc994445963b ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-34908",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "ui:unifi_os_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_industrial_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_special_edition_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_pro_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_fortress_gateway_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_wall_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_express_7_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_instant_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_ultra_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_gateway_fiber_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_router_5g_max_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:enterprise_network_video_recorder_core_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloud_key_plus_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_cloudkey_enterprise_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_network_video_recorder_g2_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.12",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unifi_dream_machine_beast_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.11",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_2_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_4_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "ui:unas_pro_8_firmware",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.1.10",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20253",
+      "date_added": "2026-06-18",
+      "kev_vendor_project": "Splunk",
+      "kev_product": "Enterprise",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-21",
+      "kev_notes": "https://advisory.splunk.com/advisories/SVD-2026-0603 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-20253",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "splunk:splunk",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.0.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "splunk:splunk",
+          "ecosystem": "cpe",
+          "min_safe_version": "10.2.4",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-48907",
+      "date_added": "2026-06-16",
+      "kev_vendor_project": "Widget Factory",
+      "kev_product": "Joomla Content Editor",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-19",
+      "kev_notes": "https://www.joomlacontenteditor.net/news/jce-security-update-and-a-free-patch-for-older-sites ; https://www.joomlacontenteditor.net/support/changelog/editor ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-48907",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "widgetfactorylimited:jce",
+          "ecosystem": "cpe",
+          "min_safe_version": "2.9.99.5",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-54420",
+      "date_added": "2026-06-15",
+      "kev_vendor_project": "LiteSpeed",
+      "kev_product": "cPanel Plugin",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-18",
+      "kev_notes": "https://blog.litespeedtech.com/2026/06/01/security-update-for-litespeed-cpanel-plugin-2/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-54420",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "litespeedtech:litespeed_cpanel_plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "2.4.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "litespeedtech:litespeed_whm_plugin",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.3.2.0",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-20262",
+      "date_added": "2026-06-15",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN Manager",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-29",
+      "kev_notes": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-arbfw-c2rZvQ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-20262",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.9.9.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.7.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.4.5",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.5.3",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.18.3.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1.1.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-35273",
+      "date_added": "2026-06-12",
+      "kev_vendor_project": "Oracle",
+      "kev_product": "PeopleSoft Enterprise PeopleTools",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-15",
+      "kev_notes": "https://www.oracle.com/security-alerts/alert-cve-2026-35273.html ; https://support.oracle.com/signin/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-35273",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-10520",
+      "date_added": "2026-06-11",
+      "kev_vendor_project": "Ivanti",
+      "kev_product": "Sentry",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-06-14",
+      "kev_notes": "https://hub.ivanti.com/s/article/Security-Advisory-Ivanti-Sentry-CVE-2026-10520-CVE-2026-10523?language=en_US ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-10520",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-11645",
+      "date_added": "2026-06-09",
+      "kev_vendor_project": "Google",
+      "kev_product": "Chromium V8",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-23",
+      "kev_notes": "https://chromereleases.googleblog.com/2026/06/stable-channel-update-for-desktop_0153744567.html ; https://issues.chromium.org/issues/506689381 ; https://nvd.nist.gov/vuln/detail/CVE-2026-11645",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-7473",
+      "date_added": "2026-06-09",
+      "kev_vendor_project": "Arista",
+      "kev_product": "Extensible Operating System",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-23",
+      "kev_notes": "https://www.arista.com/en/support/advisories-notices/security-advisory/24005-security-advisory-0137 ; https://nvd.nist.gov/vuln/detail/CVE-2026-7473",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-20245",
+      "date_added": "2026-06-09",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "Catalyst SD-WAN Manager",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-23",
+      "kev_notes": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sdwan-privesc-4uxFrdzx ; https://nvd.nist.gov/vuln/detail/CVE-2026-20245",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.9.9.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.5.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.6.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.4.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.5.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.18.2.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1.1.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:catalyst_sd-wan_manager",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.9.9.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.5.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.12.6.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.4.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.15.5.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "20.18.2.2",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "26.1.1.1",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "cisco:sd-wan_vsmart_controller",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-42271",
+      "date_added": "2026-06-08",
+      "kev_vendor_project": "BerriAI",
+      "kev_product": "LiteLLM",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-22",
+      "kev_notes": "This vulnerability affects a common open-source component, third-party library, or a protocol used by different products. Please check with specific vendors for information on patching status. For more information, please see: https://github.com/BerriAI/litellm/security/advisories/GHSA-v4p8-mg3p-g94g ; https://github.com/BerriAI/litellm/releases/tag/v1.83.7-stable ; https://nvd.nist.gov/vuln/detail/CVE-2026-42271",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "litellm:litellm",
+          "ecosystem": "cpe",
+          "min_safe_version": "1.83.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "redhat:openshift_ai",
+          "ecosystem": "cpe",
+          "min_safe_version": "2.25.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "redhat:openshift_ai",
+          "ecosystem": "cpe",
+          "min_safe_version": "3.3.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "redhat:openshift_ai",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-50751",
+      "date_added": "2026-06-08",
+      "kev_vendor_project": "Check Point",
+      "kev_product": "Security Gateway",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-11",
+      "kev_notes": "https://blog.checkpoint.com/security/check-point-releases-important-hotfix-for-vulnerabilities-in-deprecated-ikev1-vpn-protocol/ ; https://support.checkpoint.com/results/sk/sk185033?_gl=1*1wqeqhc*_gcl_au*MTI1MzE5MjI2LjE3ODA5MzQ1NTM. ; https://nvd.nist.gov/vuln/detail/CVE-2026-50751",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-28318",
+      "date_added": "2026-06-05",
+      "kev_vendor_project": "SolarWinds",
+      "kev_product": "Serv-U",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-19",
+      "kev_notes": "https://www.solarwinds.com/trust-center/security-advisories/cve-2026-28318 ; https://documentation.solarwinds.com/en/success_center/servu/content/release_notes/servu_15-5-4-hotfix-1_release_notes.htm#link7 ; https://nvd.nist.gov/vuln/detail/CVE-2026-28318",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "solarwinds:serv-u",
+          "ecosystem": "cpe",
+          "min_safe_version": "15.5.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "solarwinds:serv-u",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-45247",
+      "date_added": "2026-06-03",
+      "kev_vendor_project": "Mirasvit",
+      "kev_product": "Mirasvit Full Page Cache Warmer",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-06",
+      "kev_notes": "https://mirasvit.com/package/changelog/?package=mirasvit/module-cache-warmer ; https://nvd.nist.gov/vuln/detail/CVE-2026-45247",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2022-0492",
+      "date_added": "2026-06-02",
+      "kev_vendor_project": "Linux",
+      "kev_product": "Kernel",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-05",
+      "kev_notes": "This vulnerability affects a common open-source component, third-party library, or a protocol used by different products. Please check with specific vendors for information on patching status. For more information, please see: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=24f6008564183aa120d07c03d9289519c2fe02af ; https://www.kernel.org/ ; https://nvd.nist.gov/vuln/detail/CVE-2022-0492",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2025-48595",
+      "date_added": "2026-06-02",
+      "kev_vendor_project": "Android",
+      "kev_product": "Framework",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-05",
+      "kev_notes": "https://source.android.com/docs/security/bulletin/2026/2026-06-01 ; https://nvd.nist.gov/vuln/detail/CVE-2025-48595",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "google:android",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2024-21182",
+      "date_added": "2026-06-01",
+      "kev_vendor_project": "Oracle",
+      "kev_product": "WebLogic Server",
+      "kev_required_action": "Apply mitigations per vendor instructions, follow applicable BOD 22-01 guidance for cloud services, or discontinue use of the product if mitigations are unavailable.",
+      "kev_due_date": "2026-06-04",
+      "kev_notes": "https://www.oracle.com/security-alerts/cpujul2024.html ; https://nvd.nist.gov/vuln/detail/CVE-2024-21182",
+      "matched_local_software": [],
+      "affected_software": []
+    }
+  ]
+}
