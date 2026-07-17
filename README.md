@@ -2,6 +2,7 @@
 
 * [all2txt](all2txt/): 从任意格式文件中提取纯文本。支持OCR和ASR。
 * [comfyuiapi](comfyuiapi/): 通过代码直接驱动comfyuiapi来生成和处理图片的项目。
+* [comparison](comparison/): 对比多种模型参数，选择合适模型。
 * [dkai](dkai/): 通过docker来管理AI环境的项目。
 * [elocate](elocate/): 一个面向本地文档的语义搜索工具，类似 `mlocate`，但使用向量引擎进行语义匹配。实测效果不佳，废弃。
 * [little-agent](little-agent/): 轻量级、可扩展的 Agent 框架，用于构建对话式 AI 应用。
