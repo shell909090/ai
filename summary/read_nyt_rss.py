@@ -8,6 +8,7 @@
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -22,7 +23,7 @@ from bs4 import BeautifulSoup
 import litellm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_litellm import ChatLiteLLM
 
 # HTTP 请求默认配置
@@ -39,6 +40,16 @@ DEFAULT_HEADERS = {
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
 }
+
+THINK_BLOCK_PATTERN = re.compile(
+    r"<think\b[^>]*>.*?</think\s*>", re.IGNORECASE | re.DOTALL
+)
+UNCLOSED_THINK_PATTERN = re.compile(
+    r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL
+)
+ORPHANED_THINK_END_PATTERN = re.compile(
+    r"\A.*?</think\s*>", re.IGNORECASE | re.DOTALL
+)
 
 
 def setup_logging() -> None:
@@ -58,6 +69,14 @@ def validate_api_key(model: str) -> None:
         missing = validation_result["missing_keys"]
         raise EnvironmentError(f"Don't have necessary environment {model}: {missing}")
     logging.info(f"Environment validation passed for model: {model}")
+
+
+def strip_think_blocks(text: str) -> str:
+    """移除模型输出中的思考标签及其内容。"""
+    cleaned = THINK_BLOCK_PATTERN.sub("", text)
+    cleaned = UNCLOSED_THINK_PATTERN.sub("", cleaned)
+    cleaned = ORPHANED_THINK_END_PATTERN.sub("", cleaned)
+    return cleaned.strip()
 
 
 def load_seen_links(filepath: str, max_age_days: int = 7) -> Set[str]:
@@ -434,14 +453,14 @@ def create_chain(model: str) -> Runnable:
 - 信息完整，确保读者看完摘要后无需查看原文
 - 保留重要细节和具体事例，避免空泛概括
 - 语言客观但生动，准确传达原文核心内容和语气
-- 长度约400-500字（可根据原文复杂度适当调整）
+- 长度约200-300字（可根据原文复杂度适当调整）
 
 记住：读者依赖这份摘要来替代原文，不要过度精简。""",
             ),
             ("user", "请总结以下文章：\n\n{content}"),
         ]
     )
-    return prompt | llm | StrOutputParser()
+    return prompt | llm | StrOutputParser() | RunnableLambda(strip_think_blocks)
 
 
 def _broadcast_telegram(bot_token: str, chat_ids: List[str], msg: str) -> None:
@@ -608,8 +627,8 @@ def main() -> None:
     parser.add_argument(
         "--model",
         "-m",
-        default=os.getenv("MODEL", "groq/llama-3.3-70b-versatile"),
-        help="LLM模型名称，默认从环境变量MODEL读取或使用groq/llama-3.3-70b-versatile",
+        default=os.getenv("MODEL", "groq/qwen/qwen3.6-27b"),
+        help="LLM模型名称，默认从环境变量MODEL读取或使用groq/qwen/qwen3.6-27b",
     )
     parser.add_argument(
         "--output",

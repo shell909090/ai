@@ -124,10 +124,13 @@ export TELEGRAM_CHAT_ID="123456789,987654321"
    TELEGRAM_CHAT_ID=123456789,987654321
    ```
 
-3. 加载环境变量（每次运行前）：
+3. 使用 `uv run` 执行时，uv 会自动读取当前目录的 `.env`：
    ```bash
-   source .env
+   uv run read_nyt_rss.py
    ```
+
+   直接执行 `./read_nyt_rss.py` 时仍需先运行 `source .env`。如需明确禁止
+   uv 读取 `.env`，使用 `uv run --no-env-file read_nyt_rss.py`。
 
 **注意**：`.env` 文件已被 `.gitignore` 忽略，不会提交到 git。
 
@@ -161,8 +164,8 @@ export TELEGRAM_CHAT_ID="123456789,987654321"
 ### read_nyt_rss
 
 ```bash
-# 本地测试 - 先加载环境变量
-source .env
+# uv run 会自动加载当前目录的 .env
+uv run read_nyt_rss.py
 
 # 基本用法（读取24小时内的新闻，如果配置了 Telegram 会自动推送）
 ./read_nyt_rss.py
@@ -182,7 +185,7 @@ source .env
 # 完整示例（保存到文件 + Telegram推送）
 source .env
 ./read_nyt_rss.py \
-  --model groq/llama-3.3-70b-versatile \
+  --model groq/qwen/qwen3.6-27b \
   --output nyt_daily.txt \
   --hours 24
 ```
@@ -195,11 +198,13 @@ source .env
 
 #### read_nyt_rss 参数说明
 
-- `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/llama-3.3-70b-versatile`）
+- `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/qwen/qwen3.6-27b`）
 - `--output, -o`: 输出文件路径（默认：`nyt_summary.txt`）
 - `--hours`: 时间范围（小时），只处理指定时间内的新闻（默认：49）
 - `--rss-url`: RSS feed URL（默认：`https://cn.nytimes.com/rss/`）
 - `--seen-links-file`: 已发送链接记录文件路径（默认：`seen_links.json`）
+
+模型返回的 `<think>...</think>` 思考内容会在输出前统一移除，不会写入文件、stdout 或 Telegram。
 
 ### kev_report
 
@@ -264,7 +269,7 @@ uv run kev_report.py --output-telegram --no-auto-inventory
 | `GROQ_API_KEY` | LLM API Key | `gsk_...` | Daily NYT |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` | Daily NYT、Monthly KEV |
 | `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` | Daily NYT、Monthly KEV |
-| `MODEL` | 可选，模型名称 | `groq/llama-3.3-70b-versatile` | Daily NYT |
+| `MODEL` | 可选，模型名称 | `groq/qwen/qwen3.6-27b` | Daily NYT |
 
 ### 定时运行
 
