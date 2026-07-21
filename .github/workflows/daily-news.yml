@@ -46,9 +46,11 @@ jobs:
       - name: Run news summarization
         working-directory: summary
         env:
-          # LLM API Key
+          # LLM Configuration
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          MODEL: ${{ secrets.MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: ${{ vars.OPENAI_API_BASE }}
+          MODEL: ${{ vars.MODEL }}
 
           # Telegram Configuration
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

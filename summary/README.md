@@ -260,16 +260,21 @@ uv run kev_report.py --output-telegram --no-auto-inventory
 
 ## GitHub Actions 自动化
 
-### 配置 Secrets
+### 配置 Secrets 和 Variables
 
-在 GitHub 仓库设置中配置以下 Secrets（Settings → Secrets and variables → Actions）：
+在 GitHub 仓库设置中配置以下 Secrets 和 Variables（Settings → Secrets and variables → Actions）：
 
 | Secret 名称 | 说明 | 示例 | 适用 Workflow |
 |------------|------|------|--------------|
 | `GROQ_API_KEY` | LLM API Key | `gsk_...` | Daily NYT |
+| `OPENAI_API_KEY` | OpenAI 兼容 API Key | `sk-...` | Daily NYT |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` | Daily NYT、Monthly KEV |
 | `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` | Daily NYT、Monthly KEV |
+
+| Variable 名称 | 说明 | 示例 | 适用 Workflow |
+|--------------|------|------|--------------|
 | `MODEL` | 可选，模型名称 | `groq/qwen/qwen3.6-27b` | Daily NYT |
+| `OPENAI_API_BASE` | 可选，OpenAI 兼容 API 端点 | `https://api.openai.com/v1` | Daily NYT |
 
 ### 定时运行
 
