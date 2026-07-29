@@ -1,0 +1,17 @@
+.env
+docs/tasks.md
+docs/review.md
+docs/log.md
+/bin/
+/dist/
+*.test
+coverage.out
+coverage.html
+/vendor/
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+__pycache__/
+*.pyc

@@ -1,0 +1,63 @@
+# Trello Kanban Agent — config
+#
+# Sensitive values (TRELLO_API_KEY, TRELLO_TOKEN, OPENCODE_SERVER_USERNAME,
+# OPENCODE_SERVER_PASSWORD) stay in .env and are never written here.
+
+trello:
+  board_id: "6a369a37d68f530666bce32e"
+  # Map logical list names to Trello list IDs.
+  lists:
+    todo: "todo"       # replace with actual Trello list ID
+    doing: "doing"     # replace with actual Trello list ID
+    done: "done"       # replace with actual Trello list ID
+  # Map logical label keys to Trello label names.
+  labels:
+    attention: "attention"
+
+kanban:
+  default_agent: "opencode-default"
+
+agents:
+  opencode-default:
+    type: "opencode"
+    base_url: "http://127.0.0.1:8567"
+    workdir: "/home/shell/tmp/kanban"
+    username_env: OPENCODE_SERVER_USERNAME
+    password_env: OPENCODE_SERVER_PASSWORD
+    default_model:
+      providerID: "opencode-go"
+      modelID: "minimax-m3"
+    allowed_models:
+      - label: "model:minimax-m3"
+        providerID: "opencode-go"
+        modelID: "minimax-m3"
+      - label: "model:step-3.6"
+        providerID: "stepfun"
+        modelID: "step-3.6"
+
+projects:
+  allowed:
+    - label: "proj:agent"
+      name: "agent"
+      root: "/home/shell/tmp/kanban"
+      kanban_config: ".kanban.yml"
+    - label: "proj:kanban"
+      name: "kanban"
+      root: "/home/shell/tmp/kanban"
+      kanban_config: ".kanban.yml"
+
+capacity:
+  total: 3
+  per_project: 1
+
+timer:
+  interval: 5s
+  abort_timeout: 60s
+  summary_timeout: 60s
+
+hooks:
+  default_timeout: 120s
+  max_output_bytes: 8192
+
+control:
+  token_env: KANBAN_CONTROL_TOKEN  # env var name holding the auth token; control API shares /health port
