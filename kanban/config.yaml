@@ -21,7 +21,7 @@ agents:
   opencode-default:
     type: "opencode"
     base_url: "http://127.0.0.1:8567"
-    workdir: "/home/shell/tmp/kanban"
+    workdir: "/home/shell/src/github.com/shell909090/ai/kanban"
     username_env: OPENCODE_SERVER_USERNAME
     password_env: OPENCODE_SERVER_PASSWORD
     default_model:
@@ -39,11 +39,11 @@ projects:
   allowed:
     - label: "proj:agent"
       name: "agent"
-      root: "/home/shell/tmp/kanban"
+      root: "/home/shell/src/github.com/shell909090/ai/kanban"
       kanban_config: ".kanban.yml"
     - label: "proj:kanban"
       name: "kanban"
-      root: "/home/shell/tmp/kanban"
+      root: "/home/shell/src/github.com/shell909090/ai/kanban"
       kanban_config: ".kanban.yml"
 
 capacity:
