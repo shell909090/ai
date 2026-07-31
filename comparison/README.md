@@ -12,26 +12,28 @@
 
 # 固有参数
 
-| 模型 | 发布时间 | 开放性 | 参数量 | 激活参数量 | 上下文 | 输入价格 | 输出价格 | 缓存读取 | 缓存写入 | 模型链接 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| GPT-5.6 Sol | 2026-07-09 | 闭 | -- | -- | 1M | $5 | $30 | $0.5 | $6.25 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-sol) |
-| GPT-5.6 Terra | 2026-07-09 | 闭 | -- | -- | 1M | $2 | $12 | $0.2 | $2.5 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-terra) |
-| GPT-5.6 Luna | 2026-07-09 | 闭 | -- | -- | 1M | $0.2 | $1.2 | $0.02 | $0.25 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
-| Claude Fable 5 | 2026-06-09 | 闭 | -- | -- | 1M | $10 | $50 | $1 | $12.5 | [官方](https://www.anthropic.com/news/redeploying-fable-5) |
-| Claude Opus 5 | 2026-07-24 | 闭 | -- | -- | 1M | $5 | $25 | $0.5 | $6.25 | [官方](https://www.anthropic.com/news/claude-opus-5) |
-| Claude Sonnet 5 | 2026-06-30 | 闭 | -- | -- | 1M | $2 | $10 | $0.2 | $2.5 | [官方](https://www.anthropic.com/news/claude-sonnet-5) |
-| Gemini 3.1 Pro | 2026-02-19 | 闭 | -- | -- | 1M | $2 | $12 | $0.2 | $0.375 | [官方](https://ai.google.dev/gemini-api/docs/models) |
-| Gemini 3.6 Flash | 2026-07-21 | 闭 | -- | -- | 1M | $1.5 | $7.5 | $0.15 | $0.0833 | [官方](https://ai.google.dev/gemini-api/docs/models) |
-| Grok 4.5 | 2026-07-08 | 闭 | -- | -- | 500k | $2 | $6 | $0.3 | -- | [官方](https://docs.x.ai/developers/models) |
-| Kimi K3 | 2026-07-17 | 开 | 2.8T | 104B | 1M | $3 | $15 | $0.3 | -- | [官方](https://www.kimi.com/blog/kimi-k3) |
-| GLM-5.2 | 2026-06-16 | 开 | 744B | 40B | 1M | $1.19 | $3.74 | $0.221 | -- | [官方](https://z.ai/blog/glm-5.2) |
-| DeepSeek V4 Pro（预览版 0424） | 2026-04-24 | 开 | 1.6T | 49B | 1M | $0.435 | $0.87 | $0.003625 | -- | [官方](https://api-docs.deepseek.com/news/news260424) |
-| DeepSeek V4 Flash（预览版 0424） | 2026-04-24 | 开 | 284B | 13B | 1M | $0.14 | $0.28 | $0.028 | -- | [官方](https://api-docs.deepseek.com/news/news260424) |
-| DeepSeek V4 Flash（正式版 0731） | 2026-07-31 | 开 | 284B | 13B | 1M | $0.14 | $0.28 | $0.0028 | -- | [官方](https://www.deepseek.com/) |
-| MiniMax M3 | 2026-06-02 | 开 | 428B | 23B | 1M | $0.3 | $1.2 | $0.06 | -- | [模型卡](https://huggingface.co/MiniMaxAI/MiniMax-M3) |
-| MiniMax M2.7 | 2026-03-18 | 开 | 230B | 10B | 205k | $0.25 | $1 | $0.05 | -- | [模型卡](https://huggingface.co/MiniMaxAI/MiniMax-M2.7) |
-| Qwen3.6-35B-A3B | 2026-04-15 | 开 | 36B | 3B | 262k | $0.14 | $1 | -- | -- | [模型卡](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) |
-| Qwen3.6-27B | 2026-04-21 | 开 | 27B | 27B | 262k | $0.3 | $2 | $0.15 | -- | [模型卡](https://huggingface.co/Qwen/Qwen3.6-27B) |
+| 模型 | 发布时间 | 开放性 | 参数量 | 激活参数量 | 多模态 | 上下文 | 输入价格 | 输出价格 | 缓存读取 | 缓存写入 | 模型链接 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| GPT-5.6 Sol | 2026-07-09 | 闭 | -- | -- | V | 1M | $5 | $30 | $0.5 | $6.25 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-sol) |
+| GPT-5.6 Terra | 2026-07-09 | 闭 | -- | -- | V | 1M | $2 | $12 | $0.2 | $2.5 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-terra) |
+| GPT-5.6 Luna | 2026-07-09 | 闭 | -- | -- | V | 1M | $0.2 | $1.2 | $0.02 | $0.25 | [官方](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
+| Claude Fable 5 | 2026-06-09 | 闭 | -- | -- | V | 1M | $10 | $50 | $1 | $12.5 | [官方](https://www.anthropic.com/news/redeploying-fable-5) |
+| Claude Opus 5 | 2026-07-24 | 闭 | -- | -- | V | 1M | $5 | $25 | $0.5 | $6.25 | [官方](https://www.anthropic.com/news/claude-opus-5) |
+| Claude Sonnet 5 | 2026-06-30 | 闭 | -- | -- | V | 1M | $2 | $10 | $0.2 | $2.5 | [官方](https://www.anthropic.com/news/claude-sonnet-5) |
+| Gemini 3.1 Pro | 2026-02-19 | 闭 | -- | -- | V/A | 1M | $2 | $12 | $0.2 | $0.375 | [官方](https://ai.google.dev/gemini-api/docs/models) |
+| Gemini 3.6 Flash | 2026-07-21 | 闭 | -- | -- | V/A | 1M | $1.5 | $7.5 | $0.15 | $0.0833 | [官方](https://ai.google.dev/gemini-api/docs/models) |
+| Grok 4.5 | 2026-07-08 | 闭 | -- | -- | V | 500k | $2 | $6 | $0.3 | -- | [官方](https://docs.x.ai/developers/models) |
+| Kimi K3 | 2026-07-17 | 开 | 2.8T | 104B | V | 1M | $3 | $15 | $0.3 | -- | [官方](https://www.kimi.com/blog/kimi-k3) |
+| GLM-5.2 | 2026-06-16 | 开 | 744B | 40B | -- | 1M | $1.19 | $3.74 | $0.221 | -- | [官方](https://z.ai/blog/glm-5.2) |
+| DeepSeek V4 Pro（预览版 0424） | 2026-04-24 | 开 | 1.6T | 49B | -- | 1M | $0.435 | $0.87 | $0.003625 | -- | [官方](https://api-docs.deepseek.com/news/news260424) |
+| DeepSeek V4 Flash（预览版 0424） | 2026-04-24 | 开 | 284B | 13B | -- | 1M | $0.14 | $0.28 | $0.028 | -- | [官方](https://api-docs.deepseek.com/news/news260424) |
+| DeepSeek V4 Flash（正式版 0731） | 2026-07-31 | 开 | 284B | 13B | -- | 1M | $0.14 | $0.28 | $0.0028 | -- | [官方](https://www.deepseek.com/) |
+| MiniMax M3 | 2026-06-02 | 开 | 428B | 23B | V | 1M | $0.3 | $1.2 | $0.06 | -- | [模型卡](https://huggingface.co/MiniMaxAI/MiniMax-M3) |
+| MiniMax M2.7 | 2026-03-18 | 开 | 230B | 10B | -- | 205k | $0.25 | $1 | $0.05 | -- | [模型卡](https://huggingface.co/MiniMaxAI/MiniMax-M2.7) |
+| Qwen3.6-35B-A3B | 2026-04-15 | 开 | 36B | 3B | V | 262k | $0.14 | $1 | -- | -- | [模型卡](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) |
+| Qwen3.6-27B | 2026-04-21 | 开 | 27B | 27B | V | 262k | $0.3 | $2 | $0.15 | -- | [模型卡](https://huggingface.co/Qwen/Qwen3.6-27B) |
+
+- 多模态列仅记录非文本输入：`V` 表示视觉（图像或视频），`A` 表示音频，`--` 表示仅支持文本输入。
 
 # 指标选择
 
