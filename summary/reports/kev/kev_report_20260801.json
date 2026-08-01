@@ -1,0 +1,450 @@
+{
+  "generated_at_utc": "2026-08-01T04:41:59.140891+00:00",
+  "window_days": 31,
+  "inventory_count": 0,
+  "kev_entries_in_window": 25,
+  "report_count": 25,
+  "rows": [
+    {
+      "cve_id": "CVE-2025-68686",
+      "date_added": "2026-07-27",
+      "kev_vendor_project": "Fortinet",
+      "kev_product": "FortiOS",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-08-10",
+      "kev_notes": "https://fortiguard.fortinet.com/psirt/FG-IR-25-934 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2025-68686",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "fortinet:fortios",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.4.7",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "fortinet:fortios",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.6.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-16812",
+      "date_added": "2026-07-27",
+      "kev_vendor_project": "Arista",
+      "kev_product": "VeloCloud Orchestrator",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-30",
+      "kev_notes": "https://www.arista.com/en/support/advisories-notices/security-advisory/24364-security-advisory-0144 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-16812",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "arista:velocloud_orchestrator",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.2.3.14",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:velocloud_orchestrator",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.1.3.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:velocloud_orchestrator",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.4.2.4",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "arista:velocloud_orchestrator",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-16232",
+      "date_added": "2026-07-22",
+      "kev_vendor_project": "Check Point",
+      "kev_product": "SmartConsole",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-25",
+      "kev_notes": "https://support.checkpoint.com/results/sk/sk185169/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-16232",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "checkpoint:multi-domain_security_management",
+          "ecosystem": "cpe",
+          "min_safe_version": "r81.20",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "checkpoint:multi-domain_security_management",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "checkpoint:quantum_security_management",
+          "ecosystem": "cpe",
+          "min_safe_version": "r81.20",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "checkpoint:quantum_security_management",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-50522",
+      "date_added": "2026-07-22",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-25",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-50522 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-50522",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "16.0.19725.20434",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-60137",
+      "date_added": "2026-07-21",
+      "kev_vendor_project": "WordPress",
+      "kev_product": "Core",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-08-04",
+      "kev_notes": "https://wordpress.org/news/2026/07/wordpress-7-0-2-release/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-60137",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "wordpress:wordpress",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.8.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "wordpress:wordpress",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.9.5",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "wordpress:wordpress",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.0.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-63030",
+      "date_added": "2026-07-21",
+      "kev_vendor_project": "WordPress",
+      "kev_product": "Core",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-24",
+      "kev_notes": "https://wordpress.org/news/2026/07/wordpress-7-0-2-release/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-63030",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "wordpress:wordpress",
+          "ecosystem": "cpe",
+          "min_safe_version": "6.9.5",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "wordpress:wordpress",
+          "ecosystem": "cpe",
+          "min_safe_version": "7.0.2",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-0770",
+      "date_added": "2026-07-21",
+      "kev_vendor_project": "Langflow",
+      "kev_product": "Langflow",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-24",
+      "kev_notes": "https://github.com/langflow-ai/langflow/releases/tag/v1.9.0 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-0770",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "langflow:langflow",
+          "ecosystem": "cpe",
+          "min_safe_version": ">1.7.3",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2021-27137",
+      "date_added": "2026-07-21",
+      "kev_vendor_project": "DD-WRT",
+      "kev_product": "DD-WRT",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-24",
+      "kev_notes": "This vulnerability affects a common open-source component, third-party library, proprietary implementation, or a protocol used by different products. Please check with specific vendors for information on patching status. For more information, please see: https://svn.dd-wrt.com/changeset/45724 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2021-27137",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "dd-wrt:dd-wrt",
+          "ecosystem": "cpe",
+          "min_safe_version": "45724",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-58644",
+      "date_added": "2026-07-16",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-19",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-58644 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-58644",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "16.0.19725.20434",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "microsoft:sharepoint_server",
+          "ecosystem": "cpe",
+          "min_safe_version": "unknown",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-25089",
+      "date_added": "2026-07-16",
+      "kev_vendor_project": "Fortinet",
+      "kev_product": "FortiSandbox",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-19",
+      "kev_notes": "https://fortiguard.fortinet.com/psirt/FG-IR-26-141 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-25089",
+      "matched_local_software": [],
+      "affected_software": [
+        {
+          "software": "fortinet:fortisandbox",
+          "ecosystem": "cpe",
+          "min_safe_version": ">4.2.8",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "fortinet:fortisandbox",
+          "ecosystem": "cpe",
+          "min_safe_version": "4.4.9",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "fortinet:fortisandbox",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "fortinet:fortisandbox_cloud",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.6",
+          "evidence_source": "NVD"
+        },
+        {
+          "software": "fortinet:fortisandbox_paas",
+          "ecosystem": "cpe",
+          "min_safe_version": "5.0.6",
+          "evidence_source": "NVD"
+        }
+      ]
+    },
+    {
+      "cve_id": "CVE-2026-39808",
+      "date_added": "2026-07-16",
+      "kev_vendor_project": "Fortinet",
+      "kev_product": "FortiSandbox",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-19",
+      "kev_notes": "https://fortiguard.fortinet.com/psirt/FG-IR-26-100 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-39808",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-46817",
+      "date_added": "2026-07-15",
+      "kev_vendor_project": "Oracle",
+      "kev_product": "E-Business Suite",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-18",
+      "kev_notes": "https://www.oracle.com/security-alerts/cspumay2026.html ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-46817",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2023-4346",
+      "date_added": "2026-07-15",
+      "kev_vendor_project": "KNX Association",
+      "kev_product": "KNX Protocol Connection Authorization Option 1",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-29",
+      "kev_notes": "https://www.cisa.gov/news-events/ics-advisories/icsa-23-236-01 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2023-4346",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-56155",
+      "date_added": "2026-07-14",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "Active Directory Federation Services",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-28",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-56155 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-56155; https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/decommission/adfs-decommission-guide",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-56164",
+      "date_added": "2026-07-14",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint Server",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-17",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2026-56164 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-56164",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-15409",
+      "date_added": "2026-07-14",
+      "kev_vendor_project": "SonicWall",
+      "kev_product": "SMA1000 Appliances",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-17",
+      "kev_notes": "https://psirt.global.sonicwall.com/vuln-detail/SNWLID-2026-0008 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-15409",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-15410",
+      "date_added": "2026-07-14",
+      "kev_vendor_project": "SonicWall",
+      "kev_product": "SMA1000 Appliances",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-17",
+      "kev_notes": "https://psirt.global.sonicwall.com/vuln-detail/SNWLID-2026-0008 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-15410",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2008-4128",
+      "date_added": "2026-07-13",
+      "kev_vendor_project": "Cisco",
+      "kev_product": "IOS",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-16",
+      "kev_notes": "https://www.cisco.com/c/en/us/obsolete/ios-nx-os-software/cisco-ios-software-releases-12-4-mainline.html ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2008-4128",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-56291",
+      "date_added": "2026-07-10",
+      "kev_vendor_project": "Balbooa",
+      "kev_product": "Forms",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-13",
+      "kev_notes": "https://www.balbooa.com/joomla-forms ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-56291",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-48939",
+      "date_added": "2026-07-10",
+      "kev_vendor_project": "iCagenda",
+      "kev_product": "iCagenda",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-13",
+      "kev_notes": "https://www.icagenda.com/#download ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-48939",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-48908",
+      "date_added": "2026-07-07",
+      "kev_vendor_project": "JoomShaper",
+      "kev_product": "SP Page Builder",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-10",
+      "kev_notes": "https://extensions.joomla.org/extension/sp-page-builder/ ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-48908",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-55255",
+      "date_added": "2026-07-07",
+      "kev_vendor_project": "Langflow",
+      "kev_product": "Langflow",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-10",
+      "kev_notes": "https://github.com/langflow-ai/langflow/security/advisories/GHSA-qrpv-q767-xqq2 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-55255",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-56290",
+      "date_added": "2026-07-07",
+      "kev_vendor_project": "Joomlack",
+      "kev_product": "Page Builder",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-10",
+      "kev_notes": "https://www.joomlack.fr/en/joomla-extensions/page-builder-ck ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-56290",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-48282",
+      "date_added": "2026-07-07",
+      "kev_vendor_project": "Adobe",
+      "kev_product": "ColdFusion",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-10",
+      "kev_notes": "https://helpx.adobe.com/security/products/coldfusion/apsb26-68.html ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-48282",
+      "matched_local_software": [],
+      "affected_software": []
+    },
+    {
+      "cve_id": "CVE-2026-45659",
+      "date_added": "2026-07-01",
+      "kev_vendor_project": "Microsoft",
+      "kev_product": "SharePoint Server",
+      "kev_required_action": "Apply mitigations in accordance with vendor instructions, ensuring compliance with CISA’s BOD 26-04 Prioritizing Security Updates Based on Risk (see URL in Notes) guidance and CISA’s “Forensics Triage Requirements” (see URL in Notes). Follow applicable BOD 26-04 guidance for cloud services or discontinue use of the product if mitigations are unavailable. Stakeholders are responsible for evaluating each asset's internet exposure and ensuring adherence to BOD 26-04 patching guidelines.",
+      "kev_due_date": "2026-07-04",
+      "kev_notes": "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-45659 ; BOD 26-04: https://www.cisa.gov/news-events/directives/bod-26-04-prioritizing-security-updates-based-risk ; Forensics Triage Requirements: https://www.cisa.gov/news-events/directives/bod-26-04-implementation-guidance-prioritizing-security-updates-based-risk ; https://nvd.nist.gov/vuln/detail/CVE-2026-45659",
+      "matched_local_software": [],
+      "affected_software": []
+    }
+  ]
+}
