@@ -1,0 +1,10 @@
+{
+  "backend": "opencode",
+  "opencode": {
+    "model": "opencode-go/deepseek-v4-flash",
+    "agent": "logbook"
+  },
+  "codex": {
+    "model": null
+  }
+}

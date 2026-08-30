@@ -12,3 +12,4 @@
 * [tgbot](tgbot/): 利用/loop指令，把claude code改造成可以通过IM操纵的模式。
 * [HITL-proxy](HITL-proxy/): human in the loop工具。允许AI去调用外部API。项目管理token，避免AI直接接触。同时人类二次审批。
 * [kanban](kanban/): 在 Trello 与 AI coding agent 之间调度任务和 session 的看板协调器。
+* [logbook](logbook/): 在 Codex/OpenCode session compact 或结束时生成可检索的 Markdown 工作日志。

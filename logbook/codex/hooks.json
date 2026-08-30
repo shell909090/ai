@@ -1,0 +1,29 @@
+{
+  "description": "Append compact and session-end summaries to ~/.agents/logbooks.",
+  "hooks": {
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.agents/logbook-hooks/codex_logbook.py",
+            "timeout": 600,
+            "statusMessage": "Writing session logbook"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.agents/logbook-hooks/codex_logbook.py",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}
