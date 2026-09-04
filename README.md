@@ -13,3 +13,4 @@
 * [HITL-proxy](HITL-proxy/): human in the loop工具。允许AI去调用外部API。项目管理token，避免AI直接接触。同时人类二次审批。
 * [kanban](kanban/): 在 Trello 与 AI coding agent 之间调度任务和 session 的看板协调器。
 * [logbook](logbook/): 在 Codex/OpenCode session compact 或结束时生成可检索的 Markdown 工作日志。
+* [opencode-cache-affinity](opencode-cache-affinity/): 为 OpenCode 的 GPT 请求生成稳定缓存亲和键，并按 session 统计 token 与缓存命中率。
