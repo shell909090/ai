@@ -1,9 +1,9 @@
 name: Daily NYT News Summary
 
 on:
-  # 定时触发：每天北京时间早上 9:00（UTC 1:00）
+  # 定时触发：UTC 13:00（北京时间 21:00）；结合当前约 4 小时的排队延迟，预期次日 1:00 左右执行
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 13 * * *'
 
   # 支持手动触发
   workflow_dispatch:
