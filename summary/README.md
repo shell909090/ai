@@ -55,6 +55,9 @@ uv pip install -e .
 - `OPENAI_API_BASE` - OpenAI API 自定义端点
 - 其他供应商端点配置参考 LiteLLM 文档
 
+程序启动时会自动生成一个进程级 UUID，并通过 `x-opencode-session` 请求头发送，
+以支持 OpenCode Go 的会话路由。同一次脚本运行中的所有摘要请求共用该 UUID。
+
 ### 模型选择
 
 通过环境变量或命令行参数指定模型，遵循 LiteLLM 格式：

@@ -20,6 +20,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_litellm import ChatLiteLLM
 
+from llm_config import get_llm_extra_headers
+
 # HTTP 请求默认配置
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -137,7 +139,11 @@ def create_chain(model: str) -> Runnable:
     # 验证环境变量
     validate_api_key(model)
 
-    llm = ChatLiteLLM(model=model, temperature=0)
+    llm = ChatLiteLLM(
+        model=model,
+        temperature=0,
+        extra_headers=get_llm_extra_headers(),
+    )
 
     prompt = ChatPromptTemplate.from_messages(
         [
