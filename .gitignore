@@ -4,6 +4,7 @@ __pycache__
 .venv
 *.jpg
 *.png
+!comparison/price_vs_aa.png
 .codex
 **/docs/tasks.md
 **/docs/review.md
