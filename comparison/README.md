@@ -6,13 +6,15 @@
 2. 开源最强大模型
 3. 公司可离线部署
 4. 个人低成本独立部署
-5. 闭源可执行任务廉价模型
+5. 可执行任务廉价模型
 
 其中：
 
+- 闭源最强大模型。顶尖两个：GPT-6 Astra、Claude Fable 5.1。
+- 开源最强大模型。两个：Kimi K3和GLM-5.3。
 - 公司离线部署的线，划定在了256G统一内存上。Q4量化的话，参数量大约在300-400B以下。同时，激活参数量最好在20B以下。基本只有GLM-5.3-Flash、Qwen3.8-Flash-Next和DeepSeek V4 Flash 0731。
 - 个人低成本部署的线，划定在了32G统一内存上。Q4量化的话，参数量大约在40-50B以下。基本只有Qwen3.8-27B。
-- 闭源可执行任务廉价模型，划定在了 API 输入价格低于 $0.5/百万 tokens、具备 agent 或工具执行能力，并且未归入公司或个人离线部署类别的闭源模型。当前共有2个：GPT-5.6 Luna和Gemini 3.8 Flash。上面两类列出的模型，显然也能满足廉价可执行任务要求。只不过不重复计算，因此不列入。
+- 可执行任务廉价模型，划定在 API 综合价格低于 $1.5/百万 tokens、具备 agent 或工具执行能力、且未归入上述任何类别的模型。当前共2个：Gemini 3.8 Flash和DeepSeek V4.1 Flash。
 
 # 固有参数
 
@@ -20,11 +22,8 @@
 |---|---:|---:|---:|---:|---:|---:|---|
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) | 2026-09-03 | 闭 | -- | -- | V | 1M | -- |
 | [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol) | 2026-07-09 | 闭 | -- | -- | V | 1M | -- |
-| [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) | 2026-07-09 | 闭 | -- | -- | V | 1M | -- |
-| [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) | 2026-07-09 | 闭 | -- | -- | V | 1M | -- |
 | [Claude Fable 5.1](https://www.anthropic.com/claude-fable-and-mythos-5-1) | 2026-09-01 | 闭 | -- | -- | V | 1M | -- |
 | [Claude Opus 5](https://www.anthropic.com/news/claude-opus-5) | 2026-07-24 | 闭 | -- | -- | V | 1M | -- |
-| [Claude Sonnet 5](https://www.anthropic.com/news/claude-sonnet-5) | 2026-06-30 | 闭 | -- | -- | V | 1M | -- |
 | [Gemini 3.1 Pro Preview](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview) | 2026-02-19 | 闭 | -- | -- | V/A | 1M | -- |
 | [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) | 2026-09-02 | 闭 | -- | -- | V/A | 1M | -- |
 | [Grok 4.6](https://docs.x.ai/developers/models/grok-4.6) | 2026-08-12 | 闭 | -- | -- | V | 500k | -- |
@@ -32,18 +31,14 @@
 | [Kimi K3](https://www.kimi.com/blog/kimi-k3) | 2026-07-16 | 开 | 2.8T | 104B | V | 1M | [权重](https://huggingface.co/moonshotai/Kimi-K3) · [GGUF](https://huggingface.co/unsloth/Kimi-K3-GGUF) |
 | [GLM-5.3](https://z.ai/blog/glm-5.3) | 2026-08-14 | 开 | 744B | 40B | -- | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-GGUF) |
 | [GLM-5.3-Flash](https://z.ai/blog/glm-5.3-flash) | 2026-08-26 | 开 | 320B | 18B | V | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3-Flash) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF) |
-| [DeepSeek V4 Pro 0813](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813) | 2026-08-13 | 开 | 1.6T | 49B | -- | 1M | [权重](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813) · [GGUF](https://huggingface.co/unsloth/DeepSeek-V4-Pro-0813-GGUF) |
 | [DeepSeek V4 Flash 0731](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731) | 2026-07-31 | 开 | 284B | 13B | -- | 1M | [权重](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731) · [GGUF](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF) |
 | [DeepSeek V4.1 Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) | 2026-09-10 | 开 | 552B/763B | 8B/16B | V | 1M | [权重](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash) |
-| [MiniMax M3](https://huggingface.co/MiniMaxAI/MiniMax-M3) | 2026-06-02 | 开 | 428B | 23B | V | 1M | [权重](https://huggingface.co/MiniMaxAI/MiniMax-M3) · [GGUF](https://huggingface.co/unsloth/MiniMax-M3-GGUF) |
-| [Qwen3.8-2.4T-A95B](https://qwen.ai/blog?id=qwen3.8) | 2026-08-12 | 开 | 2.4T | 95B | -- | 262k | [权重](https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B) · [GGUF](https://huggingface.co/unsloth/Qwen3.8-2.4T-A95B-GGUF) |
 | [Qwen3.8-Flash-Next](https://qwen.ai/blog?id=qwen3.8-flash-next) | 2026-08-26 | 开 | 180B | 6B | V | 262k | [权重](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) · [GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) |
 | [Qwen3.8-27B](https://qwen.ai/blog?id=qwen3.8) | 2026-08-14 | 开 | 27B | 27B | V | 262k | [权重](https://huggingface.co/Qwen/Qwen3.8-27B) · [GGUF](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) |
 
 - 多模态列仅记录非文本输入：`V` 表示视觉（图像或视频），`A` 表示音频，`--` 表示仅支持文本输入。
 - Claude Mythos 5.1 与 Claude Fable 5.1 使用同一底层模型，仅安全策略和访问范围不同；Mythos 5.1 仅通过受信任访问计划提供，因此不在表中重复计入。
 - 我们目前无法百分百确认 Qwen3.8-Flash 的底层就是 Qwen3.8-Flash-Next，但是目前有很强证据证明二者是一回事。因此表格内采用 Qwen3.8-Flash-Next 的名字和固有参数、Qwen3.8-Flash 的价格，以及 Qwen3.8-Flash-Next 的 Benchmark 分数，并将其列为开源模型。
-- 同样，我们无法百分百的确定 Qwen3.8-Max 的底层就是 Qwen3.8-2.4T-A95B，但是同样有很强的证据表明两者是一回事。
 - DeepSeek V4.1 Flash 的 552B 为 backbone 参数量，激活参数为 prefill 8B / decode 16B（因果编码器-解码器架构）；另含 196B Engram 条件记忆与视觉编码器，权重合计 763B。
 
 # API 价格
@@ -52,11 +47,8 @@
 |---|---:|---:|---:|---:|---:|---:|
 | GPT-6 Astra | \$10 | \$50 | \$1 | \$12.5 | \$47.5 | 96.8% |
 | GPT-5.6 Sol | \$4 | \$20 | \$0.4 | \$5 | \$19 | 90.3% |
-| GPT-5.6 Terra | \$2 | \$12 | \$0.2 | \$2.5 | \$9.7 | 83.8% |
-| GPT-5.6 Luna | \$0.2 | \$1.2 | \$0.02 | \$0.25 | \$0.97 | 87.5% |
 | Claude Fable 5.1 | \$10 | \$50 | \$0.25 | \$12.5 | \$32.5 | **98.8%** |
 | Claude Opus 5 | \$5 | \$25 | \$0.5 | \$6.25 | \$23.75 | **96.7%** |
-| Claude Sonnet 5 | \$2 | \$10 | \$0.2 | \$2.5 | \$9.5 | 75.9% |
 | Gemini 3.1 Pro Preview | \$2 | \$12 | \$0.2 | \$0.375 | \$7.575 | 60.7% |
 | Gemini 3.8 Flash | \$0.375 | \$1.875 | \$0.0375 | \$0.020833 | \$1.33333 | 92.4% |
 | Grok 4.6 | \$2 | \$6 | \$0.5 | -- | \$12.6 | 86.5% |
@@ -64,11 +56,8 @@
 | Kimi K3 | \$3 | \$15 | \$0.3 | -- | \$10.5 | 87.4% |
 | GLM-5.3 | \$1.4 | \$4.4 | \$0.26 | -- | \$7.04 | 91.5% |
 | GLM-5.3-Flash | \$0.15 | \$0.5 | \$0.03 | -- | \$0.8 | **98.0%** |
-| DeepSeek V4 Pro 0813 | \$1.32 / \$0.66 | \$3.96 / \$1.98 | \$0.044 / \$0.022 | -- | \$1.947 | 79.2% |
 | DeepSeek V4 Flash 0731 | \$0.30 / \$0.15 | \$1.20 / \$0.60 | \$0.006 / \$0.003 | -- | \$0.405 | 85.6% |
 | DeepSeek V4.1 Flash | \$0.30 / \$0.15 | \$1.20 / \$0.60 | \$0.006 / \$0.003 | -- | \$0.405 | **97.8%** |
-| MiniMax M3 | \$0.3 | \$1.2 | \$0.06 | -- | \$1.62 | 66.8% |
-| Qwen3.8-2.4T-A95B | \$2 | \$6 | \$0.25 | -- | \$7.6 | 81.0% |
 | Qwen3.8-Flash-Next | \$0.15 | \$0.47 | \$0.016 | \$0.2 | \$0.717 | 94.0% |
 | Qwen3.8-27B | \$0.425 | \$2.55 | \$0.085 | \$0.53125 | \$2.91125 | 72.9% |
 
@@ -99,11 +88,8 @@
 |---|---:|---:|---:|---:|---:|---:|---:|
 | GPT-6 Astra | -- | 54.1% | 88.4% | 41.4% | 54.7% | 31.7% | 53 |
 | GPT-5.6 Sol | 64.6% | -- | 88.0% | 44.3% | 49.5% | 32.3% | 47 |
-| GPT-5.6 Terra | 63.4% | -- | 88.0% | 40.2% | 42.9% | 30.0% | 42 |
-| GPT-5.6 Luna | 62.7% | -- | 80.9% | 31.1% | 39.5% | 20.6% | 38 |
 | Claude Fable 5.1 (with fallback) | -- | 62.0% | 91.4% | -- | 59.1% | 29.7% | 53 |
 | Claude Opus 5 | -- | 55.7% | 89.1% | -- | 54.9% | 29.1% | 51 |
-| Claude Sonnet 5 | 63.2% | -- | -- | -- | -- | -- | 38 |
 | Gemini 3.1 Pro Preview | 54.2% | 58.9% | 73.8% | 21.4% | 47.0% | 17.7% | 30 |
 | Gemini 3.8 Flash | -- | 56.6% | 87.6% | -- | 47.8% | 18.3% | 41 |
 | Grok 4.6 | -- | 53.6% | 88.4% | 50.7% | 42.9% | -- | 44 |
@@ -111,11 +97,8 @@
 | Kimi K3 | -- | 59.5% | 85.0% | 46.0% | 46.9% | 23.4% | 44 |
 | GLM-5.3 | -- | 59.0% | 83.9% | 50.3% | 42.3% | 19.1% | 45 |
 | GLM-5.3-Flash | -- | 51.6% | 84.3% | 47.2% | 39.9% | -- | 42 |
-| DeepSeek V4 Pro 0813 | -- | 51.0% | 87.9% | 39.6% | 41.0% | 18.0% | 36 |
 | DeepSeek V4 Flash 0731 | -- | 50.3% | 82.7% | -- | 38.6% | 16.6% | 35 |
 | DeepSeek V4.1 Flash | -- | 51.9% | 90.6% | -- | 36.8% | 14.3% | 40 |
-| MiniMax M3 | 59.0% | -- | 66.0% | 15.3% | 39.0% | 3.7% | 30 |
-| Qwen3.8-2.4T-A95B | 67.7% | -- | -- | -- | -- | -- | 40 |
 | Qwen3.8-Flash-Next | 62.5% | 50.6% | -- | -- | 38.0% | 11.1% | 40 |
 | Qwen3.8-27B | 61.7% | 46.6% | 73.0% | 48.0% | 33.9% | 5.4% | 34 |
 

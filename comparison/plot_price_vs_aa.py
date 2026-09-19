@@ -11,11 +11,8 @@ plt.rcParams["axes.unicode_minus"] = False
 data = {
     "GPT-6 Astra": (47.5, 53),
     "GPT-5.6 Sol": (19, 47),
-    "GPT-5.6 Terra": (9.7, 42),
-    "GPT-5.6 Luna": (0.97, 38),
     "Claude Fable 5.1": (32.5, 53),
     "Claude Opus 5": (23.75, 51),
-    "Claude Sonnet 5": (9.5, 38),
     "Gemini 3.1 Pro Preview": (7.575, 30),
     "Gemini 3.8 Flash": (1.33333, 41),
     "Grok 4.6": (12.6, 44),
@@ -23,11 +20,8 @@ data = {
     "Kimi K3": (10.5, 44),
     "GLM-5.3": (7.04, 45),
     "GLM-5.3-Flash": (0.8, 42),
-    "DeepSeek V4 Pro 0813": (1.947, 36),
     "DeepSeek V4 Flash 0731": (0.405, 35),
     "DeepSeek V4.1 Flash": (0.405, 40),
-    "MiniMax M3": (1.62, 30),
-    "Qwen3.8-2.4T-A95B": (7.6, 40),
     "Qwen3.8-Flash-Next": (0.717, 40),
     "Qwen3.8-27B": (2.91125, 34),
 }
