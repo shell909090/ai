@@ -406,7 +406,7 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         return 0
-    if payload.get("hook_event_name") == "SessionEnd":
+    if payload.get("hook_event_name") in {"PostCompact", "SessionEnd"}:
         return enqueue(payload)
     return process(payload)
 

@@ -8,8 +8,8 @@
           {
             "type": "command",
             "command": "~/.agents/logbook-hooks/codex_logbook.py",
-            "timeout": 600,
-            "statusMessage": "Writing session logbook"
+            "timeout": 5,
+            "statusMessage": "Queueing session logbook"
           }
         ]
       }

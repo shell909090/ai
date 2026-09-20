@@ -16,7 +16,7 @@
 
 | Agent | compact | session 结束 |
 | --- | --- | --- |
-| Codex | `PostCompact` 后增量读取 transcript，调用配置的摘要后端并追加日志 | `SessionEnd` 的 3 秒窗口内启动后台 worker，再执行同一增量流程 |
+| Codex | `PostCompact` 在 5 秒窗口内提交后台 worker，异步增量读取 transcript、生成摘要并追加日志 | `SessionEnd` 在 3 秒窗口内提交后台 worker，执行同一增量流程 |
 | OpenCode | compact 前补充摘要格式要求；`session.compacted` 后保存 OpenCode 自己生成的 summary | session 被 archive 时主动 summarize，随后通过 `session.compacted` 保存 |
 
 OpenCode 的普通 CLI/服务退出没有对应的结束事件。当前插件只把 archive 视为 session 结束；`dispose` 只等待已经开始的写入，不会为尚未 compact/archive 的 session 新建摘要。
@@ -41,7 +41,7 @@ make install-opencode
 
 如果 `~/.codex/hooks.json` 已有其他 hook，应手工合并 `codex/hooks.json`；安装目标会提示并停止。Codex 会对 hook 定义按内容 hash 记录信任；安装或修改后，在 CLI 中用 `/hooks` 检查来源并确认信任。不要复制另一台机器 `config.toml` 里的 `hooks.state`/`trusted_hash`。事件、超时和信任流程见 [Codex Hooks 官方说明](https://developers.openai.com/codex/hooks/)。
 
-Codex adapter 需要带 `fcntl` 的 Python 3，因此主要面向 Unix。`SessionEnd` 优先用 `systemd-run --user` 启动后台摘要；没有可用的 user systemd 时会退回到独立子进程。
+Codex adapter 需要带 `fcntl` 的 Python 3，因此主要面向 Unix。`PostCompact` 和 `SessionEnd` 优先用 `systemd-run --user` 启动后台摘要；没有可用的 user systemd 时会退回到独立子进程。同一 session 的 worker 使用文件锁串行处理，摘要可能在 Codex 继续运行后才写入日志。
 
 OpenCode 会自动发现全局配置目录下 `plugins/*.ts`，无需把插件写入 `opencode.json`。插件依赖 OpenCode/Bun runtime，以及当前 SDK 中的 `experimental.session.compacting`、`session.updated`、`session.compacted`、`client.session.messages` 和 `client.session.summarize` 接口；升级 OpenCode 后应重新执行一次实际 compact/archive 验证兼容性。
 
