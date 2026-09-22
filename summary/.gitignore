@@ -6,6 +6,7 @@ seen_links.json
 
 # Cache
 .cache/
+.ruff_cache/
 
 # Output files
 nyt_summary.txt

@@ -5,23 +5,24 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "httpx",
-    "beautifulsoup4",
-    "lxml",
-    "langchain-core",
-    "langchain-community",
-    "litellm>=1.83.14",
-    "langchain-litellm>=0.6.4",
-    "feedparser>=6.0.12",
+    "httpx>=0.28.1",
+    "beautifulsoup4>=4.15.0",
+    "lxml>=6.1.3",
+    "litellm>=1.102.0",
+    "feedparser>=6.0.14",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.9",
+    "ruff>=0.16.8",
+    "cognitive-complexity>=1.3.0",
 ]
 
 [tool.ruff]
 line-length = 120
+
+[tool.uv]
+prerelease = "disallow"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90"]

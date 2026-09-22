@@ -220,30 +220,32 @@ class KevSource(Source):
         start_date = today - dt.timedelta(days=window_days)
         reader = csv.DictReader(csv_text.splitlines())
         for r in reader:
-            d = (r.get("dateAdded") or "").strip()
-            if not d:
-                continue
-            try:
-                date_added = dt.datetime.strptime(d, "%Y-%m-%d").date()  # noqa: DTZ007
-            except ValueError:
-                continue
-            if not (start_date <= date_added <= today):
-                continue
-            cve_id = (r.get("cveID") or "").strip()
-            if not cve_id:
-                continue
-            entries.append(
-                VulnEntry(
-                    cve_id=cve_id,
-                    date_added=d,
-                    vendor_project=(r.get("vendorProject") or "").strip(),
-                    product=(r.get("product") or "").strip(),
-                    required_action=(r.get("requiredAction") or "").strip(),
-                    due_date=(r.get("dueDate") or "").strip(),
-                    notes=(r.get("notes") or "").strip(),
-                ),
-            )
+            entry = _parse_kev_row(r, start_date, today)
+            if entry is not None:
+                entries.append(entry)
         return entries
+
+
+def _parse_kev_row(
+    row: dict[str, Any], start_date: dt.date, today: dt.date,
+) -> VulnEntry | None:
+    fields = {
+        key: (row.get(key) or "").strip()
+        for key in (
+            "cveID", "dateAdded", "vendorProject", "product",
+            "requiredAction", "dueDate", "notes",
+        )
+    }
+    try:
+        date_added = dt.datetime.strptime(fields["dateAdded"], "%Y-%m-%d").date()  # noqa: DTZ007
+    except ValueError:
+        return None
+    if not start_date <= date_added <= today or not fields["cveID"]:
+        return None
+    return VulnEntry(
+        fields["cveID"], fields["dateAdded"], fields["vendorProject"],
+        fields["product"], fields["requiredAction"], fields["dueDate"], fields["notes"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -378,48 +380,62 @@ def _parse_inv_json(path: Path) -> list[InventoryItem]:
     data = read_json(path, {})
 
     if isinstance(data, dict) and data.get("bomFormat") == "CycloneDX":
-        return [
-            InventoryItem(
-                str(comp.get("name", "")).strip(),
-                str(comp.get("version", "")).strip(),
-                f"cyclonedx:{path.name}",
-                [str(comp[k]) for k in ("purl", "cpe") if comp.get(k)],
-            )
-            for comp in data.get("components", [])
-            if str(comp.get("name", "")).strip()
-        ]
-
+        return _inventory_cyclonedx(data, path.name)
     if isinstance(data, dict) and data.get("spdxVersion"):
-        items = []
-        for pkg in data.get("packages", []):
-            name = str(pkg.get("name", "")).strip()
-            if not name:
-                continue
-            ext = pkg.get("externalRefs", [])
-            aliases = [
-                str(r["referenceLocator"])
-                for r in (ext if isinstance(ext, list) else [])
-                if isinstance(r, dict) and r.get("referenceLocator")
-            ]
-            items.append(InventoryItem(name, str(pkg.get("versionInfo", "")).strip(), f"spdx:{path.name}", aliases))
-        return items
-
+        return _inventory_spdx(data, path.name)
     if isinstance(data, list):
-        items = []
-        for row in data:
-            if not isinstance(row, dict):
-                continue
-            name = str(row.get("name", "")).strip()
-            if not name:
-                continue
-            aliases_raw = row.get("aliases", [])
-            aliases = [str(a).strip() for a in aliases_raw if str(a).strip()] if isinstance(aliases_raw, list) else []
-            version = str(row.get("version", "")).strip()
-            source = str(row.get("source", f"file:{path.name}")).strip()
-            items.append(InventoryItem(name, version, source, aliases))
-        return items
-
+        return _inventory_generic(data, path.name)
     return []
+
+
+def _inventory_cyclonedx(data: dict[str, Any], filename: str) -> list[InventoryItem]:
+    return [
+        InventoryItem(
+            str(comp.get("name", "")).strip(),
+            str(comp.get("version", "")).strip(),
+            f"cyclonedx:{filename}",
+            [str(comp[k]) for k in ("purl", "cpe") if comp.get(k)],
+        )
+        for comp in data.get("components", [])
+        if str(comp.get("name", "")).strip()
+    ]
+
+
+def _spdx_aliases(external_refs: Any) -> list[str]:
+    if not isinstance(external_refs, list):
+        return []
+    return [
+        str(ref["referenceLocator"])
+        for ref in external_refs
+        if isinstance(ref, dict) and ref.get("referenceLocator")
+    ]
+
+
+def _inventory_spdx(data: dict[str, Any], filename: str) -> list[InventoryItem]:
+    items = []
+    for pkg in data.get("packages", []):
+        name = str(pkg.get("name", "")).strip()
+        if not name:
+            continue
+        aliases = _spdx_aliases(pkg.get("externalRefs", []))
+        items.append(InventoryItem(name, str(pkg.get("versionInfo", "")).strip(), f"spdx:{filename}", aliases))
+    return items
+
+
+def _inventory_generic(data: list[Any], filename: str) -> list[InventoryItem]:
+    items = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        aliases_raw = row.get("aliases", [])
+        aliases = [str(a).strip() for a in aliases_raw if str(a).strip()] if isinstance(aliases_raw, list) else []
+        version = str(row.get("version", "")).strip()
+        source = str(row.get("source", f"file:{filename}")).strip()
+        items.append(InventoryItem(name, version, source, aliases))
+    return items
 
 
 def _parse_inv_text(path: Path) -> list[InventoryItem]:
@@ -481,12 +497,20 @@ def _max_version_of(versions: list[str]) -> str:
     return result
 
 
-def extract_from_osv(osv: dict[str, Any]) -> list[AffectedSoftware]:
-    """Extract affected software and fixed versions from an OSV response.
+def _osv_safe_version(ranges: list[Any] | None) -> str:
+    # Each range is a branch: choose its first fix, then the highest branch fix.
+    branch_fixes: list[str] = []
+    for rng in ranges or []:
+        events = rng.get("events", []) if isinstance(rng, dict) else []
+        fixed = [str(e["fixed"]) for e in events if isinstance(e, dict) and e.get("fixed")]
+        branch_fix = pick_min_version(fixed)
+        if branch_fix:
+            branch_fixes.append(branch_fix)
+    return _max_version_of(branch_fixes)
 
-    Each range represents an affected branch; we take the min fixed within each
-    branch then the max across branches to avoid under-reporting for newer branches.
-    """
+
+def extract_from_osv(osv: dict[str, Any]) -> list[AffectedSoftware]:
+    """Extract affected software using the highest of each OSV branch's first fix."""
     out: list[AffectedSoftware] = []
     affected = osv.get("affected", []) if isinstance(osv, dict) else []
     for a in affected:
@@ -495,14 +519,7 @@ def extract_from_osv(osv: dict[str, Any]) -> list[AffectedSoftware]:
         eco = str(pkg.get("ecosystem", "")).strip()
         if not name:
             continue
-        branch_fixes: list[str] = []
-        for rng in a.get("ranges", []) or []:
-            events = rng.get("events", []) if isinstance(rng, dict) else []
-            rng_fixed = [str(e["fixed"]) for e in events if isinstance(e, dict) and e.get("fixed")]
-            branch_fix = pick_min_version(rng_fixed)
-            if branch_fix:
-                branch_fixes.append(branch_fix)
-        min_safe = _max_version_of(branch_fixes)
+        min_safe = _osv_safe_version(a.get("ranges", []))
         out.append(
             AffectedSoftware(
                 software=f"{eco}:{name}" if eco else name,
@@ -531,36 +548,38 @@ def extract_cpe_matches(node: dict[str, Any]) -> Iterable[dict[str, Any]]:
             yield from extract_cpe_matches(child)
 
 
-def extract_from_nvd(nvd: dict[str, Any]) -> list[AffectedSoftware]:
-    """Extract affected software from an NVD CVE API response."""
-    out: list[AffectedSoftware] = []
+def _nvd_nodes(nvd: dict[str, Any]) -> Iterable[dict[str, Any]]:
     vulns = nvd.get("vulnerabilities", []) if isinstance(nvd, dict) else []
     for v in vulns:
         cve = v.get("cve", {}) if isinstance(v, dict) else {}
         conf = cve.get("configurations", []) if isinstance(cve, dict) else []
         for cfg in conf:
             nodes = cfg.get("nodes", []) if isinstance(cfg, dict) else []
-            for n in nodes:
-                for m in extract_cpe_matches(n):
-                    if not m.get("vulnerable", True):
-                        continue
-                    crit = str(m.get("criteria", ""))
-                    vendor, product = parse_cpe(crit)
-                    if not product:
-                        continue
-                    min_safe = "unknown"
-                    if m.get("versionEndExcluding"):
-                        min_safe = str(m["versionEndExcluding"])
-                    elif m.get("versionEndIncluding"):
-                        min_safe = f">{m['versionEndIncluding']}"
-                    out.append(
-                        AffectedSoftware(
-                            software=f"{vendor}:{product}",
-                            ecosystem="cpe",
-                            min_safe_version=min_safe,
-                            evidence_source="NVD",
-                        ),
-                    )
+            yield from nodes
+
+
+def _nvd_affected(match: dict[str, Any]) -> AffectedSoftware | None:
+    if not match.get("vulnerable", True):
+        return None
+    vendor, product = parse_cpe(str(match.get("criteria", "")))
+    if not product:
+        return None
+    min_safe = "unknown"
+    if match.get("versionEndExcluding"):
+        min_safe = str(match["versionEndExcluding"])
+    elif match.get("versionEndIncluding"):
+        min_safe = f">{match['versionEndIncluding']}"
+    return AffectedSoftware(f"{vendor}:{product}", "cpe", min_safe, "NVD")
+
+
+def extract_from_nvd(nvd: dict[str, Any]) -> list[AffectedSoftware]:
+    """Extract affected software from an NVD CVE API response."""
+    out: list[AffectedSoftware] = []
+    for node in _nvd_nodes(nvd):
+        for match in extract_cpe_matches(node):
+            affected = _nvd_affected(match)
+            if affected is not None:
+                out.append(affected)
     return dedup_affected(out)
 
 
@@ -666,21 +685,28 @@ def build_name_index(inv: list[InventoryItem]) -> dict[str, list[InventoryItem]]
     return idx
 
 
+def _inventory_candidates(
+    name: str, inv_idx: dict[str, list[InventoryItem]],
+) -> list[InventoryItem]:
+    candidates = inv_idx.get(name, [])
+    if candidates:
+        return candidates
+    for key in inv_idx:
+        if len(name) >= _FUZZY_MIN_LEN and len(key) >= _FUZZY_MIN_LEN and (name in key or key in name):
+            candidates.extend(inv_idx[key])
+    return candidates
+
+
 def match_inventory(
     affected: list[AffectedSoftware], inv_idx: dict[str, list[InventoryItem]],
 ) -> list[str]:
     """Return local inventory items matching any affected software entry."""
     matched: dict[str, str] = {}
-    inv_keys = list(inv_idx.keys())
     for a in affected:
         n = normalize_name(a.software)
         if not n:
             continue
-        candidates = inv_idx.get(n, [])
-        if not candidates:
-            for k in inv_keys:
-                if len(n) >= _FUZZY_MIN_LEN and len(k) >= _FUZZY_MIN_LEN and (n in k or k in n):
-                    candidates.extend(inv_idx[k])
+        candidates = _inventory_candidates(n, inv_idx)
         for c in candidates:
             matched[f"{c.name}@{c.version}"] = c.source
     return [f"{k} [{v}]" for k, v in sorted(matched.items())]
@@ -786,32 +812,39 @@ def render_cve_md(
         return "\n".join(lines)
 
     for r in report_rows:
-        lines.append(f"## {r.cve_id}")
-        lines.append(f"- Date added: {r.date_added}")
-        lines.append(f"- Vendor/Product: {r.kev_vendor_project} / {r.kev_product}")
-        lines.append(f"- Required action: {r.kev_required_action}")
-        if r.kev_due_date:
-            lines.append(f"- KEV due date: {r.kev_due_date}")
-        if r.kev_notes:
-            lines.append(f"- Notes: {r.kev_notes}")
-        if r.matched_local_software:
-            lines.append("- Matched local software:")
-            for x in r.matched_local_software:
-                lines.append(f"  - {x}")
-        else:
-            lines.append("- Matched local software: none")
-        lines.append("- Affected software and minimum safe version:")
-        if r.affected_software:
-            for a in r.affected_software:
-                lines.append(
-                    f"  - {a.software} | min_safe_version={a.min_safe_version}"
-                    f" | source={a.evidence_source}",
-                )
-        else:
-            lines.append("  - unknown (no OSV/NVD mapping found)")
-        lines.append("")
+        lines.extend(_render_cve_row(r))
 
     return "\n".join(lines)
+
+
+def _render_cve_row(r: ReportRow) -> list[str]:
+    lines: list[str] = []
+    lines.append(f"## {r.cve_id}")
+    lines.append(f"- Date added: {r.date_added}")
+    lines.append(f"- Vendor/Product: {r.kev_vendor_project} / {r.kev_product}")
+    lines.append(f"- Required action: {r.kev_required_action}")
+    if r.kev_due_date:
+        lines.append(f"- KEV due date: {r.kev_due_date}")
+    if r.kev_notes:
+        lines.append(f"- Notes: {r.kev_notes}")
+    if r.matched_local_software:
+        lines.append("- Matched local software:")
+        for x in r.matched_local_software:
+            lines.append(f"  - {x}")
+    else:
+        lines.append("- Matched local software: none")
+    lines.append("- Affected software and minimum safe version:")
+    if r.affected_software:
+        for a in r.affected_software:
+            lines.append(
+                f"  - {a.software} | min_safe_version={a.min_safe_version}"
+                f" | source={a.evidence_source}",
+            )
+    else:
+        lines.append("  - unknown (no OSV/NVD mapping found)")
+    lines.append("")
+
+    return lines
 
 
 def render_summary_md(  # noqa: PLR0913

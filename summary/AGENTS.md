@@ -1,7 +1,7 @@
 # 项目核心定位
 
 功能：总结各种信息。
-技术栈：Python, langchain, litellm, uv (包管理)。
+技术栈：Python, litellm, uv (包管理)。
 
 # 代码规范
 
@@ -13,6 +13,7 @@
 * 环境使用uv管理
 * 函数的McCabe复杂度尽量不要超过10。
 * 使用 ruff 进行静态检查，配置 McCabe 复杂度阈值为 10。
+* 函数认知复杂度不得超过15，使用 `make scan` 检查复杂度及依赖漏洞。
 * 测试和构建过程使用Makefile控制
 * 每次修改源码后，如果需要，更新README.md。
 * 删除无用代码，删除头部无效import
@@ -200,7 +201,7 @@ TELEGRAM_CHAT_ID=123456789,987654321,111222333
 - `feedparser`：RSS feed 解析
 - `httpx`：HTTP 请求（文章抓取 + Telegram API 调用）
 - `beautifulsoup4 + lxml`：HTML 解析
-- `langchain + litellm`：LLM 统一接口
+- `litellm`：直接调用 LLM 统一接口，无需 LangChain
 - **无需** `python-dotenv`：手动加载环境变量
 
 # kev_report

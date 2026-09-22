@@ -5,7 +5,7 @@
 ## 技术栈
 
 - **语言**: Python 3.12+
-- **框架**: LangChain + LiteLLM
+- **LLM 调用**: 直接使用 LiteLLM，无需 LangChain
 - **LLM**: 通过 LiteLLM 统一接口支持多种供应商（OpenAI、Google Gemini、Anthropic Claude、Cohere 等）
 - **包管理**: uv
 
@@ -18,6 +18,10 @@
 ### read_nyt_rss
 
 自动读取纽约时报中文网 RSS feed，过滤出指定时间范围内（默认49小时）的新闻，并为每篇新闻生成中文摘要，最后汇总到一个文件。
+
+摘要目标为200-300字。清理思考内容后，若摘要超过400字符（含标点及内部空白），
+会携带原始提示词、文章、首次摘要和字数超限指令重新请求一次，采用两版中较短的结果。
+重摘要失败或返回空内容时保留首次摘要；不会循环重写，因此最终结果仍可能超过400字符。
 
 **处理顺序**：新闻按时间升序处理（先处理最老的，再处理新的），确保阅读顺序符合时间线。
 
@@ -328,13 +332,31 @@ uv run kev_report.py --output-telegram --no-auto-inventory
 - **编码规范**: PEP-8
 - **类型注解**: 强制执行 Type Annotations
 - **文档**: 公有函数包含简洁的单行 Docstrings
-- **复杂度**: 函数 McCabe 复杂度控制在 10 以内
+- **复杂度**: 函数 McCabe ≤10，认知复杂度 ≤15（含测试及检查脚本）
 - **静态检查**: 使用 ruff 进行代码质量检查
 - **日志**: 使用 logging 模块处理日志输出
 
 ### 测试和构建
 
-使用 Makefile 控制测试和构建过程（如已配置）。
+使用 `make lint test` 运行静态检查和测试。
+使用 `make clean` 清理 Python 字节码和 Ruff 缓存，保留虚拟环境、摘要输出及历史报告。
+
+使用 `make scan` 一次执行 McCabe、认知复杂度和 Trivy 依赖漏洞扫描。
+也可分别运行 `make complexity`（两项复杂度检查）和 `make security`。
+超过复杂度阈值或发现任意严重级别的已知漏洞时返回非零退出码。
+
+扫描前需安装 `uv` 和支持 `uv.lock` 的 `trivy` 命令（已验证 Trivy 0.74.0），
+执行 `uv sync --locked` 安装 Python 开发工具；Trivy 首次扫描及漏洞库更新需要网络。
+漏洞扫描包含开发依赖，不忽略未修复漏洞或 `.trivyignore` 条目，排除虚拟环境和缓存。
+认知复杂度使用 `cognitive-complexity` 的 Python 算法，并非 Sonar 官方完全等价实现。
+
+依赖版本记录在 `uv.lock`，配置禁止使用预发布版本。更新到约束允许的最新稳定版后重新验证：
+
+```bash
+uv lock --upgrade
+uv sync --locked
+make lint test scan
+```
 
 ### Git 规范
 
@@ -372,9 +394,9 @@ uv run kev_report.py --output-telegram --no-auto-inventory
 - `httpx` - HTTP 客户端
 - `beautifulsoup4` + `lxml` - HTML 解析
 - `feedparser` - RSS feed 解析
-- `langchain-community` - LangChain 社区集成（包含 ChatLiteLLM）
-- `langchain-core` - LangChain 核心功能
-- `litellm` - 统一的 LLM API 接口（通过 langchain-community 间接依赖）
+- `litellm` - 统一的 LLM API 接口，直接调用 `completion`，保留多供应商支持
+
+开发依赖为 `ruff` 和 `cognitive-complexity`；测试使用 Python 标准库 `unittest`。
 
 ## License
 

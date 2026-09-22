@@ -21,12 +21,7 @@ import httpx
 import feedparser
 from bs4 import BeautifulSoup
 import litellm
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import Runnable, RunnableLambda
-from langchain_litellm import ChatLiteLLM
-
-from llm_config import get_llm_extra_headers
+from llm_config import SummaryClient
 
 # HTTP 请求默认配置
 DEFAULT_USER_AGENT = (
@@ -42,6 +37,8 @@ DEFAULT_HEADERS = {
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
 }
+
+SUMMARY_REWRITE_THRESHOLD = 400
 
 THINK_BLOCK_PATTERN = re.compile(
     r"<think\b[^>]*>.*?</think\s*>", re.IGNORECASE | re.DOTALL
@@ -61,16 +58,6 @@ def setup_logging() -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
-
-
-def validate_api_key(model: str) -> None:
-    """验证LiteLLM模型所需API密钥是否存在，缺失时抛出异常"""
-    logging.info(f"Validating environment for model: {model}")
-    validation_result = litellm.validate_environment(model)
-    if validation_result["keys_in_environment"] is False:
-        missing = validation_result["missing_keys"]
-        raise EnvironmentError(f"Don't have necessary environment {model}: {missing}")
-    logging.info(f"Environment validation passed for model: {model}")
 
 
 def strip_think_blocks(text: str) -> str:
@@ -244,18 +231,50 @@ def get_article(url: str) -> Dict[str, str]:
 
 
 def read_article(
-    chain: Runnable, article: Dict[str, str], max_retries: int = 3
+    summarizer: SummaryClient, article: Dict[str, str], max_retries: int = 3
 ) -> Optional[str]:
-    """使用LLM生成文章摘要，遇到速率限制时自动重试"""
+    """生成文章摘要，超过字数阈值时重摘要一次并保留较短版本。"""
     content = article.get("content", "")
     if not content:
         logging.warning("Article content is empty")
         return None
 
+    summary = _invoke_summary(summarizer, content, max_retries)
+    if len(summary) <= SUMMARY_REWRITE_THRESHOLD:
+        return summary
+
+    logging.info("Summary exceeds %d characters: %d; rewriting", SUMMARY_REWRITE_THRESHOLD, len(summary))
+    revision_messages = [
+        {"role": "assistant", "content": summary},
+        {
+            "role": "user",
+            "content": (
+                f"字数超过限制：原始总结有{len(summary)}字。请根据原始文章重新总结，"
+                "严格控制在200-300字，保留核心事实，删去次要细节和重复表述。"
+                "只输出新的摘要，不要解释修改过程。"
+            ),
+        },
+    ]
+    try:
+        revised = _invoke_summary(summarizer, content, max_retries, revision_messages)
+    except Exception:
+        logging.warning("Failed to rewrite summary; keeping original", exc_info=True)
+        return summary
+    logging.info("Summary lengths: original=%d, revised=%d", len(summary), len(revised))
+    return revised if revised and len(revised) < len(summary) else summary
+
+
+def _invoke_summary(
+    summarizer: SummaryClient,
+    content: str,
+    max_retries: int,
+    revision_messages: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    """调用模型并在速率限制时重试，返回清理后的摘要。"""
     for attempt in range(1, max_retries + 1):
         try:
             logging.info("Generating summary with LLM")
-            return chain.invoke({"content": content})
+            return strip_think_blocks(summarizer.summarize(content, revision_messages))
         except litellm.RateLimitError as e:
             if attempt >= max_retries:
                 logging.error(f"Rate limit exceeded after {max_retries} retries: {e}")
@@ -265,7 +284,7 @@ def read_article(
         except Exception as e:
             logging.error(f"Failed to generate summary: {e}")
             raise
-    return None  # unreachable, satisfies type checker
+    return ""
 
 
 def format_output(
@@ -430,24 +449,11 @@ def send_article_to_telegram(
     return success
 
 
-def create_chain(model: str) -> Runnable:
-    """创建LangChain处理链（验证API密钥 + 配置LLM和prompt）"""
-    logging.info(f"Creating chain with model: {model}")
-
-    # 验证环境变量
-    validate_api_key(model)
-
-    llm = ChatLiteLLM(
+def create_summarizer(model: str) -> SummaryClient:
+    """创建使用新闻摘要提示词的LiteLLM客户端。"""
+    return SummaryClient(
         model=model,
-        temperature=0,
-        extra_headers=get_llm_extra_headers(),
-    )
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
+        system_prompt="""你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
 
 摘要要求：
 1. 开篇：用1-2句话清晰说明"发生了什么事"
@@ -462,11 +468,7 @@ def create_chain(model: str) -> Runnable:
 - 长度约200-300字（可根据原文复杂度适当调整）
 
 记住：读者依赖这份摘要来替代原文，不要过度精简。""",
-            ),
-            ("user", "请总结以下文章：\n\n{content}"),
-        ]
     )
-    return prompt | llm | StrOutputParser() | RunnableLambda(strip_think_blocks)
 
 
 def _broadcast_telegram(bot_token: str, chat_ids: List[str], msg: str) -> None:
@@ -479,7 +481,7 @@ def _process_single_article(
     entry: Dict,
     idx: int,
     total: int,
-    chain: Runnable,
+    summarizer: SummaryClient,
     output_file: str,
     bot_token: Optional[str],
     chat_ids: List[str],
@@ -488,7 +490,7 @@ def _process_single_article(
     try:
         logging.info(f"Processing article {idx}/{total}: {entry['title']}")
         article = get_article(entry["link"])
-        article["summary"] = read_article(chain, article)
+        article["summary"] = read_article(summarizer, article)
         output_text = format_output(article, entry["published"], entry["link"])
         write_to_file(output_text, output_file)
         print(output_text)
@@ -524,9 +526,27 @@ def _send_failure_report(
     _broadcast_telegram(bot_token, chat_ids, failure_msg)
 
 
+def _telegram_chat_ids(
+    bot_token: Optional[str], chat_id: Optional[str]
+) -> List[str]:
+    """解析完整Telegram配置中的非空推送目标。"""
+    if not bot_token or not chat_id:
+        return []
+    return [value.strip() for value in chat_id.split(",") if value.strip()]
+
+
+def _filter_unseen_entries(entries: List[Dict], seen_links: Set[str]) -> List[Dict]:
+    """按原顺序筛选未发送文章并记录跳过数量。"""
+    new_entries = [entry for entry in entries if entry["link"] not in seen_links]
+    skipped = len(entries) - len(new_entries)
+    if skipped:
+        logging.info(f"Skipped {skipped} already-sent articles")
+    return new_entries
+
+
 def process_rss_articles(
     rss_url: str,
-    chain: Runnable,
+    summarizer: SummaryClient,
     output_file: str,
     hours: int = 49,
     telegram_bot_token: Optional[str] = None,
@@ -535,13 +555,7 @@ def process_rss_articles(
 ) -> None:
     """处理RSS feed中所有符合时间范围的文章（获取、摘要、保存、推送Telegram）"""
     # 解析 Telegram Chat IDs（支持多个，逗号分隔）
-    telegram_chat_ids = []
-    if telegram_bot_token and telegram_chat_id:
-        telegram_chat_ids = [
-            chat_id.strip()
-            for chat_id in telegram_chat_id.split(",")
-            if chat_id.strip()
-        ]
+    telegram_chat_ids = _telegram_chat_ids(telegram_bot_token, telegram_chat_id)
 
     telegram_enabled = bool(telegram_bot_token and telegram_chat_ids)
     if telegram_enabled:
@@ -563,11 +577,7 @@ def process_rss_articles(
     recent_entries = filter_recent_entries(feed.entries, hours)
 
     # 跳过已发送的文章
-    new_entries = [e for e in recent_entries if e["link"] not in seen_links]
-    skipped = len(recent_entries) - len(new_entries)
-    if skipped:
-        logging.info(f"Skipped {skipped} already-sent articles")
-    recent_entries = new_entries
+    recent_entries = _filter_unseen_entries(recent_entries, seen_links)
 
     if not recent_entries:
         logging.info("No recent articles found in the RSS feed")
@@ -599,7 +609,7 @@ def process_rss_articles(
     failed_articles = []
     for idx, entry in enumerate(recent_entries, 1):
         ok = _process_single_article(
-            entry, idx, len(recent_entries), chain, output_file,
+            entry, idx, len(recent_entries), summarizer, output_file,
             telegram_bot_token if telegram_enabled else None,
             telegram_chat_ids,
         )
@@ -662,8 +672,7 @@ def main() -> None:
 
     setup_logging()
 
-    # 创建处理链
-    chain = create_chain(args.model)
+    summarizer = create_summarizer(args.model)
 
     # 读取 Telegram 配置（从环境变量）
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -678,7 +687,7 @@ def main() -> None:
     try:
         process_rss_articles(
             args.rss_url,
-            chain,
+            summarizer,
             args.output,
             args.hours,
             telegram_bot_token,

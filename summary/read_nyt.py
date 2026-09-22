@@ -14,13 +14,7 @@ from typing import Dict, Optional
 
 import httpx
 from bs4 import BeautifulSoup
-import litellm
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import Runnable
-from langchain_litellm import ChatLiteLLM
-
-from llm_config import get_llm_extra_headers
+from llm_config import SummaryClient
 
 # HTTP 请求默认配置
 DEFAULT_USER_AGENT = (
@@ -45,16 +39,6 @@ def setup_logging() -> None:
     handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
-
-
-def validate_api_key(model: str) -> None:
-    """验证LiteLLM模型所需API密钥是否存在，缺失时抛出异常"""
-    logging.info(f"Validating environment for model: {model}")
-    validation_result = litellm.validate_environment(model)
-    if validation_result["keys_in_environment"] is False:
-        missing = validation_result["missing_keys"]
-        raise EnvironmentError(f"Don't have necessary environment {model}: {missing}")
-    logging.info(f"Environment validation passed for model: {model}")
 
 
 def get_article(url: str) -> Dict[str, str]:
@@ -91,7 +75,7 @@ def get_article(url: str) -> Dict[str, str]:
         raise
 
 
-def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
+def read_article(summarizer: SummaryClient, article: Dict[str, str]) -> Optional[str]:
     """使用LLM生成文章摘要"""
     content = article.get('content', '')
     if not content:
@@ -100,7 +84,7 @@ def read_article(chain: Runnable, article: Dict[str, str]) -> Optional[str]:
 
     try:
         logging.info("Generating summary with LLM")
-        result = chain.invoke({'content': content})
+        result = summarizer.summarize(content)
         return result
     except Exception as e:
         logging.error(f"Failed to generate summary: {e}")
@@ -132,24 +116,12 @@ def write_to_file(content: str, filepath: str) -> None:
         raise
 
 
-def create_chain(model: str) -> Runnable:
-    """创建LangChain处理链（验证API密钥 + 配置LLM和prompt）"""
-    logging.info(f"Creating chain with model: {model}")
-
-    # 验证环境变量
-    validate_api_key(model)
-
-    llm = ChatLiteLLM(
+def create_summarizer(model: str) -> SummaryClient:
+    """创建摘要客户端并验证模型环境配置。"""
+    logging.info("Creating summarizer with model: %s", model)
+    return SummaryClient(
         model=model,
-        temperature=0,
-        extra_headers=get_llm_extra_headers(),
-    )
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
+        system_prompt="""你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
 
 摘要要求：
 1. 开篇：用1-2句话清晰说明"发生了什么事"
@@ -164,17 +136,15 @@ def create_chain(model: str) -> Runnable:
 - 长度约400-500字（可根据原文复杂度适当调整）
 
 记住：读者依赖这份摘要来替代原文，不要过度精简。""",
-            ),
-            ("user", "请总结以下文章：\n\n{content}"),
-        ]
     )
-    return prompt | llm | StrOutputParser()
 
 
-def process_article(url: str, chain: Runnable, output_file: Optional[str]) -> None:
+def process_article(
+    url: str, summarizer: SummaryClient, output_file: Optional[str]
+) -> None:
     """处理单篇文章的完整流程（获取、摘要、输出、保存）"""
     article = get_article(url)
-    article['summary'] = read_article(chain, article)
+    article['summary'] = read_article(summarizer, article)
 
     output_text = format_output(article)
     print(output_text)
@@ -208,11 +178,11 @@ def main() -> None:
 
     setup_logging()
 
-    chain = create_chain(args.model)
+    summarizer = create_summarizer(args.model)
 
     for url in args.rest:
         try:
-            process_article(url, chain, args.output)
+            process_article(url, summarizer, args.output)
         except Exception as e:
             logging.error(f"Failed to process article {url}: {e}")
             continue
