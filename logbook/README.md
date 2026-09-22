@@ -88,6 +88,17 @@ Codex 摘要固定包含：本阶段目标、已完成、重要文件、测试�
 
 摘要后端失败时，Codex hook 仍会写入最多 12,000 字符的可检索活动摘录。无论摘要成功与否，日志都可能包含源码片段、路径、命令参数和用户输入等敏感内容；不要把 `~/.agents/logbooks/` 自动提交到公共仓库。
 
+可在 Codex 摘要后端配置文件中增加顶层字段 `on_summary_failure_command`，指定自动摘要失败后执行的 shell 命令，例如：
+
+```json
+{
+  "backend": "opencode",
+  "on_summary_failure_command": "/absolute/path/to/notify-logbook-failure.sh"
+}
+```
+
+默认值为 `null`；未配置或空字符串也表示关闭。每次摘要失败（包括空摘要）时，后台 worker 在写入失败日志前通过 `/bin/sh -c` 执行一次命令，最长等待 30 秒。摘要成功或没有新增活动时不执行。命令使用 worker 的环境和工作目录，建议使用绝对路径；不向命令插入会话内容或模型输出。命令非零退出、无法启动或超时均不会阻止失败日志写入，诊断写入 worker 的标准错误（systemd 启动时可在 journal 查看）。
+
 排查时先看：
 
 ```sh

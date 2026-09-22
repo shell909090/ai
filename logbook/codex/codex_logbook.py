@@ -173,6 +173,26 @@ def failure_summary(error: Any, activity: str) -> str:
     return "### 自动摘要失败\n\n" + message + "\n\n### 可检索活动摘录\n\n```text\n" + truncate(activity, 12_000) + "\n```"
 
 
+def run_summary_failure_command() -> None:
+    command = CONFIG.get("on_summary_failure_command")
+    if command is None or command == "":
+        return
+    if not isinstance(command, str):
+        print("on_summary_failure_command must be a string", file=sys.stderr)
+        return
+    if not command.strip():
+        return
+    try:
+        subprocess.run(
+            ["/bin/sh", "-c", command],
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"logbook failure command failed: {exc}", file=sys.stderr)
+
+
 def summarize_with_codex(prompt: str, model: str) -> tuple[str, str | None]:
     LOG_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     with tempfile.NamedTemporaryFile(prefix=".codex-summary-", dir=LOG_ROOT, delete=False) as output:
@@ -303,7 +323,10 @@ def summarize(activity: str, session_model: str | None) -> str:
         summary, error = summarize_with_codex(prompt, model)
     else:
         summary, error = "", f"unsupported summarizer backend: {SUMMARY_BACKEND}"
-    return summary if summary else failure_summary(error or "empty summary", activity)
+    if summary:
+        return summary
+    run_summary_failure_command()
+    return failure_summary(error or "empty summary", activity)
 
 
 def header(payload: dict[str, Any], created_at: str) -> str:

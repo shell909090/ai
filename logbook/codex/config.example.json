@@ -1,5 +1,6 @@
 {
   "backend": "opencode",
+  "on_summary_failure_command": null,
   "opencode": {
     "model": "opencode-go/glm-5.3-flash",
     "agent": "logbook"
