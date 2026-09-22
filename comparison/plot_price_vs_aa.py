@@ -9,20 +9,20 @@ plt.rcParams["axes.unicode_minus"] = False
 
 # 模型: (综合价格 $/M tokens, AA指数)
 data = {
-    "GPT-6 Astra": (47.5, 53),
-    "GPT-5.6 Sol": (19, 47),
-    "Claude Fable 5.1": (32.5, 53),
-    "Claude Opus 5": (23.75, 51),
-    "Gemini 3.8 Flash": (1.33333, 41),
-    "Grok 4.7": (12.6, 46),
-    "Meta Muse Spark 1.3": (4.675, 48),
-    "MiMo v2.6 Pro": (0.594, 46),
-    "Kimi K3": (10.5, 44),
-    "GLM-5.3": (7.04, 45),
-    "GLM-5.3-Flash": (0.8, 42),
-    "DeepSeek V4.1 Flash": (0.405, 40),
-    "Qwen3.8-Flash-Next": (0.717, 40),
-    "Qwen3.8-27B": (2.91125, 34),
+    "GPT-6 Astra": (47.5, 52.7),
+    "GPT-5.6 Sol": (19, 47.0),
+    "Claude Fable 5.1": (32.5, 53.4),
+    "Claude Opus 5.5": (15, 57.6),
+    "Gemini 3.8 Flash": (1.33333, 40.9),
+    "Grok 4.7": (12.6, 46.4),
+    "Meta Muse Spark 1.3": (4.675, 48.1),
+    "MiMo v2.6 Pro": (0.594, 46.3),
+    "Kimi K3": (10.5, 43.6),
+    "GLM-5.3": (7.04, 44.8),
+    "GLM-5.3-Flash": (0.8, 41.8),
+    "DeepSeek V4.1 Flash": (0.405, 39.5),
+    "Qwen3.8-Flash-Next": (0.717, 39.8),
+    "Qwen3.8-27B": (2.91125, 33.7),
 }
 
 models = list(data)
