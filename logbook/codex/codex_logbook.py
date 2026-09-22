@@ -23,7 +23,7 @@ OPENCODE = os.environ.get("AGENT_LOGBOOK_OPENCODE_BIN", "opencode")
 MARKER_RE = re.compile(r"<!-- logbook-source-lines: (\d+)-(\d+); event: ([^ ]+) -->")
 MAX_ITEM_CHARS = 1200
 MAX_ACTIVITY_CHARS = 80_000
-DEFAULT_OPENCODE_MODEL = "opencode-go/deepseek-v4-flash"
+DEFAULT_OPENCODE_MODEL = "opencode-go/glm-5.3-flash"
 LOGBOOK_AGENT = {
     "description": "Summarize supplied activity into a logbook entry without using tools.",
     "mode": "primary",
