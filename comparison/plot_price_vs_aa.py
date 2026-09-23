@@ -10,7 +10,7 @@ plt.rcParams["axes.unicode_minus"] = False
 # 模型: (综合价格 $/M tokens, AA指数)
 data = {
     "GPT-6 Astra": (47.5, 52.7),
-    "GPT-5.6 Sol": (19, 47.0),
+    "GPT-6 Sol": (9.5, 47.5),
     "Claude Fable 5.1": (32.5, 53.4),
     "Claude Opus 5.5": (15, 57.6),
     "Gemini 3.8 Flash": (1.33333, 40.9),
