@@ -15,12 +15,11 @@ data = {
     "Claude Sonnet 5.5": (9.5, 56.0),
     "Gemini 4 Argon": (5, 52.7),
     "Grok 4.7": (12.6, 46.4),
-    "Meta Muse Spark 1.3": (4.675, 48.1),
     "MiMo v2.6 Pro": (0.594, 46.3),
     "Kimi K3": (10.5, 43.6),
     "GLM-5.3": (7.04, 44.8),
     "GLM-5.3-Flash": (0.8, 41.8),
-    "DeepSeek V4.1 Flash": (0.405, 39.5),
+    "DeepSeek V4.1 Flash 1017": (0.405, 45.1),
     "Qwen3.8-Flash-Next": (0.717, 39.8),
     "Qwen3.8-27B": (2.91125, 33.7),
 }
@@ -48,6 +47,13 @@ ss_res = np.sum((aa[pareto] - pred) ** 2)
 ss_tot = np.sum((aa[pareto] - aa[pareto].mean()) ** 2)
 r2 = 1 - ss_res / ss_tot
 print(f"拟合: AA = {a:.4f} + {b:.4f} * ln(price), R² = {r2:.3f}")
+
+raw_value = aa / (a + b * np.log(price))
+normalization = 1 / raw_value.max()
+print(f"性价比归一化系数: {normalization:.4%}")
+for i, model in enumerate(models):
+    marker = " (Pareto)" if i in pareto else ""
+    print(f"{model}: {raw_value[i] * normalization:.1%}{marker}")
 
 fig, ax = plt.subplots(figsize=(11, 7.5))
 ax.set_xscale("log")
