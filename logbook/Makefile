@@ -1,8 +1,13 @@
 PYTHON ?= python3
+NODE ?= node
+OPENCODE_CONFIG_DIR ?= $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)/opencode
+OPENCODE2_PLUGIN_DIR ?= $(OPENCODE_CONFIG_DIR)/plugins/logbook-v2
 
-.PHONY: check install install-codex install-opencode
+.PHONY: check check-codex check-opencode2 install install-codex install-opencode install-opencode1 install-opencode2
 
-check:
+check: check-codex check-opencode2
+
+check-codex:
 	$(PYTHON) -m json.tool codex/hooks.json >/dev/null
 	$(PYTHON) -m json.tool codex/config.example.json >/dev/null
 	$(PYTHON) -m unittest discover -s tests -v
@@ -22,3 +27,17 @@ install-opencode:
 	install -d -m 700 "$(HOME)/.config/opencode/plugins"
 	@test ! -e "$(HOME)/.config/opencode/plugins/logbook.ts" || cmp -s opencode/logbook.ts "$(HOME)/.config/opencode/plugins/logbook.ts" || { echo "refusing to overwrite $(HOME)/.config/opencode/plugins/logbook.ts" >&2; exit 1; }
 	install -m 600 opencode/logbook.ts "$(HOME)/.config/opencode/plugins/logbook.ts"
+
+check-opencode2:
+	$(NODE) --test opencode2/tests/*.test.mjs
+
+# Preserve the original install-opencode target as the V1 installer.
+install-opencode1: install-opencode
+
+install-opencode2:
+	@test ! -e "$(OPENCODE_CONFIG_DIR)/plugins/logbook.ts" || { echo "disable the V1 logbook.ts before installing the V2 plugin" >&2; exit 1; }
+	@for file in index.ts core.mjs package.json; do \
+		test ! -e "$(OPENCODE2_PLUGIN_DIR)/$$file" || cmp -s "opencode2/$$file" "$(OPENCODE2_PLUGIN_DIR)/$$file" || { echo "refusing to overwrite $(OPENCODE2_PLUGIN_DIR)/$$file" >&2; exit 1; }; \
+	done
+	install -d -m 700 "$(OPENCODE2_PLUGIN_DIR)"
+	install -m 600 opencode2/index.ts opencode2/core.mjs opencode2/package.json "$(OPENCODE2_PLUGIN_DIR)/"

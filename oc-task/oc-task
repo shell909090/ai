@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""Submit tasks to OpenCode 2 over HTTP, optionally waiting for their results."""
+import argparse
+import base64
+import datetime
+import json
+import math
+import os
+from pathlib import Path
+import secrets
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+class TaskError(Exception):
+    def __init__(self, message, code=1):
+        super().__init__(message)
+        self.code = code
+
+
+class StopTask(BaseException):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+def config_root():
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+
+
+def load_config():
+    path = Path(os.environ.get("OC_TASK_CONFIG", config_root() / "oc-task/config.json")).expanduser()
+    if not path.exists():
+        return {}
+    try:
+        config = json.loads(path.read_text())
+        if not isinstance(config, dict):
+            raise ValueError("expected an object")
+        return config
+    except (OSError, ValueError) as exc:
+        raise TaskError("Cannot read oc-task JSON configuration") from exc
+
+
+def credentials(env_file=None):
+    password = os.environ.get("OPENCODE_SERVER_PASSWORD")
+    if password:
+        return os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"), password
+    if env_file:
+        env_file = Path(env_file).expanduser()
+    else:
+        env_file = config_root() / "opencode/web.env.gpg"
+        if not env_file.is_file():
+            env_file = config_root() / "opencode/web.env"
+    if not env_file.is_file():
+        raise TaskError("Set OPENCODE_SERVER_PASSWORD or provide an OpenCode environment file")
+    # Load trusted shell environment files through a private pipe, never argv.
+    script = r'''
+set -e
+set -a
+if [[ "$1" == *.gpg ]]; then
+    decrypted_env=$(gpg --batch --quiet --decrypt "$1" 2>/dev/null) || exit 1
+    source /dev/stdin <<< "$decrypted_env" >/dev/null
+    unset decrypted_env
+else
+    source "$1" >/dev/null
+fi
+set +a
+exec "$2" -c 'import json,os; print(json.dumps([os.getenv("OPENCODE_SERVER_USERNAME", "opencode"),os.getenv("OPENCODE_SERVER_PASSWORD", "")]))'
+'''
+    try:
+        completed = subprocess.run(
+            ["bash", "-c", script, "oc-task-auth", str(env_file), sys.executable],
+            capture_output=True, text=True, timeout=30,
+        )
+        if completed.returncode:
+            raise TaskError("Cannot decrypt/load OpenCode environment")
+        username, password = json.loads(completed.stdout)
+        if not password:
+            raise TaskError("OPENCODE_SERVER_PASSWORD is not set")
+        return username, password
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        raise TaskError("Cannot load OpenCode credentials") from exc
+
+
+class API:
+    def __init__(self, username, password, base_url):
+        self.base_url = base_url.rstrip("/")
+        self.password = password
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.headers = {
+            "Authorization": "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode(),
+            "Content-Type": "application/json", "Accept": "application/json",
+        }
+
+    def request(self, method, path, body=None, timeout=30):
+        request = urllib.request.Request(
+            self.base_url + path, method=method, headers=self.headers,
+            data=None if body is None else json.dumps(body).encode(),
+        )
+        try:
+            with self.opener.open(request, timeout=timeout) as response:
+                if response.status == 204:
+                    return None
+                if "application/json" not in response.headers.get("Content-Type", ""):
+                    raise TaskError("API returned non-JSON data; check server/API version")
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise TaskError(f"API {method} {path.split('?')[0]} returned HTTP {exc.code}") from exc
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise TaskError(f"API {method} {path.split('?')[0]} failed ({type(exc).__name__})") from exc
+
+    def data(self, method, path, body=None, timeout=30):
+        result = self.request(method, path, body, timeout)
+        if not isinstance(result, dict) or "data" not in result:
+            raise TaskError("Unexpected OpenCode 2 API response")
+        return result["data"]
+
+
+def model_ref(value):
+    provider, separator, model = value.partition("/")
+    if not separator or not provider or not model:
+        raise TaskError("Model must use provider/model[#variant] format", 2)
+    model, separator, variant = model.partition("#")
+    if not model or (separator and not variant):
+        raise TaskError("Model and variant must not be empty", 2)
+    result = {"providerID": provider, "id": model}
+    if separator:
+        result["variant"] = variant
+    return result
+
+
+def empty_result(cleanup=False):
+    return {"session_id": None, "title": None, "status": "error", "text": "", "error": None,
+            "cleanup": {"requested": cleanup, "deleted": False, "error": None}}
+
+
+def text_of(message):
+    return "\n".join(c.get("text", "") for c in message.get("content", []) if c["type"] == "text")
+
+
+def execute(args, api):
+    result = empty_result(args.cleanup)
+    title = f"{args.name}-{datetime.datetime.now():%y%m%d}-{secrets.randbelow(10000):04d}"
+    result["title"] = title
+    result["model"] = args.model
+    started = time.monotonic()
+    deadline = started + args.timeout if args.timeout else None
+    sid = None
+    submitted = False
+    terminal = False
+    detached = False
+    status = 1
+    previous_text = ""
+    previous_message = None
+    human = args.format == "text"
+
+    def request_timeout():
+        if deadline is None:
+            return 30
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TaskError("Task timed out", 124)
+        return min(30, remaining)
+
+    def get(path):
+        return api.data("GET", path, timeout=request_timeout())
+
+    def latest(kind):
+        messages = get(f"/api/session/{sid}/message?type={kind}&order=desc&limit=1")
+        return messages[0] if messages else None
+
+    def progress(message):
+        nonlocal previous_text, previous_message
+        if not human or not message:
+            return
+        text = text_of(message)
+        if message["id"] != previous_message:
+            if previous_text:
+                print(flush=True)
+            previous_text, previous_message = "", message["id"]
+        if text != previous_text:
+            print(text[len(previous_text):] if text.startswith(previous_text) else "\n" + text,
+                  end="", flush=True)
+            previous_text = text
+
+    def stop_signal(signum, _frame):
+        raise StopTask(signum)
+
+    old_handlers = {s: signal.signal(s, stop_signal) for s in (signal.SIGINT, signal.SIGTERM)}
+    if human:
+        print(f"Task: {title}", flush=True)
+    try:
+        body = {"title": title, "location": {"directory": str(args.dir)}, "model": model_ref(args.model)}
+        if args.agent:
+            body["agent"] = args.agent
+        session = api.data("POST", "/api/session", body, timeout=request_timeout())
+        sid = session["id"]
+        result["session_id"] = sid
+        if human:
+            print(f"Session: {sid}\n", flush=True)
+        submitted = True  # A lost response does not mean the POST was not admitted.
+        api.data("POST", f"/api/session/{sid}/prompt", {"text": args.text}, timeout=request_timeout())
+        if args.background:
+            detached = True
+            result["status"] = "submitted"
+            status = 0
+            if human:
+                print(f"Submitted. Execution continues on the server.\nWeb: {args.web_url}", flush=True)
+        else:
+            while True:
+                session = get(f"/api/session/{sid}")
+                progress(latest("assistant"))
+                outcome = session.get("outcome")
+                if outcome:
+                    if outcome not in ("succeeded", "failed", "interrupted"):
+                        raise TaskError("Unknown session outcome")
+                    terminal = True
+                    result["status"] = outcome
+                    final = latest("assistant")
+                    result["text"] = text_of(final) if final else ""
+                    actual_model = (final or {}).get("model")
+                    if actual_model and actual_model.get("providerID") and actual_model.get("id"):
+                        result["model"] = actual_model["providerID"] + "/" + actual_model["id"]
+                        if actual_model.get("variant") not in (None, "default"):
+                            result["model"] += "#" + actual_model["variant"]
+                    status = {"succeeded": 0, "failed": 1, "interrupted": 130}[outcome]
+                    if status:
+                        idle = latest("idle") or {}
+                        error = idle.get("error") or (final or {}).get("error")
+                        result["error"] = (f"{error.get('type', 'error')}: {error.get('message', '')}"
+                                           if error else f"Task {outcome}")
+                    if human:
+                        print("\n\n--- Final response ---\n" + result["text"], flush=True)
+                    break
+                if get(f"/api/session/{sid}/permission"):
+                    raise TaskError("Task requires permission approval; unattended execution stopped", 3)
+                if get(f"/api/session/{sid}/form"):
+                    raise TaskError("Task requires an interactive form; unattended execution stopped", 3)
+                delay = min(1, deadline - time.monotonic()) if deadline else 1
+                if delay <= 0:
+                    raise TaskError("Task timed out", 124)
+                time.sleep(delay)
+    except StopTask as exc:
+        status = 128 + exc.signum
+        result.update(status="interrupted", error=f"Task stopped by signal {exc.signum}")
+    except (TaskError, KeyError, TypeError) as exc:
+        status = 124 if deadline and time.monotonic() >= deadline else getattr(exc, "code", 1)
+        message = "Task timed out" if status == 124 else str(exc)
+        if args.background and submitted:
+            message += f"; submission not confirmed. Check session {sid} before retrying"
+        result.update(status="error", error=message)
+    finally:
+        # Let bounded cancellation/cleanup finish even if another stop signal arrives.
+        for signum in old_handlers:
+            signal.signal(signum, signal.SIG_IGN)
+        # Detached submissions must survive client exit, including ambiguous POSTs.
+        if sid and submitted and not terminal and not args.background:
+            try:
+                api.request("POST", f"/api/session/{sid}/interrupt?resume=false", timeout=10)
+            except TaskError:
+                warning = f"Could not confirm cancellation; inspect session {sid}"
+                result["error"] = (result["error"] + "; " if result["error"] else "") + warning
+        if sid and args.cleanup:
+            try:
+                api.request("DELETE", f"/api/session/{sid}", timeout=30)
+                result["cleanup"]["deleted"] = True
+            except TaskError as exc:
+                result["cleanup"]["error"] = str(exc)
+                result["error"] = (result["error"] + "; " if result["error"] else "") + f"Cleanup failed: {exc}"
+                if status == 0:
+                    status = 1
+                    result["status"] = "error"
+        for signum, handler in old_handlers.items():
+            signal.signal(signum, handler)
+        if result["error"]:
+            result["error"] = result["error"].replace(api.password, "[redacted]")
+            print("Error: " + result["error"], file=sys.stderr, flush=True)
+        if human and not detached:
+            print(f"\nTask finished: {datetime.datetime.now().astimezone():%Y-%m-%d %H:%M:%S %Z} "
+                  f"(exit status {status}, elapsed {time.monotonic() - started:.1f}s)", flush=True)
+    return result, status
+
+
+def main():
+    try:
+        config = load_config()
+    except TaskError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-b", "--background", action="store_true", help="Submit and exit without waiting")
+    parser.add_argument("--format", choices=("text", "json"), default="text", help="Output one JSON result for callers")
+    parser.add_argument("--stdin", action="store_true", help="Read the prompt from stdin instead of arguments")
+    parser.add_argument("--agent", help="Use a server-configured agent")
+    parser.add_argument("--cleanup", action="store_true", help="Delete this newly-created session after foreground execution")
+    parser.add_argument("--dir", type=Path, default=Path(os.environ.get("OC_TASK_DIR", config.get("directory", Path.cwd()))))
+    parser.add_argument("--server", default=os.environ.get("OC_TASK_SERVER", config.get("server", "http://127.0.0.1:4096")))
+    parser.add_argument("--web-url", default=os.environ.get("OC_TASK_WEB_URL", config.get("web_url")))
+    parser.add_argument("--env-file", default=os.environ.get("OC_TASK_ENV_FILE", config.get("env_file")))
+    parser.add_argument("-m", "--model", default=os.environ.get("OC_TASK_MODEL") or os.environ.get("MODEL") or config.get("model"),
+                        help="provider/model[#variant]; environment or configuration may supply the default")
+    parser.add_argument("-n", "--name", default="定时任务")
+    parser.add_argument("--timeout", type=float, default=0, help="Foreground execution seconds; 0 means no limit")
+    parser.add_argument("prompt", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if args.prompt and args.prompt[0] == "--":
+        args.prompt = args.prompt[1:]
+    if args.stdin and args.prompt:
+        parser.error("--stdin cannot be combined with a prompt argument")
+    args.text = sys.stdin.read() if args.stdin else " ".join(args.prompt)
+    if not args.text.strip():
+        parser.error("a non-empty prompt is required")
+    if not args.model:
+        parser.error("set --model, OC_TASK_MODEL, MODEL, or the model configuration field")
+    if not args.name.strip() or not math.isfinite(args.timeout) or args.timeout < 0:
+        parser.error("name must be non-empty and timeout must be finite and non-negative")
+    if args.agent is not None and not args.agent.strip():
+        parser.error("--agent must not be empty")
+    if args.background and (args.timeout or args.cleanup):
+        parser.error("--timeout and --cleanup require foreground mode")
+    url = urllib.parse.urlsplit(args.server)
+    if url.scheme not in ("http", "https") or not url.netloc or url.username or url.password or url.query or url.fragment:
+        parser.error("--server must be an HTTP(S) URL without credentials, query or fragment")
+    args.web_url = args.web_url or args.server.rstrip("/") + "/"
+    result = empty_result(args.cleanup)
+    try:
+        model_ref(args.model)
+        args.dir = args.dir.expanduser().resolve(strict=True)
+        if not args.dir.is_dir():
+            raise TaskError("--dir must be a directory", 2)
+        result, status = execute(args, API(*credentials(args.env_file), args.server))
+    except (TaskError, OSError) as exc:
+        status = getattr(exc, "code", 1)
+        result["error"] = str(exc)
+        print(f"Error: {exc}", file=sys.stderr)
+    if args.format == "json":
+        print(json.dumps(result, ensure_ascii=False), flush=True)
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

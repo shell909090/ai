@@ -17,6 +17,64 @@ SPEC.loader.exec_module(logbook)
 
 
 class CodexLogbookTest(unittest.TestCase):
+    def test_oc_task_receives_prompt_on_stdin_and_optional_model(self):
+        result = {"status": "succeeded", "text": " summary ", "error": None,
+                  "cleanup": {"requested": True, "deleted": True, "error": None}}
+        for model in ("", "provider/model"):
+            with self.subTest(model=model), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(logbook, "LOG_ROOT", Path(directory)), \
+                    patch.object(logbook, "OC_TASK", "custom-oc-task"), \
+                    patch.object(logbook, "OPENCODE_AGENT", "logbook"), \
+                    patch.object(logbook.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(result), "")) as run:
+                self.assertEqual(logbook.summarize_with_opencode("private prompt", model), ("summary", None))
+                args, kwargs = run.call_args
+                command = args[0]
+                self.assertEqual(command[0], "custom-oc-task")
+                self.assertIn("--stdin", command)
+                self.assertIn("--cleanup", command)
+                self.assertEqual(command[command.index("--agent") + 1], "logbook")
+                self.assertNotIn("private prompt", command)
+                self.assertEqual(kwargs["input"], "private prompt")
+                self.assertNotIn("env", kwargs)
+                self.assertEqual("-m" in command, bool(model))
+                run.assert_called_once()  # cleanup belongs to oc-task
+
+    def test_default_model_label_is_not_passed_as_a_model_argument(self):
+        with patch.object(logbook, "SUMMARY_BACKEND", "opencode"), \
+                patch.object(logbook, "OPENCODE_MODEL", ""), \
+                patch.object(logbook, "RESOLVED_OPENCODE_MODEL", ""), \
+                patch.object(logbook, "summarize_with_opencode", return_value=("summary", None)) as summarize:
+            self.assertEqual(logbook.summarize("activity", "source/model"), "summary")
+            self.assertEqual(summarize.call_args.args[1], "")
+
+    def test_inherited_model_is_recorded_from_oc_task_result(self):
+        result = {"status": "succeeded", "text": "summary", "model": "provider/resolved-model",
+                  "cleanup": {"requested": True, "deleted": True, "error": None}}
+        with patch.object(logbook, "OPENCODE_MODEL", ""), \
+                patch.object(logbook.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(result), "")):
+            self.assertEqual(logbook.summarize_with_opencode("prompt", ""), ("summary", None))
+            self.assertEqual(logbook.summary_model(None), "provider/resolved-model")
+
+    def test_oc_task_rejects_unsuccessful_or_malformed_results(self):
+        cases = [
+            (0, "not JSON"),
+            (0, "[]"),
+            (0, json.dumps({"status": "failed", "text": "partial", "error": "model failed"})),
+            (0, json.dumps({"status": "submitted", "text": "partial"})),
+            (0, json.dumps({"status": "succeeded", "text": "  "})),
+            (0, json.dumps({"status": "succeeded", "text": ["invalid"]})),
+            (0, json.dumps({"status": "succeeded", "text": "summary"})),
+            (0, json.dumps({"status": "succeeded", "text": "summary", "cleanup": {"requested": True, "deleted": False, "error": "delete failed"}})),
+            (1, json.dumps({"status": "succeeded", "text": "summary", "cleanup": {"error": "delete failed"}})),
+        ]
+        for returncode, stdout in cases:
+            with self.subTest(returncode=returncode, stdout=stdout), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(logbook, "LOG_ROOT", Path(directory)), \
+                    patch.object(logbook.subprocess, "run", return_value=subprocess.CompletedProcess([], returncode, stdout, "")):
+                summary, error = logbook.summarize_with_opencode("prompt", "")
+                self.assertEqual(summary, "")
+                self.assertTrue(error)
+
     def test_failure_command_runs_only_for_failed_summaries(self):
         for backend in ("opencode", "codex"):
             for summary in ("summary", ""):
