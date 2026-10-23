@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: summary
-        run: uv sync
+        run: uv sync --locked
 
       - name: Restore seen links cache
         uses: actions/cache/restore@v4
@@ -60,7 +60,7 @@ jobs:
           LOG_LEVEL: INFO
         run: |
           HOURS=${{ github.event.inputs.hours || '49' }}
-          uv run ./read_nyt_rss.py --hours $HOURS
+          uv run --locked ./read_nyt_rss.py --hours $HOURS
 
       - name: Save seen links cache
         if: always()
