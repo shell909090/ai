@@ -15,7 +15,7 @@ data = {
     "Claude Sonnet 5.5": (9.5, 56.0),
     "Gemini 4 Argon": (5, 52.7),
     "Grok 4.7": (12.6, 46.4),
-    "Kimi K3": (10.5, 43.6),
+    "Kimi K3.1 Pro": (9, 55.1),
     "MiMo v2.6 Pro": (0.594, 46.3),
     "GLM-5.3": (7.04, 44.8),
     "DeepSeek V4.1 Flash 1017": (0.405, 45.1),
