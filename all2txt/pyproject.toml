@@ -38,3 +38,8 @@ max-complexity = 10
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=all2txt --cov-report=term-missing --cov-fail-under=75"
+
+[tool.uv]
+# unstructured caps filelock below 4; override for CVE-2026-112940.
+# Remove when upstream relaxes its constraint to allow fixed filelock releases.
+override-dependencies = ["filelock>=4.2.4,<5"]

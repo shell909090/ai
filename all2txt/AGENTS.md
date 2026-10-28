@@ -75,3 +75,7 @@
 
 - 前端测试可直接使用后端服务作为mock承接；后端应支持mock模式，以提供mock数据或绕过高频接口的熔断限制。
 - smoke test可使用无头浏览器，或通过Chrome DevTools Protocol直接驱动用户提供的浏览器。
+
+## filelock 临时覆盖
+
+2026-10-28：Trivy 报告 CVE-2026-112940，修复需 filelock≥4.2.1，但 unstructured 限制 <4。用 uv override 指定 `filelock>=4.2.4,<5`，锁定 4.2.4；项目测试、文件锁检查及复扫通过，未验证完整外部模型流程。上游放宽限制后移除 override 并重新验证。

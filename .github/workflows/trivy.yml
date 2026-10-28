@@ -1,0 +1,35 @@
+name: Weekly Trivy scan
+
+on:
+  schedule:
+    # Thursday 09:47 Asia/Shanghai (01:47 UTC).
+    - cron: '47 1 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Scan for MEDIUM and higher vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: table
+          exit-code: '1'
+          timeout: 15m
+        env:
+          TRIVY_IGNOREFILE: /dev/null
