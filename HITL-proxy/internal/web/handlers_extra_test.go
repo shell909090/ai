@@ -43,7 +43,11 @@ func newFullTestHandler(t *testing.T, password string) (*Handler, *http.ServeMux
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 
 	hub := approval.NewSSEHub()
 	engine := approval.NewEngine(db, 5*time.Minute, 10*time.Millisecond, hub)
@@ -233,8 +237,12 @@ func TestAdminImportSpecForm_ValidSpec_Redirects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	fmt.Fprint(fw, minimalValidSpec)
-	mw.Close()
+	if _, err := fmt.Fprint(fw, minimalValidSpec); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	r := httptest.NewRequest(http.MethodPost, "/admin/specs/import", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
@@ -260,8 +268,12 @@ func TestAdminImportSpecForm_InvalidSpec_Returns400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	fmt.Fprint(fw, `{"garbage": true}`)
-	mw.Close()
+	if _, err := fmt.Fprint(fw, `{"garbage": true}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	r := httptest.NewRequest(http.MethodPost, "/admin/specs/import", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())

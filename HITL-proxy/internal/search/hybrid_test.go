@@ -65,7 +65,11 @@ func TestHybridSearcher_NilVec_SearchDelegatesToFTS5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	// Insert a spec
 	res, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('test', '{}')`)
@@ -113,7 +117,11 @@ func TestHybridSearcher_NilVec_IndexDelegatesToFTS5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	res, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('myspec', '{}')`)
 	if err != nil {
@@ -161,7 +169,11 @@ func TestHybridSearcher_NilVec_IndexTxDelegatesToFTS5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	res, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('txspec', '{}')`)
 	if err != nil {
@@ -217,7 +229,11 @@ func TestHybridSearcher_NilVec_IndexEmbeddingsIsNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	hybrid := NewHybridSearcher(db, nil)
 	ops := []openapi.Operation{{OperationID: "op1"}}
@@ -232,7 +248,11 @@ func TestHybridSearcher_NilVec_DeleteSpecEmbeddingsIsNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	hybrid := NewHybridSearcher(db, nil)
 	if err := hybrid.DeleteSpecEmbeddings(context.Background(), 42); err != nil {
@@ -273,7 +293,11 @@ func setupHybridWithOps(t *testing.T) (*sql.DB, int64) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 
 	res, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('test', '{}')`)
 	if err != nil {

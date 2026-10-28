@@ -55,7 +55,11 @@ func TestFTS5SearcherIndexAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	// Insert a spec first
 	result, err := db.Exec(`INSERT INTO specs (name, raw_json) VALUES ('test', '{}')`)
@@ -165,7 +169,11 @@ func TestFTS5SearcherConflictPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	searcher := NewFTS5Searcher(db)
 
@@ -325,7 +333,11 @@ func TestFTS5Searcher_Search_NoResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	searcher := NewFTS5Searcher(db)
 	results, err := searcher.Search(context.Background(), "zzznomatch", 10)
@@ -344,7 +356,11 @@ func TestFTS5Searcher_Search_DefaultLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	searcher := NewFTS5Searcher(db)
 	results, err := searcher.Search(context.Background(), "anything", 0)

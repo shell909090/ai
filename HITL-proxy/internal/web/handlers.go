@@ -194,7 +194,9 @@ func (h *Handler) handleDecision(w http.ResponseWriter, r *http.Request, approve
 		status = "Approved"
 	}
 	w.Header().Set("HX-Redirect", "/")
-	fmt.Fprintf(w, "<span class='status-%s'>%s</span>", status, status)
+	if _, err := fmt.Fprintf(w, "<span class='status-%s'>%s</span>", status, status); err != nil {
+		log.Printf("write approval status: %v", err)
+	}
 }
 
 // importSpecBody parses and imports a spec into the DB. Returns import result info.
@@ -298,7 +300,11 @@ func (h *Handler) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	var specs []specRow
 	for rows.Next() {
@@ -337,7 +343,11 @@ func (h *Handler) handleImportSpecForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file required: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("close file: %v", err)
+		}
+	}()
 
 	body, err := io.ReadAll(file)
 	if err != nil {
@@ -503,7 +513,11 @@ func (h *Handler) handleListCreds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	var specs []credSpecRow
 	for rows.Next() {
@@ -706,7 +720,10 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case event := <-ch:
-			fmt.Fprintf(w, "event: %s\ndata: {\"id\":%d}\n\n", event.Type, event.ID)
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: {\"id\":%d}\n\n", event.Type, event.ID); err != nil {
+				log.Printf("write approval event: %v", err)
+				return
+			}
 			flusher.Flush()
 		}
 	}

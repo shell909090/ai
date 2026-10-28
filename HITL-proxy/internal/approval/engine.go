@@ -210,7 +210,11 @@ func (e *Engine) GetPending() ([]Request, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query pending: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	return scanRequests(rows)
 }
@@ -229,7 +233,11 @@ func (e *Engine) GetRequest(id int64) (*Request, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query request: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	reqs, err := scanRequests(rows)
 	if err != nil {
@@ -285,7 +293,11 @@ func (e *Engine) ListRules() ([]RuleRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query rules: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	var result []RuleRow
 	for rows.Next() {

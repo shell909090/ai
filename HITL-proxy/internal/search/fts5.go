@@ -71,7 +71,11 @@ func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []opena
 		if err != nil {
 			return false, fmt.Errorf("conflict check: %w", err)
 		}
-		defer rows.Close()
+		defer func() {
+			if err := rows.Close(); err != nil {
+				log.Printf("close rows: %v", err)
+			}
+		}()
 
 		var conflicts []string
 		for rows.Next() {
@@ -116,7 +120,11 @@ func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []opena
 	if err != nil {
 		return false, fmt.Errorf("prepare insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			log.Printf("close stmt: %v", err)
+		}
+	}()
 
 	for _, op := range ops {
 		secJSON := op.SecurityJSON
@@ -136,7 +144,11 @@ func (s *FTS5Searcher) IndexTx(tx *sql.Tx, ops []openapi.Operation, deps []opena
 	if err != nil {
 		return false, fmt.Errorf("prepare dep insert: %w", err)
 	}
-	defer depStmt.Close()
+	defer func() {
+		if err := depStmt.Close(); err != nil {
+			log.Printf("close depStmt: %v", err)
+		}
+	}()
 
 	for _, dep := range deps {
 		if _, err := depStmt.Exec(dep.OperationID, dep.DependsOnID, dep.Reason, specID); err != nil {
@@ -167,7 +179,11 @@ func (s *FTS5Searcher) Search(_ context.Context, query string, limit int) ([]Sea
 	if err != nil {
 		return nil, fmt.Errorf("fts5 search: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	var results []SearchResult
 	for rows.Next() {
@@ -209,12 +225,16 @@ func (s *FTS5Searcher) loadDependencies(results []SearchResult) error {
 		for rows.Next() {
 			var d openapi.Dependency
 			if err := rows.Scan(&d.OperationID, &d.DependsOnID, &d.Reason); err != nil {
-				rows.Close()
+				if closeErr := rows.Close(); closeErr != nil {
+					log.Printf("close dependency rows after scan error: %v", closeErr)
+				}
 				return fmt.Errorf("scan dep: %w", err)
 			}
 			deps = append(deps, d)
 		}
-		rows.Close()
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("close dependency rows: %w", err)
+		}
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("iterate deps: %w", err)
 		}
@@ -237,7 +257,7 @@ func buildFTSQuery(query string) string {
 	parts := make([]string, 0, len(words))
 	for _, w := range words {
 		w = strings.TrimFunc(w, func(r rune) bool {
-			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_')
+			return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_'
 		})
 		if w != "" {
 			parts = append(parts, w+"*")

@@ -15,7 +15,11 @@ func newTestEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 
 	hub := NewSSEHub()
 	// Use short poll interval for tests; long default timeout so tests control decisions

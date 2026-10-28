@@ -28,7 +28,11 @@ func setupTestClient(t *testing.T, targetURL string, op operationInfo) *Client {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 
 	rawSpec := `{"openapi":"3.0.0","info":{"title":"test","version":"1"},"servers":[{"url":"` + targetURL + `"}],"paths":{}}`
 	res, err := db.Exec(`INSERT INTO specs (name, version, raw_json) VALUES (?, ?, ?)`, "test-spec", "1", rawSpec)
@@ -435,7 +439,10 @@ func TestCall_MultipartFormDataBody(t *testing.T) {
 			}
 			b, _ := io.ReadAll(part)
 			gotFields[part.FormName()] = string(b)
-			part.Close()
+			if err := part.Close(); err != nil {
+				t.Errorf("close multipart part: %v", err)
+				return
+			}
 		}
 		w.WriteHeader(200)
 	}))
@@ -1081,7 +1088,10 @@ func TestCall_MultipartFormDataBodyWithObject(t *testing.T) {
 			}
 			b, _ := io.ReadAll(part)
 			gotFields[part.FormName()] = string(b)
-			part.Close()
+			if err := part.Close(); err != nil {
+				t.Errorf("close multipart part: %v", err)
+				return
+			}
 		}
 		w.WriteHeader(200)
 	}))

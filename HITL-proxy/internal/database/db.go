@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	_ "modernc.org/sqlite"
 )
@@ -14,17 +15,23 @@ func Open(path string) (*sql.DB, error) {
 	}
 
 	if err := db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("close database after initialization failure: %v", closeErr)
+		}
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("close database after initialization failure: %v", closeErr)
+		}
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
 	if err := migrate(db); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("close database after initialization failure: %v", closeErr)
+		}
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 

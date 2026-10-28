@@ -13,7 +13,11 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	// Verify tables exist
 	tables := []string{"specs", "operations", "operation_deps", "api_keys", "authz_rules", "approval_rules", "approval_requests", "audit_log"}

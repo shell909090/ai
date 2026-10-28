@@ -19,7 +19,11 @@ func newTestHandler(t *testing.T, password string) *Handler {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 
 	authenticator := auth.NewAuthenticator(db)
 	h, err := NewHandler(nil, db, nil, nil, authenticator, nil, password)

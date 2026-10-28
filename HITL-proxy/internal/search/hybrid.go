@@ -214,7 +214,11 @@ func fetchOperationsByIDs(db *sql.DB, ids []string) ([]openapi.Operation, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close rows: %v", err)
+		}
+	}()
 
 	var ops []openapi.Operation
 	for rows.Next() {

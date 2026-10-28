@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -79,7 +80,11 @@ func (a *Authenticator) ListKeys() ([]APIKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query api_keys: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("close auth rows: %v", err)
+		}
+	}()
 
 	var keys []APIKey
 	for rows.Next() {

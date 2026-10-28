@@ -14,7 +14,11 @@ func TestDeleteKey_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	a := NewAuthenticator(db)
 
@@ -33,7 +37,11 @@ func TestDeleteKey_ExistingKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	a := NewAuthenticator(db)
 
