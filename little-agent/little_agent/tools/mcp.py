@@ -74,7 +74,7 @@ class MCPStdioProvider:
                 continue
 
             # Convert inputSchema to ToolDef
-            tooldef = self._convert_schema(tool.name, tool.description or "", tool.inputSchema)
+            tooldef = self._convert_schema(tool.name, tool.description or "", tool.input_schema)
             if tooldef is None:
                 continue  # warning already logged
 

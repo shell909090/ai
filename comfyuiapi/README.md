@@ -464,3 +464,9 @@ upscale.py将4张母图超分放大，并裁切适配到所有设备分辨率：
 ## 许可证
 
 BSD-3-Clause
+
+### Local dependency smoke checks
+
+Run `uv run python test_device_table.py` to check all five documented upscale modes
+without a ComfyUI server. Actual generation tests in `make test` require a running
+ComfyUI instance and its configured models.

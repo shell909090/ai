@@ -5,14 +5,14 @@ description = "ComfyUI wallpaper generation toolkit"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "comfy-api-simplified>=1.4.2",
-    "pillow>=12.1.0",
-    "websockets>=15.0.1",
+    "comfy-api-simplified>=1.6.0",
+    "pillow>=13.0.0",
+    "websockets>=17.3",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.8.4",
+    "ruff>=0.17.3",
 ]
 
 [tool.ruff]

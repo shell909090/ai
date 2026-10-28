@@ -2,20 +2,20 @@
 name = "hitl-bridge"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["mcp>=1.0.0"]
+dependencies = ["mcp>=2.3.0"]
 
 [project.scripts]
 hitl-bridge = "hitl_bridge:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "ruff>=0.15.5",
-    "uvicorn>=0.30",
+    "pytest>=9.2.0",
+    "ruff>=0.17.3",
+    "uvicorn>=0.54.0",
 ]
 
 [tool.ruff]

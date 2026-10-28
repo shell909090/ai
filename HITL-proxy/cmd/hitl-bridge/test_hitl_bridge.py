@@ -6,7 +6,7 @@ import threading
 
 import pytest
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 import hitl_bridge
 
@@ -28,7 +28,7 @@ def _no_proxy(monkeypatch: pytest.MonkeyPatch):
 def sse_url():
     """Start a minimal MCP SSE server and yield its URL."""
     port = _free_port()
-    server = FastMCP(name="test-server", host="127.0.0.1", port=port)
+    server = MCPServer(name="test-server")
 
     @server.tool()
     def echo(msg: str) -> str:

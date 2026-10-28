@@ -554,12 +554,19 @@ def test_run_keeps_flushed_batches_after_later_extract_failure(tmp_path: Path) -
     )
     mock_emb = _mock_embedder()
 
+    def extract_text(path: Path, _dir_cfg: DirConfig) -> str:
+        if path.name == "doc1.md":
+            raise RuntimeError("extract failed")
+        return {"doc0.md": "A" * 40, "doc2.md": "C" * 40}[path.name]
+
     with patch("elocate.indexer.Embedder", return_value=mock_emb):
         indexer = Indexer(cfg)
-        with patch.object(
-            indexer,
-            "_extract_text",
-            side_effect=["A" * 40, RuntimeError("extract failed"), "C" * 40],
+        # Ensure a successful batch is flushed before the extraction failure.
+        with (
+            patch.object(
+                indexer, "_collect_files", return_value=[(doc, cfg.dirs[0]) for doc in docs]
+            ),
+            patch.object(indexer, "_extract_text", side_effect=extract_text),
         ):
             added, updated, removed = indexer.run()
 

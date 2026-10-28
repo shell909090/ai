@@ -5,7 +5,7 @@ description = "智能切图工具，产生不同平台可用的壁纸。"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "google-generativeai>=0.8.5",
-    "openai>=1.54.0",
-    "pillow>=12.0.0",
+    "google-generativeai>=0.8.6",
+    "openai>=3.40.0",
+    "pillow>=13.0.0",
 ]

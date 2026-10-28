@@ -10,6 +10,5 @@ htmlcov/
 docs/tasks.md
 docs/review.md
 docs/log.md
-uv.lock
 .codex
 data/
