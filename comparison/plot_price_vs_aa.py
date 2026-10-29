@@ -7,25 +7,29 @@ fm.fontManager.addfont("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
 plt.rcParams["font.family"] = ["Noto Sans CJK SC", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-# 模型: (综合价格 $/M tokens, AA指数)
+# 模型: (综合价格 $/M tokens, AA Intelligence Index v5.0 分数)
 data = {
-    "GPT-6 Astra": (47.5, 52.7),
-    "GPT-6.1 Sol": (7.5, 52.0),
-    "Claude Opus 5.5": (15, 57.6),
-    "Claude Sonnet 5.5": (9.5, 56.0),
-    "Gemini 4 Argon": (5, 52.7),
-    "Grok 4.7": (12.6, 46.4),
-    "Kimi K3.1 Pro": (9, 55.1),
-    "MiMo v2.6 Pro": (0.594, 46.3),
-    "GLM-5.3": (7.04, 44.8),
-    "DeepSeek V4.1 Flash 1017": (0.405, 45.1),
-    "MiniMax M3.1 Flash": (0.51, 42.7),
-    "GLM-5.3-Flash": (0.8, 41.8),
-    "Qwen3.8-Flash-Next": (0.717, 39.8),
-    "Qwen3.8-27B": (2.91125, 33.7),
+    "GPT-6 Astra": (47.5, 56.9),
+    "GPT-6.1 Sol": (7.5, 54.5),
+    "Claude Opus 5.5": (15, 58.4),
+    "Claude Sonnet 5.5": (9.5, 54.2),
+    "Gemini 4 Carbon": (10, 59.4),
+    "Gemini 4 Argon": (10, 50.4),
+    "Grok 4.7": (12.6, 35.0),
+    "Kimi K3.1 Pro": (9, 46.0),
+    "MiMo v2.6 Pro": (0.594, 29.9),
+    "GLM-5.3": (7.04, 31.7),
+    "GLM-5.3-Flash": (0.8, None),
+    "DeepSeek V4.1 Flash 1017": (0.405, 32.5),
+    "MiniMax M3.1 Flash": (0.51, 28.9),
+    "Qwen3.8-Flash-Next": (0.717, None),
+    "Qwen3.8-27B": (2.91125, 20.1),
 }
 
-models = list(data)
+missing = [model for model, (_, score) in data.items() if score is None]
+if missing:
+    print("缺少 AA v5.0 指数，不参与拟合与绘图:", missing)
+models = [model for model in data if model not in missing]
 price = np.array([data[m][0] for m in models])
 aa = np.array([data[m][1] for m in models], dtype=float)
 
@@ -75,8 +79,8 @@ texts = [
     for i, m in enumerate(models)
 ]
 ax.set_xlabel("综合价格 ($ / M tokens，对数轴)")
-ax.set_ylabel("AA 指数")
-ax.set_title("模型性价比：AA 指数 vs 综合价格")
+ax.set_ylabel("AA 指数（v5.0）")
+ax.set_title("模型性价比：AA 指数 v5.0 vs 综合价格")
 ax.grid(True, which="both", alpha=0.25)
 leg = ax.legend(loc="upper left", fontsize=9)
 adjust_text(texts, ax=ax, expand=(1.3, 1.5), objects=[leg])
