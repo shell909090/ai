@@ -28,11 +28,11 @@
 | [Gemini 4 Argon](https://blog.google/intl/zh-tw/products/explore-get-answers/gemini-4-argon/) | 2026-09-30 | 闭 | -- | -- | V/A | 1M | -- |
 | [Grok 4.7](https://x.ai/news/grok-4-7) | 2026-09-21 | 闭 | -- | -- | V | 500k | -- |
 | [Kimi K3.1 Pro](https://www.kimi.ai/blog/kimi-k3-1-pro) | 2026-10-24 | 开 | 2.8T | 104B | V | 1M | 尚未释出，11 月 4 日前发布权重 |
-| [MiMo v2.6 Pro](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6) | 2026-09-21 | 开 | 1.02T | 42B | V/A | 1M | [权重](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL) |
+| [MiMo v2.6 Pro](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6) | 2026-09-21 | 开 | 1.02T | 42B | V/A | 1M | [权重](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL) · [GGUF](https://huggingface.co/ggml-org/MiMo-V2.6-Pro-RL-GGUF) |
 | [GLM-5.3](https://z.ai/blog/glm-5.3) | 2026-08-14 | 开 | 744B | 40B | -- | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-GGUF) |
 | [GLM-5.3-Flash](https://z.ai/blog/glm-5.3-flash) | 2026-08-26 | 开 | 320B | 18B | V | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3-Flash) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF) |
 | [DeepSeek V4.1 Flash 1017](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) | 2026-10-17 | 开 | 552B/763B | 8B/16B | V | 1M | [权重](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) · [GGUF](https://huggingface.co/unsloth/DeepSeek-V4.1-Flash-1017-GGUF) |
-| [MiniMax M3.1 Flash](https://www.minimax.io/blog/minimax-m31f) | 2026-10-19 | 开 | 未知 | 未知 | V | 1M | 尚未释出 |
+| [MiniMax M3.1 Flash](https://www.minimax.io/blog/minimax-m31f) | 2026-10-19 | 开 | 428B | 23B | V | 1M | [权重](https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash) · [GGUF](https://huggingface.co/unsloth/MiniMax-M3.1-Flash-GGUF) |
 | [Qwen3.8-Flash-Next](https://qwen.ai/blog?id=qwen3.8-flash-next) | 2026-08-26 | 开 | 180B | 6B | V | 262k | [权重](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) · [GGUF](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) |
 | [Qwen3.8-27B](https://qwen.ai/blog?id=qwen3.8) | 2026-08-14 | 开 | 27B | 27B | V | 262k | [权重](https://huggingface.co/Qwen/Qwen3.8-27B) · [GGUF](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) |
 
@@ -40,7 +40,6 @@
 - Gemini 4 Carbon 截至 2026-10-29 仅向部分可信网络防御伙伴逐步开放，尚未公开提供 API；1M 上下文和多模态输入规格采用 [AA 模型页](https://artificialanalysis.ai/models/gemini-4-carbon)。Argon 的 2026-09-30 为首次宣布日期，公开 API 于 2026-10-13 上线。
 - 我们目前无法百分百确认 Qwen3.8-Flash 的底层就是 Qwen3.8-Flash-Next，但是目前有很强证据证明二者是一回事。因此表格内采用 Qwen3.8-Flash-Next 的名字和固有参数、Qwen3.8-Flash 的价格，以及 Qwen3.8-Flash-Next 的 Benchmark 分数，并将其列为开源模型。
 - DeepSeek V4.1 Flash 1017 的 552B 为 backbone 参数量，激活参数为 prefill 8B / decode 16B（因果编码器-解码器架构）；另含 196B Engram 条件记忆与视觉编码器，权重合计 763B。
-- MiniMax M3.1 Flash 按官方后续开放权重的计划标为“开”；截至 2026-10-20，权重尚未释出，总参数量和激活参数量均未获官方确认。
 
 # API 价格
 
@@ -127,14 +126,18 @@
 
 # 用户反馈收集
 
-- 闭源里面，Opus 5.5是偏好评的。
+- GPT-6 Astra的评价极度两极分化。
+- GPT-6.1 Sol明显有价格优势。但是好坏波动大，所以一直有降智传言。
+- GPT-6.1 Terra部分用户报告结果更差却消耗更多。
 - Opus 5.5反馈逆天，号称“全球最好用模型”，“老实干活儿的老二回来了，还当了老大”。
-- Astra的评价极度两极分化。
+- Sonnet/Haiku 5.5长任务、跨轮记忆都比较差，失败循环与长上下文可能吃掉价格优势。
+- Gemini 4 Argon复杂编码有幻觉，订阅额度和 token 消耗争议较大。
 - Grok被吐槽“只有NSFW是刚需”。而且这批人还在流向Qwen3.8-27B。
-- 开源里面，MiMo v2.6 Pro中评偏差。评价是“性价比高跑分漂亮，然而不能干活儿”。
+- Kimi K3.1 Pro，复杂后端实现、原型和视觉设计反馈良好，部分用户认为接近 Opus。缺点是慢、工具使用弱、过度复杂化。订阅额度消耗投诉突出。
+- MiMo v2.6 Pro中评偏差。评价是“性价比高跑分漂亮，然而不能干活儿”。
 - GLM-5.3/GLM-5.3-Flash好评。前者便宜，后者可本地部署。缺点是不知为何，坚信自己是claude。
-- K3 评价两极分化，主要优点是细节封神，主要缺点是贵且慢；Kimi K3.1 Pro 的用户反馈待收集。
-- DeepSeek V4.1 Flash也是两极分化。速度封神，编码拉胯。而且啰里八嗦的。
+- DeepSeek V4.1 Flash 1017优点是速度快，编码能接受，较此前版本明显改善。但仍有幻觉问题，固执，啰里八嗦。不同供应商是否跑相同版本存疑。
+- MiniMax M3.1 Flash的评价是，能干活，但速度与 provider 体验分化。差评包括过度思考、大量零碎工具调用、简单任务耗时长。
 - Qwen3.8-Flash-Next意外的强。但只有一个供应商。
 - Qwen3.8-27B，低成本本地执行的唯一选择，也无需在意评价了。
 
