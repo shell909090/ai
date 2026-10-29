@@ -42,35 +42,29 @@
 
 # API 价格
 
-| 模型 | 输入价格 | 输出价格 | 缓存读取 | 缓存写入 | 综合价格 | 性价比 |
-|---|---:|---:|---:|---:|---:|---:|
-| GPT-6 Astra | \$10 | \$50 | \$1 | \$12.5 | \$47.5 | 78.8% |
-| GPT-6.1 Sol | \$2 | \$10 | \$0.1 | \$2.5 | \$7.5 | **95.6%** |
-| Claude Opus 5.5 | \$4 | \$20 | \$0.2 | \$5 | \$15 | 93.1% |
-| Claude Sonnet 5.5 | \$2 | \$10 | \$0.2 | \$2.5 | \$9.5 | 91.9% |
-| Gemini 4 Carbon | \$4 | \$20 | \$0.2 | -- | \$10 | **100.0%** |
-| Gemini 4 Argon | \$4 | \$20 | \$0.2 | -- | \$10 | 84.8% |
-| Grok 4.7 | \$2 | \$6 | \$0.5 | -- | \$12.6 | 57.1% |
-| Kimi K3.1 Pro | \$2 | \$10 | \$0.2 | \$2 | \$9 | 78.6% |
-| MiMo v2.6 Pro | \$0.435 | \$0.87 | \$0.0036 | -- | \$0.594 | 82.6% |
-| GLM-5.3 | \$1.4 | \$4.4 | \$0.26 | -- | \$7.04 | 56.1% |
-| GLM-5.3-Flash | \$0.15 | \$0.5 | \$0.03 | -- | \$0.8 | -- |
-| DeepSeek V4.1 Flash 1017 | \$0.30 / \$0.15 | \$1.20 / \$0.60 | \$0.006 / \$0.003 | -- | \$0.405 | **98.3%** |
-| MiniMax M3.1 Flash | \$0.15 | \$0.60 | \$0.015 | -- | \$0.51 | 82.7% |
-| Qwen3.8-Flash-Next | \$0.15 | \$0.47 | \$0.016 | \$0.2 | \$0.717 | -- |
-| Qwen3.8-27B | \$0.425 | \$2.55 | \$0.085 | \$0.53125 | \$2.91125 | 40.8% |
+| 模型 | 输入价格 | 输出价格 | 缓存读取 | 缓存写入 | 综合价格 |
+|---|---:|---:|---:|---:|---:|
+| GPT-6 Astra | \$10 | \$50 | \$1 | \$12.5 | \$47.5 |
+| GPT-6.1 Sol | \$2 | \$10 | \$0.1 | \$2.5 | \$7.5 |
+| Claude Opus 5.5 | \$4 | \$20 | \$0.2 | \$5 | \$15 |
+| Claude Sonnet 5.5 | \$2 | \$10 | \$0.2 | \$2.5 | \$9.5 |
+| Gemini 4 Carbon | \$4 | \$20 | \$0.2 | -- | \$10 |
+| Gemini 4 Argon | \$4 | \$20 | \$0.2 | -- | \$10 |
+| Grok 4.7 | \$2 | \$6 | \$0.5 | -- | \$12.6 |
+| Kimi K3.1 Pro | \$2 | \$10 | \$0.2 | \$2 | \$9 |
+| MiMo v2.6 Pro | \$0.435 | \$0.87 | \$0.0036 | -- | \$0.594 |
+| GLM-5.3 | \$1.4 | \$4.4 | \$0.26 | -- | \$7.04 |
+| GLM-5.3-Flash | \$0.15 | \$0.5 | \$0.03 | -- | \$0.8 |
+| DeepSeek V4.1 Flash 1017 | \$0.30 / \$0.15 | \$1.20 / \$0.60 | \$0.006 / \$0.003 | -- | \$0.405 |
+| MiniMax M3.1 Flash | \$0.15 | \$0.60 | \$0.015 | -- | \$0.51 |
+| Qwen3.8-Flash-Next | \$0.15 | \$0.47 | \$0.016 | \$0.2 | \$0.717 |
+| Qwen3.8-27B | \$0.425 | \$2.55 | \$0.085 | \$0.53125 | \$2.91125 |
 
 - 不参考套餐/批量折扣/限时优惠价格，表中采用官方原价。
 - 综合价格按“0.1 × 输出价格 + 输入价格 + 20 × 缓存读取价格 + 缓存写入价格”计算。未提供缓存写入价格的 `--` 在本项计算中按 0 计。它表示实际载荷每处理 1M 输入 tokens 对应的真实成本：与这 1M 输入对应的输出、缓存读取和缓存写入量，分别按实际比例乘以各自单价后，与输入成本相加。
 - 有峰谷价格的，综合价格按峰谷价的平均数计算。
 - Gemini 4 Carbon 和 Argon 均按标准原价记录。Argon 优惠截至 2026-11-30，Carbon 优惠结束日期尚未公布。
 - Grok 4.7 的 prompt ≥200K 长文档位（输入/输出/缓存读取翻倍）与 2 倍价格的 fast 变体均未计入，综合价格按 <200K 标准档计算。
-- 性价比从当前表中选出“相同或更低综合价格下不存在更高 AA 指数模型”的 3 个 Pareto 前沿模型，拟合得到 `预期 AA 指数 = 39.6482 + 8.0429 × ln(综合价格)`（R² = 0.992），最后计算“实际 AA 指数 / 预期 AA 指数 × 97.9253%”。该系数为当前模型集合中最高原始性价比的倒数，使最高分恰为 100%；其余分数均落在 0–100% 区间。该拟合是当前模型集合内的相对比较，模型或价格变化后需要重新筛选 Pareto 前沿并整体重算。
-- GLM-5.3-Flash 和 Qwen3.8-Flash-Next 暂无 AA v5.0 指数，性价比记为 `--`，不参与拟合与绘图。图中包含尚未公开开放的 Carbon，因此 Pareto 前沿不等同于当前可用 API 的采购建议。
-- Pareto模型的性价比已经被加粗。
-- 价格-AA 关系图（横轴为对数综合价格，纵轴为 AA 指数，红点为 Pareto 前沿模型，红色虚线为 Pareto 拟合线）：
-
-  ![价格-AA关系图](price_vs_aa.png)
 
 # 指标选择
 
@@ -86,29 +80,40 @@
 
 # Benchmark 数据
 
-| 模型 | SciCode | Terminal-Bench 4.0 | AutomationBench | HLE | CritPt | AA指数 v5.0 |
-|---|---:|---:|---:|---:|---:|---:|
-| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 56.5% | 59.1% | 68.5% | 54.7% | 31.7% | 56.9 |
-| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 54.2% | 56.1% | 64.9% | 52.9% | 31.7% | 54.5 |
-| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 66.9% | 59.6% | 69.5% | 61.4% | 31.7% | 58.4 |
-| [Claude Sonnet 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-sonnet-5-5) | 61.0% | 63.6% | 71.8% | 55.0% | 31.4% | 54.2 |
-| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 64.2% | 65.2% | 77.8% | 60.4% | 36.0% | 59.4 |
-| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 61.8% | 57.1% | 77.5% | 57.1% | 27.1% | 50.4 |
-| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 57.8% | 24.7% | 63.5% | 42.3% | 18.0% | 35.0 |
-| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 60.8% | 67.2% | 73.3% | 52.5% | 24.6% | 46.0 |
-| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 60.9% | 34.8% | 58.6% | 49.4% | 26.6% | 29.9 |
-| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 59.0% | 41.9% | 62.2% | 42.3% | 19.1% | 31.7 |
-| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 51.6% | 32.8% | 60.4% | 39.9% | 15.4% | -- |
-| [DeepSeek V4.1 Flash 1017](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | 55.9% | 33.8% | 66.6% | 43.3% | 24.0% | 32.5 |
-| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 53.4% | 25.8% | 72.5% | 48.0% | 22.3% | 28.9 |
-| [Qwen3.8-Flash-Next](https://artificialanalysis.ai/models/qwen3-8-flash-next) | 50.6% | 25.3% | 55.9% | 38.0% | 11.1% | -- |
-| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 46.6% | 5.6% | 48.2% | 33.9% | 5.4% | 20.1 |
+| 模型 | SciCode | Terminal-Bench 4.0 | AutomationBench | HLE | CritPt | AA指数 v5.0 | 性价比 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 56.5% | 59.1% | 68.5% | 54.7% | 31.7% | 56.9 | 78.8% |
+| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 54.2% | 56.1% | 64.9% | 52.9% | 31.7% | 54.5 | **95.6%** |
+| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 66.9% | 59.6% | 69.5% | 61.4% | 31.7% | 58.4 | 93.1% |
+| [Claude Sonnet 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-sonnet-5-5) | 61.0% | 63.6% | 71.8% | 55.0% | 31.4% | 54.2 | 91.9% |
+| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 64.2% | 65.2% | 77.8% | 60.4% | 36.0% | 59.4 | **100.0%** |
+| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 61.8% | 57.1% | 77.5% | 57.1% | 27.1% | 50.4 | 84.8% |
+| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 57.8% | 24.7% | 63.5% | 42.3% | 18.0% | 35.0 | 57.1% |
+| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 60.8% | 67.2% | 73.3% | 52.5% | 24.6% | 46.0 | 78.6% |
+| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 60.9% | 34.8% | 58.6% | 49.4% | 26.6% | 29.9 | 82.6% |
+| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 59.0% | 41.9% | 62.2% | 42.3% | 19.1% | 31.7 | 56.1% |
+| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 51.6% | 32.8% | 60.4% | 39.9% | 15.4% | -- | -- |
+| [DeepSeek V4.1 Flash 1017](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | 55.9% | 33.8% | 66.6% | 43.3% | 24.0% | 32.5 | **98.3%** |
+| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 53.4% | 25.8% | 72.5% | 48.0% | 22.3% | 28.9 | 82.7% |
+| [Qwen3.8-Flash-Next](https://artificialanalysis.ai/models/qwen3-8-flash-next) | 50.6% | 25.3% | 55.9% | 38.0% | 11.1% | -- | -- |
+| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 46.6% | 5.6% | 48.2% | 33.9% | 5.4% | 20.1 | 40.8% |
 
 - 数据核查日期：2026-10-29；AA 指数版本：v5.0。表中 AA 指数保留一位小数。
 - SciCode 整项评测当前为 Under review，保留 AA 已发布成绩并提示审查状态；不再沿用仅 MiniMax 的 SciCode/CritPt 处于审查中的旧注释。
 - 数据优先采用AA独立评测，其次采用官方模型卡/报告。两者均不存在时，参考采信第三方评价或官方估计值。
 - 闭源推理模型使用表中成绩对应的高推理档位；Claude Opus/Sonnet 5.5 的 AA 评测启用了默认 fallback，因此单独标注。
 - GPT-6 Astra、GPT-6.1 Sol、Claude Opus/Sonnet 5.5、GLM-5.3 和 DeepSeek V4.1 Flash 1017 使用 Max 档；Gemini 4 Carbon、Argon 和 Grok 4.7 使用 High 档；Qwen3.8-27B 使用 Xhigh 档，其余使用各自默认推理档位。
+
+## 性价比
+
+- 性价比使用上文 API 价格区块的综合价格与本区块的 AA 指数计算。
+- 性价比从当前表中选出“相同或更低综合价格下不存在更高 AA 指数模型”的全部 Pareto 前沿模型，拟合得到性价比预测线。然后计算每个模型的 AA 指数相对预测指数的百分比，再对总体归一化。归一化采用所有模型性价比乘以当前模型集合中最高原始性价比的倒数，使最高分恰为 100%，其余分数均落在 0–100% 区间。性价比是当前模型集合内的相对比较，模型或价格变化后需要重新筛选 Pareto 前沿并整体重算。
+- 当前拟合得到的性价比预测线为 `预期 AA 指数 = 39.6482 + 8.0429 × ln(综合价格)`（R² = 0.992）。归一化为 `实际 AA 指数 / 预期 AA 指数 × 97.9253%`。
+- GLM-5.3-Flash 和 Qwen3.8-Flash-Next 暂无 AA v5.0 指数，性价比记为 `--`，不参与拟合与绘图。图中包含尚未公开开放的 Carbon，因此 Pareto 前沿不等同于当前可用 API 的采购建议。
+- Pareto模型的性价比已经被加粗。
+- 价格-AA 关系图（横轴为对数综合价格，纵轴为 AA 指数，红点为 Pareto 前沿模型，红色虚线为 Pareto 拟合线）：
+
+  ![价格-AA关系图](price_vs_aa.png)
 
 # 用户反馈收集
 
