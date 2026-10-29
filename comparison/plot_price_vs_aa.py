@@ -8,27 +8,30 @@ plt.rcParams["font.family"] = ["Noto Sans CJK SC", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 模型: (综合价格 $/M tokens, AA Intelligence Index v5.0 分数)
+# 价格口径：64K/256K prompt 各 50%，缓存保留 30 分钟（见 README）。
 data = {
     "GPT-6 Astra": (47.5, 56.9),
     "GPT-6.1 Sol": (7.5, 54.5),
-    "Claude Opus 5.5": (15, 58.4),
-    "Claude Sonnet 5.5": (9.5, 54.2),
+    "GPT-6.1 Terra": (3.75, 51.0),
+    "Claude Opus 5.5": (18, 58.4),
+    "Claude Sonnet 5.5": (9, 54.2),
+    "Claude Haiku 5.5": (1.65, 36.2),
     "Gemini 4 Carbon": (10, 59.4),
     "Gemini 4 Argon": (10, 50.4),
-    "Grok 4.7": (12.6, 35.0),
-    "Kimi K3.1 Pro": (9, 46.0),
+    "Grok 4.7": (18.9, 35.0),
+    "Kimi K3.1 Pro": (11, 46.0),
     "MiMo v2.6 Pro": (0.594, 29.9),
     "GLM-5.3": (7.04, 31.7),
     "GLM-5.3-Flash": (0.8, None),
     "DeepSeek V4.1 Flash 1017": (0.405, 32.5),
     "MiniMax M3.1 Flash": (0.51, 28.9),
-    "Qwen3.8-Flash-Next": (0.717, None),
-    "Qwen3.8-27B": (2.91125, 20.1),
+    "Qwen3.8-Flash-Next": (0.517, None),
+    "Qwen3.8-27B": (2.8, 20.1),
 }
 
-missing = [model for model, (_, score) in data.items() if score is None]
+missing = [model for model, (cost, score) in data.items() if cost is None or score is None]
 if missing:
-    print("缺少 AA v5.0 指数，不参与拟合与绘图:", missing)
+    print("缺少标准综合价格或 AA v5.0 指数，不参与拟合与绘图:", missing)
 models = [model for model in data if model not in missing]
 price = np.array([data[m][0] for m in models])
 aa = np.array([data[m][1] for m in models], dtype=float)
