@@ -27,7 +27,7 @@
 | [Gemini 4 Carbon](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-carbon/) | 2026-10-28 | 闭 | -- | -- | V/A | 1M | -- |
 | [Gemini 4 Argon](https://blog.google/intl/zh-tw/products/explore-get-answers/gemini-4-argon/) | 2026-09-30 | 闭 | -- | -- | V/A | 1M | -- |
 | [Grok 4.7](https://x.ai/news/grok-4-7) | 2026-09-21 | 闭 | -- | -- | V | 500k | -- |
-| [Kimi K3.1 Pro](https://www.kimi.ai/blog/kimi-k3-1-pro) | 2026-10-24 | 开 | 2.8T | 104B | V | 1M | 尚未释出，11 月 4 日前发布权重 |
+| [Kimi K3.1 Pro](https://www.kimi.ai/blog/kimi-k3-1-pro) | 2026-10-24 | 开 | 2.8T | 104B | V | 1M | [权重](https://huggingface.co/moonshotai/Kimi-K3.1-Pro) |
 | [MiMo v2.6 Pro](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6) | 2026-09-21 | 开 | 1.02T | 42B | V/A | 1M | [权重](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL) · [GGUF](https://huggingface.co/ggml-org/MiMo-V2.6-Pro-RL-GGUF) |
 | [GLM-5.3](https://z.ai/blog/glm-5.3) | 2026-08-14 | 开 | 744B | 40B | -- | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-GGUF) |
 | [GLM-5.3-Flash](https://z.ai/blog/glm-5.3-flash) | 2026-08-26 | 开 | 320B | 18B | V | 1M | [权重](https://huggingface.co/zai-org/GLM-5.3-Flash) · [GGUF](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF) |
@@ -75,40 +75,38 @@
 
 # 指标选择
 
-指标选择的要求是有公信力（不好刷题），有区分度（没有饱和），数据齐全（模型都有）。Scicode 与其他评测中个别缺失的成绩标记为 `--`。下面是几个参考指标。
+指标选择的要求是有公信力（不好刷题），有区分度（没有饱和），数据齐全（模型都有）。下面是几个参考指标。缺失成绩记为 `--`。
 
-- **[SciCode](https://artificialanalysis.ai/evaluations/scicode)**：用多个科学领域的高难编程问题衡量代码生成和算法实现能力；AA 当前对该数据集标记为 Under review，成绩应谨慎使用。
-- **[Terminal-Bench 4.0](https://artificialanalysis.ai/evaluations/terminalbench-4-0)**：用 66 项更难的真实终端任务衡量 agent 的命令执行、环境操作、错误恢复和长流程完成能力，调整了计算资源和时间限制，并改进指令、运行环境与验证器。
-- **[AutomationBench](https://artificialanalysis.ai/evaluations/automationbench-aa)**：用 657 个模拟 SaaS 工作流衡量 agent 的跨应用工具调用、业务规则执行、状态修改和安全约束遵守能力；当前表采用 AA 的 AutomationBench-AA 分数。
-- **[HLE](https://artificialanalysis.ai/evaluations/humanitys-last-exam)**：用专家审核的跨学科前沿问题衡量知识与高难推理的综合能力；原始题集有 2500 题，AA 本列实际采用 2158 道纯文本题、无工具评测，不与 1000 题的 HLE-Diamond 混用。
-- **[CritPt](https://artificialanalysis.ai/evaluations/critpt)**：用物理学研究者设计的 70 道未公开前沿问题衡量研究级科学推理能力，采用数值数组、符号表达式和 Python 函数等抗猜测答案格式；保留原版，不与带代码执行工具的 CritPt v2 混用。
-- **[AA 指数](https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v5)**：采用 2026-10-27 发布的 v5.0，以九项独立评测生成综合分，作为快速比较模型整体水平的摘要而不是新的独立能力维度。v5 移除了 SciCode，HLE 和 CritPt 分别升级为 HLE-Diamond 和 CritPt v2 hard subset；本表仍独立保留旧版基础指标，因此 AA 指数不是这五列的平均值，亦不能与旧表 v4.3.2 分数直接比较。
-- 五个基础指标按能力分组为：SciCode、Terminal-Bench 4.0（代码）；AutomationBench（Agent 执行）；HLE、CritPt（推理）。AA 指数单独作为综合指标保留。
+- **[FrontierCode 2.0](https://artificialanalysis.ai/evaluations/frontiercode-2-0)**（表头 FrontierCode 2）：132 项真实开源仓库修改任务，通过测试与评分规则评价软件工程能力；阻断检查失败则该任务得零分。
+- **[Terminal-Bench 4.0](https://artificialanalysis.ai/evaluations/terminalbench-4-0)**（表头 Terminal-Bench 4）：66 项真实终端任务，衡量实现、调试、环境操作与任务完成能力，与仓库修改互补。
+- **[AutomationBench-AA](https://artificialanalysis.ai/evaluations/automationbench-aa)**（表头 AutomationBench）：657 项模拟 SaaS 工作流，衡量跨应用工具调用、业务规则执行和状态修改；触犯安全约束的任务得零分。
+- **[HLE-Diamond](https://artificialanalysis.ai/evaluations/hle-diamond)**：1000 道高难问题，知识与推理各 500 题，包含图像题，不允许工具；采用总分，不混用旧版纯文本 HLE 或仅 Reasoning 子分。
+- **[CritPt v2（Hard Subset）](https://artificialanalysis.ai/evaluations/critpt-v2)**（表头 CritPt v2 Hard）：允许离线代码执行的研究级物理难题；采用指数使用的 40 题困难子集，不混用 70 题全集或原版 CritPt。
+- **[AA 指数 v5.0.1](https://artificialanalysis.ai/methodology/intelligence-benchmarking)**：九项评测构成的综合指标，独立保留。上述五项只是其中一部分，因此 AA 指数不是这五列的平均值；新旧版单项成绩也不能直接比较。
 
 # Benchmark 数据
 
-| 模型 | SciCode | Terminal-Bench 4.0 | AutomationBench | HLE | CritPt | AA指数 v5.0 | 性价比 |
+| 模型 | FrontierCode 2 | Terminal-Bench 4 | AutomationBench | HLE-Diamond | CritPt v2 Hard | AA指数 v5.0.1 | 性价比 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 56.5% | 59.1% | 68.5% | 54.7% | 31.7% | 56.9 | 73.3% |
-| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 54.2% | 56.1% | 64.9% | 52.9% | 31.7% | 54.5 | **90.6%** |
-| [GPT-6.1 Terra](https://artificialanalysis.ai/models/gpt-6-1-terra) | 55.1% | 55.6% | 60.2% | 46.2% | 28.0% | 51.0 | **95.2%** |
-| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 66.9% | 59.6% | 69.5% | 61.4% | 31.7% | 58.4 | 85.3% |
-| [Claude Sonnet 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-sonnet-5-5) | 61.0% | 63.6% | 71.8% | 55.0% | 31.4% | 54.2 | 87.6% |
-| [Claude Haiku 5.5](https://artificialanalysis.ai/models/claude-haiku-5-5) | 55.0% | 32.8% | 35.4% | 44.4% | 18.9% | 36.2 | **79.0%** |
-| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 64.2% | 65.2% | 77.8% | 60.4% | 36.0% | 59.4 | **94.5%** |
-| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 61.8% | 57.1% | 77.5% | 57.1% | 27.1% | 50.4 | 80.1% |
-| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 57.8% | 24.7% | 63.5% | 42.3% | 18.0% | 35.0 | 50.8% |
-| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 60.8% | 67.2% | 73.3% | 52.5% | 24.6% | 46.0 | 72.1% |
-| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 60.9% | 34.8% | 58.6% | 49.4% | 26.6% | 29.9 | 82.8% |
-| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 59.0% | 41.9% | 62.2% | 42.3% | 19.1% | 31.7 | 53.2% |
-| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 51.6% | 32.8% | 60.4% | 39.9% | 15.4% | -- | -- |
-| [DeepSeek V4.1 Flash 1017](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | 55.9% | 33.8% | 66.6% | 43.3% | 24.0% | 32.5 | **100.0%** |
-| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 53.4% | 25.8% | 72.5% | 48.0% | 22.3% | 28.9 | 83.3% |
-| [Qwen3.8-Flash-Next](https://artificialanalysis.ai/models/qwen3-8-flash-next) | 50.6% | 25.3% | 55.9% | 38.0% | 11.1% | -- | -- |
-| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 46.6% | 5.6% | 48.2% | 33.9% | 5.4% | 20.1 | 39.5% |
+| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 42.4% | 59.1% | 68.5% | 63.8% | 70.5% | 56.9 | 72.8% |
+| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 40.6% | 56.1% | 64.9% | 58.8% | 69.5% | 54.6 | **90.2%** |
+| [GPT-6.1 Terra](https://artificialanalysis.ai/models/gpt-6-1-terra) | 42.3% | 55.6% | 60.2% | 47.3% | 68.0% | 51.3 | **95.2%** |
+| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 46.4% | 59.6% | 69.5% | 67.9% | 68.0% | 59.1 | 85.8% |
+| [Claude Sonnet 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-sonnet-5-5) | 41.7% | 63.6% | 71.8% | 53.3% | 59.0% | 54.5 | 87.5% |
+| [Claude Haiku 5.5](https://artificialanalysis.ai/models/claude-haiku-5-5) | 34.9% | 32.8% | 35.4% | 29.6% | 43.5% | 36.5 | **79.3%** |
+| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 40.6% | 65.2% | 77.8% | 69.1% | 69.0% | 60.0 | **94.8%** |
+| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 25.7% | 57.1% | 77.5% | 56.7% | 52.5% | 50.4 | 79.7% |
+| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 27.8% | 24.7% | 63.5% | 23.6% | 37.0% | 35.2 | 50.8% |
+| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 25.5% | 67.2% | 73.3% | 37.3% | 49.5% | 46.5 | 72.5% |
+| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 24.0% | 34.8% | 58.6% | 15.2% | 34.0% | 29.9 | 82.5% |
+| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 21.6% | 41.9% | 62.2% | 17.9% | 33.5% | 31.7 | 52.9% |
+| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 17.6% | 32.8% | 60.4% | 18.2% | 24.5% | 27.8 | 71.1% |
+| [DeepSeek V4.1 Flash 1017](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | 28.5% | 33.8% | 66.6% | 25.3% | 25.0% | 32.6 | **100.0%** |
+| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 20.8% | 25.8% | 72.5% | 28.1% | 32.5% | 29.1 | 83.6% |
+| [Qwen3.8-Flash-Next](https://artificialanalysis.ai/models/qwen3-8-flash-next) | -- | 25.3% | 55.9% | 16.3% | -- | -- | -- |
+| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 14.9% | 5.6% | 48.2% | 15.3% | 4.0% | 20.1 | 39.3% |
 
-- 数据核查日期：2026-10-29；AA 指数版本：v5.0。表中 AA 指数保留一位小数。
-- SciCode 整项评测当前为 Under review，保留 AA 已发布成绩并提示审查状态；不再沿用仅 MiniMax 的 SciCode/CritPt 处于审查中的旧注释。
+- 数据核查日期：2026-11-05；AA 指数版本：v5.0.1。表中 AA 指数保留一位小数。
 - 数据优先采用AA独立评测，其次采用官方模型卡/报告。两者均不存在时，参考采信第三方评价或官方估计值。
 - 闭源推理模型使用表中成绩对应的高推理档位；Claude Opus/Sonnet 5.5 的 AA 评测启用了默认 fallback，因此单独标注。
 - GPT-6 Astra、GPT-6.1 Sol/Terra、Claude Opus/Sonnet/Haiku 5.5、GLM-5.3 和 DeepSeek V4.1 Flash 1017 使用 Max 档；Gemini 4 Carbon、Argon 和 Grok 4.7 使用 High 档；Qwen3.8-27B 使用 Xhigh 档，其余使用各自默认推理档位。
@@ -117,8 +115,8 @@
 
 - 性价比使用上文 API 价格区块的综合价格与本区块的 AA 指数计算。
 - 性价比从当前表中选出“相同或更低综合价格下不存在更高 AA 指数模型”的全部 Pareto 前沿模型，拟合得到性价比预测线。然后计算每个模型的 AA 指数相对预测指数的百分比，再对总体归一化。归一化采用所有模型性价比乘以当前模型集合中最高原始性价比的倒数，使最高分恰为 100%，其余分数均落在 0–100% 区间。性价比是当前模型集合内的相对比较，模型或价格变化后需要重新筛选 Pareto 前沿并整体重算。
-- 当前拟合得到的性价比预测线为 `预期 AA 指数 = 37.6271 + 8.6828 × ln(综合价格)`（R² = 0.913）。归一化为 `实际 AA 指数 / 预期 AA 指数 × 91.6276%`。
-- GLM-5.3-Flash 和 Qwen3.8-Flash-Next 缺少 AA v5.0 指数，性价比记为 `--`，不参与拟合与绘图。图中包含尚未公开开放的 Carbon，因此 Pareto 前沿不等同于当前可用 API 的采购建议。
+- 当前拟合得到的性价比预测线为 `预期 AA 指数 = 37.8174 + 8.7685 × ln(综合价格)`（R² = 0.914）。归一化为 `实际 AA 指数 / 预期 AA 指数 × 91.6928%`。
+- Qwen3.8-Flash-Next 缺少 AA v5.0.1 指数，性价比记为 `--`，不参与拟合与绘图。图中包含尚未公开开放的 Carbon，因此 Pareto 前沿不等同于当前可用 API 的采购建议。
 - Pareto模型的性价比已经被加粗。
 - 价格-AA 关系图（横轴为对数综合价格，纵轴为 AA 指数，红点为 Pareto 前沿模型，红色虚线为 Pareto 拟合线）：
 
@@ -145,7 +143,7 @@
 
 - 评测升级到5之后，很多模型评分就大幅降低了。
 - 最强阵营里，Opus 5.5的领先位置被大幅降低，又恢复了御三家混战的格局。
-- Kimi K3.1 Pro从第四到了第九，变成第一阵营吊车尾。
+- Kimi K3.1 Pro 的 AA v5.0.1 指数为 46.5，在本表 17 款模型中排名第八，是表内开放权重模型最高分，已经进入最强阵营的混战中。
 - 第二集群里，GLM-5.3 的 AA 指数被 DeepSeek V4.1 Flash 1017 反超。这个集群实际上已经没什么价值了。
 - 高性价比部分。MiMo v2.6 Pro 的评分被大幅下调，反而落后于 DeepSeek V4.1 Flash 1017 了。DeepSeek V4.1 Flash 1017 直接封神。
 - Qwen3.8-27B自己一桌吃饭，地位始终无人挑战。
