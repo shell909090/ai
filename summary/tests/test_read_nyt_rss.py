@@ -9,8 +9,21 @@ from read_nyt_rss import (
     create_summarizer,
     process_rss_articles,
     read_article,
+    send_telegram_message,
     strip_think_blocks,
 )
+
+
+class TelegramMessageTest(unittest.TestCase):
+    def test_accepts_channel_username_and_numeric_ids(self) -> None:
+        for chat_id in ("@shell909090_nyt_brief", "-1001234567890", "123456789"):
+            with self.subTest(chat_id=chat_id), patch("read_nyt_rss.httpx.post") as post:
+                self.assertTrue(send_telegram_message("test-token", chat_id, "summary"))
+                post.assert_called_once_with(
+                    "https://api.telegram.org/bottest-token/sendMessage",
+                    json={"chat_id": chat_id, "text": "summary", "parse_mode": "Markdown"},
+                    timeout=10.0,
+                )
 
 
 class ProcessRssArticlesTest(unittest.TestCase):

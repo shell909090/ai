@@ -98,6 +98,8 @@ export LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
 # 单个 Chat ID
 export TELEGRAM_CHAT_ID="123456789"
+# 公开频道也支持 @频道用户名；Bot 需有频道发布消息权限
+# export TELEGRAM_CHAT_ID="@my_news_channel"
 # 或多个 Chat ID（用逗号分隔，可发送给多个用户或群组）
 export TELEGRAM_CHAT_ID="123456789,987654321"
 ```

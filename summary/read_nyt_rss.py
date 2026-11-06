@@ -332,7 +332,7 @@ def send_telegram_message(
 ) -> bool:
     """发送消息到Telegram，失败时返回False"""
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": int(chat_id), "text": text, "parse_mode": parse_mode}
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
 
     try:
         response = httpx.post(api_url, json=payload, timeout=10.0)
