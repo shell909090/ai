@@ -221,6 +221,20 @@ Makefile 的 `make run` 默认使用 `~/.config/little_agent/config.yaml` 作为
 
 ## 开发
 
+前端开发使用 Node.js 24；所有安装前端依赖的 CI 任务也使用此主版本。
+通过 `cd frontend && npm ci` 安装锁定的依赖。
+
+升级依赖时只采用已发布至少 72 小时的稳定版本。本次直接及传递依赖的
+发布日期截止点统一为 `2026-11-03T14:36:09Z`。TypeScript 保留 6.0.3，
+因为 typescript-eslint 8.72.1 声明支持的 TypeScript 版本范围为 `<6.1`。
+
+整体升级后，ESLint 和 typescript-eslint 仍依赖受
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+影响的 minimatch 10.x，因此在 `frontend/package.json` 中将 `minimatch@10`
+定向 override 为已过观察期的最新修复版 `11.0.4`。待上游依赖范围能自行解析到
+修复版本后移除此 override，并重新运行 `npm ci`、`npm run lint`、`npm test`、
+`npm run build` 和 `npm audit`。
+
 ```bash
 make fmt          # 使用 ruff 格式化
 make lint         # ruff 检查 + mypy --strict

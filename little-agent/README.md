@@ -223,6 +223,23 @@ override it.
 
 ## Development
 
+Use Node.js 24 for frontend development; all CI jobs that install frontend
+dependencies use the same major version. Install the locked dependencies with
+`cd frontend && npm ci`.
+
+Dependency updates use stable releases that have been published for at least
+72 hours. This refresh uses a fixed cutoff of `2026-11-03T14:36:09Z` for both
+direct and transitive dependencies. TypeScript remains on 6.0.3 because
+typescript-eslint 8.72.1 declares support for TypeScript `<6.1`.
+
+After upgrading the dependencies, ESLint and typescript-eslint still require
+minimatch 10.x, which is affected by
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+`frontend/package.json` therefore overrides `minimatch@10` to `11.0.4`, the
+latest fixed release outside the observation window. Remove this override once
+the upstream dependency ranges resolve to fixed versions without it, and rerun
+`npm ci`, `npm run lint`, `npm test`, `npm run build`, and `npm audit`.
+
 ```bash
 make fmt          # format with ruff
 make lint         # ruff check + mypy --strict
