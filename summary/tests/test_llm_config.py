@@ -15,8 +15,8 @@ class LlmConfigTest(unittest.TestCase):
             {"role": "user", "content": "revise"},
         ]
         with (
-            patch("llm_config.litellm.validate_environment") as validate,
-            patch("llm_config.litellm.completion") as completion,
+            patch("llm_config.llm_transport.validate_environment") as validate,
+            patch("llm_config.llm_transport.completion") as completion,
         ):
             validate.return_value = {"keys_in_environment": True}
             completion.return_value = SimpleNamespace(
@@ -39,8 +39,8 @@ class LlmConfigTest(unittest.TestCase):
 
     def test_empty_and_invalid_output(self) -> None:
         with (
-            patch("llm_config.litellm.validate_environment") as validate,
-            patch("llm_config.litellm.completion") as completion,
+            patch("llm_config.llm_transport.validate_environment") as validate,
+            patch("llm_config.llm_transport.completion") as completion,
         ):
             validate.return_value = {"keys_in_environment": True}
             client = SummaryClient("openai/test", "prompt")
@@ -59,8 +59,8 @@ class LlmConfigTest(unittest.TestCase):
 
     def test_validation_failure_prevents_completion(self) -> None:
         with (
-            patch("llm_config.litellm.validate_environment") as validate,
-            patch("llm_config.litellm.completion") as completion,
+            patch("llm_config.llm_transport.validate_environment") as validate,
+            patch("llm_config.llm_transport.completion") as completion,
         ):
             validate.return_value = {
                 "keys_in_environment": False,

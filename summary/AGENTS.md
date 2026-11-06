@@ -1,7 +1,7 @@
 # 项目核心定位
 
 功能：总结各种信息。
-技术栈：Python, litellm, uv (包管理)。
+技术栈：Python, httpx, uv (包管理)。
 
 # 代码规范
 
@@ -201,10 +201,5 @@ TELEGRAM_CHAT_ID=123456789,987654321,111222333
 - `feedparser`：RSS feed 解析
 - `httpx`：HTTP 请求（文章抓取 + Telegram API 调用）
 - `beautifulsoup4 + lxml`：HTML 解析
-- `litellm`：直接调用 LLM 统一接口，无需 LangChain
+- `httpx`：直接调用供应商 API
 - **无需** `python-dotenv`：手动加载环境变量
-
-## filelock 临时覆盖
-
-2026-10-28：Trivy 报告 CVE-2026-112940，修复需 filelock≥4.2.1，但 LiteLLM 限制 <4。用 uv override 指定 `filelock>=4.2.4,<5`，锁定 4.2.4；项目测试、文件锁检查及复扫通过，未验证完整外部模型流程。上游放宽限制后移除 override 并重新验证。
-上游跟踪：https://github.com/BerriAI/litellm/issues/48394 。

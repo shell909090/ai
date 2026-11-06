@@ -3,7 +3,7 @@
 import logging
 from uuid import uuid4
 
-import litellm
+import llm_transport
 
 
 OPENCODE_SESSION_ID = str(uuid4())
@@ -15,11 +15,11 @@ def get_llm_extra_headers() -> dict[str, str]:
 
 
 class SummaryClient:
-    """Generate summaries through LiteLLM with shared session headers."""
+    """Generate summaries through HTTP with shared session headers."""
 
     def __init__(self, model: str, system_prompt: str) -> None:
         logging.info("Validating environment for model: %s", model)
-        validation_result = litellm.validate_environment(model)
+        validation_result = llm_transport.validate_environment(model)
         if validation_result["keys_in_environment"] is False:
             missing = validation_result["missing_keys"]
             raise EnvironmentError(
@@ -41,7 +41,7 @@ class SummaryClient:
         ]
         if revision_messages:
             messages.extend(revision_messages)
-        response = litellm.completion(
+        response = llm_transport.completion(
             model=self.model,
             messages=messages,
             temperature=0,

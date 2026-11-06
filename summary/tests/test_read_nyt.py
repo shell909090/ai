@@ -1,4 +1,4 @@
-"""Tests for the single-article LiteLLM summary workflow."""
+"""Tests for the single-article HTTP summary workflow."""
 
 import unittest
 from types import SimpleNamespace
@@ -9,10 +9,10 @@ from read_nyt import create_summarizer, main, process_article, read_article
 
 
 class ReadNytTest(unittest.TestCase):
-    def test_process_article_with_litellm(self) -> None:
+    def test_process_article_with_llm_transport(self) -> None:
         with (
-            patch("llm_config.litellm.validate_environment") as validate,
-            patch("llm_config.litellm.completion") as completion,
+            patch("llm_config.llm_transport.validate_environment") as validate,
+            patch("llm_config.llm_transport.completion") as completion,
             patch("read_nyt.get_article") as fetch,
             patch("read_nyt.write_to_file") as write,
             patch("builtins.print") as output,

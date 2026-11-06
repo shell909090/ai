@@ -8,7 +8,6 @@ dependencies = [
     "httpx>=0.28.1",
     "beautifulsoup4>=4.15.0",
     "lxml>=6.1.3",
-    "litellm>=1.106.5",
     "feedparser>=6.0.14",
 ]
 
@@ -23,9 +22,6 @@ line-length = 120
 
 [tool.uv]
 prerelease = "disallow"
-# Override LiteLLM's filelock<4 cap for the security fix; remove when upstream relaxes it.
-# https://github.com/BerriAI/litellm/issues/48394
-override-dependencies = ["filelock>=4.2.4,<5"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90"]

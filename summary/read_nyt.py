@@ -160,8 +160,8 @@ def main() -> None:
     )
     parser.add_argument(
         '--model', '-m',
-        default=os.getenv('MODEL', 'groq/llama-3.3-70b-versatile'),
-        help='LLM模型名称，默认从环境变量MODEL读取或使用groq/llama-3.3-70b-versatile'
+        default=os.getenv('MODEL'),
+        help='LLM模型名称，从环境变量MODEL读取，未设置时必须指定'
     )
     parser.add_argument(
         '--output', '-o',

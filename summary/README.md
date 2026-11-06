@@ -5,8 +5,8 @@
 ## 技术栈
 
 - **语言**: Python 3.12+
-- **LLM 调用**: 直接使用 LiteLLM，无需 LangChain
-- **LLM**: 通过 LiteLLM 统一接口支持多种供应商（OpenAI、Google Gemini、Anthropic Claude、Cohere 等）
+- **LLM 调用**: 使用 httpx 直接调用 API
+- **LLM**: 通过本地 HTTP 适配层支持多种供应商（OpenAI、Google Gemini、Anthropic Claude、Cohere 等）
 - **包管理**: uv
 
 ## 功能
@@ -43,28 +43,20 @@ uv pip install -e .
 
 ### API 密钥
 
-**重要**: 使用前必须设置相应的 API 密钥环境变量，程序会在启动时使用 `litellm.validate_environment` 验证环境变量，如果缺失会直接抛出异常。
-
-使用 LiteLLM 统一接口，支持多种 LLM 供应商。LiteLLM 会根据环境变量自动识别供应商：
-
-- **Groq** - 设置 `GROQ_API_KEY` (默认模型使用)
-- **OpenAI** - 设置 `OPENAI_API_KEY`
-- **Google Gemini** - 设置 `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`
-- **Anthropic Claude** - 设置 `ANTHROPIC_API_KEY`
-- **Cohere** - 设置 `COHERE_API_KEY`
-- 更多供应商请参考 [LiteLLM 文档](https://docs.litellm.ai/docs/providers)
-
-可选配置自定义 API 端点（通过 LiteLLM 支持）：
-
-- `OPENAI_API_BASE` - OpenAI API 自定义端点
-- 其他供应商端点配置参考 LiteLLM 文档
+必须设置 `MODEL=provider/model`（或传入 `--model`）及对应 API 密钥，缺失时报错。
+支持 `openai`、`groq`、`gemini`、`anthropic`、`cohere`；分别使用
+`OPENAI_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`（或 `GOOGLE_API_KEY`）、
+`ANTHROPIC_API_KEY`、`COHERE_API_KEY`。
+可通过对应的 `PROVIDER_API_BASE` 覆盖 API 基础端点，例如 `OPENAI_API_BASE`。
+其他 OpenAI 兼容网关使用 `openai/模型名` 和自定义端点。
+不再支持自动推断供应商，模型必须带供应商前缀。
 
 程序启动时会自动生成一个进程级 UUID，并通过 `x-opencode-session` 请求头发送，
 以支持 OpenCode Go 的会话路由。同一次脚本运行中的所有摘要请求共用该 UUID。
 
 ### 模型选择
 
-通过环境变量或命令行参数指定模型，遵循 LiteLLM 格式：
+通过环境变量或命令行参数指定模型，使用 provider/model 格式：
 
 ```bash
 # 环境变量（推荐使用 provider/model 格式）
@@ -78,12 +70,6 @@ export MODEL=anthropic/claude-3-5-sonnet-20241022
 ./read_nyt.py --model openai/gpt-4o-mini
 ./read_nyt.py --model gemini/gemini-pro
 ```
-
-**LiteLLM 模型格式说明**：
-
-- **推荐格式**: `provider/model` (如 `groq/llama-3.3-70b-versatile`、`openai/gpt-4o-mini`、`gemini/gemini-pro`)
-- **简化格式**: 对于常见模型，可省略 provider (如 `gpt-4o-mini`)，LiteLLM 会自动识别
-- 完整模型列表和格式请参考 [LiteLLM 文档](https://docs.litellm.ai/docs/providers)
 
 模型选择原则参考 `../CLAUDE.md`。
 
@@ -164,7 +150,7 @@ export TELEGRAM_CHAT_ID="123456789,987654321"
 
 #### read_nyt 参数说明
 
-- `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/llama-3.3-70b-versatile`）
+- `--model, -m`: 指定 LLM 模型名称，使用 provider/model 格式（默认：环境变量 `MODEL` ，缺失时报错）
 - `--output, -o`: 输出文件路径，摘要将追加到文件末尾
 - `rest`: 要处理的文章 URL 列表（位置参数）
 
@@ -205,7 +191,7 @@ source .env
 
 #### read_nyt_rss 参数说明
 
-- `--model, -m`: 指定 LLM 模型名称，遵循 LiteLLM 格式（默认：环境变量 `MODEL` 或 `groq/qwen/qwen3.6-27b`）
+- `--model, -m`: 指定 LLM 模型名称，使用 provider/model 格式（默认：环境变量 `MODEL` ，缺失时报错）
 - `--output, -o`: 输出文件路径（默认：`nyt_summary.txt`）
 - `--hours`: 时间范围（小时），只处理指定时间内的新闻（默认：49）
 - `--rss-url`: RSS feed URL（默认：`https://cn.nytimes.com/rss/`）
@@ -224,18 +210,22 @@ source .env
 | `GROQ_API_KEY` | LLM API Key | `gsk_...` | Daily NYT |
 | `OPENAI_API_KEY` | OpenAI 兼容 API Key | `sk-...` | Daily NYT |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | `123456:ABC-DEF...` | Daily NYT |
-| `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` | Daily NYT |
 
 | Variable 名称 | 说明 | 示例 | 适用 Workflow |
 |--------------|------|------|--------------|
-| `MODEL` | 可选，模型名称 | `groq/qwen/qwen3.6-27b` | Daily NYT |
+| `TELEGRAM_CHAT_ID` | Chat ID（支持多个，逗号分隔） | `123456789` 或 `123456789,987654321` | Daily NYT |
+| `MODEL` | 必填，provider/model 格式 | `groq/qwen/qwen3.6-27b` | Daily NYT |
 | `OPENAI_API_BASE` | 可选，OpenAI 兼容 API 端点 | `https://api.openai.com/v1` | Daily NYT |
+
+按 MODEL 选择配置对应密钥；workflow 同时支持 `GEMINI_API_KEY`（或 `GOOGLE_API_KEY`）、
+`ANTHROPIC_API_KEY`、`COHERE_API_KEY` Secrets，以及各供应商的 `<PROVIDER>_API_BASE` Variables。
+未配置自定义端点时使用供应商默认地址。MODEL 未配置时任务会立即报错。
 
 ### 定时运行
 
 | Workflow | 触发时间 | 说明 |
 |----------|----------|------|
-| Daily NYT News Summary | 每天 UTC 01:00 | 抓取 49 小时内新闻，生成 LLM 摘要，推送 Telegram |
+| Daily NYT News Summary | 每天 UTC 13:00（北京时间 21:00） | 抓取 49 小时内新闻，生成 LLM 摘要，推送 Telegram |
 
 ### 手动触发
 
@@ -253,7 +243,7 @@ source .env
 ### 工作流程
 
 ```
-定时触发 (9:00 AM)
+定时触发 (UTC 13:00 / 北京时间 21:00)
     ↓
 检出代码
     ↓
@@ -328,11 +318,11 @@ make lint test scan
 
 程序包含完善的错误处理和日志记录：
 
-- **API 密钥验证**：启动时使用 `litellm.validate_environment` 验证环境变量，如缺失会立即抛出异常
+- **API 密钥验证**：启动时检查模型和密钥配置 验证环境变量，如缺失会立即抛出异常
 - **HTTP 请求失败**：会记录详细错误信息
 - **文章解析失败**：会跳过并继续处理下一篇
 - **LLM 调用异常**：会被捕获并记录
-- **速率限制（RateLimitError）**：遇到 `litellm.RateLimitError` 时自动等待 30 秒后重试，默认最多重试 3 次
+- **速率限制（RateLimitError）**：遇到 `llm_transport.RateLimitError` 时自动等待 30 秒后重试，默认最多重试 3 次
 
 ## 依赖项
 
@@ -341,7 +331,7 @@ make lint test scan
 - `httpx` - HTTP 客户端
 - `beautifulsoup4` + `lxml` - HTML 解析
 - `feedparser` - RSS feed 解析
-- `litellm` - 统一的 LLM API 接口，直接调用 `completion`，保留多供应商支持
+- `llm_transport.py` - 本地多供应商 HTTP 适配层，无额外 SDK 依赖
 
 开发依赖为 `ruff` 和 `cognitive-complexity`；测试使用 Python 标准库 `unittest`。
 

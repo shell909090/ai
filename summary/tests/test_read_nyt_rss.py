@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import Mock, call, patch
 
-import litellm
+import llm_transport
 
 from read_nyt_rss import (
     create_summarizer,
@@ -158,11 +158,11 @@ class ReadArticleTest(unittest.TestCase):
 
     def test_rewrite_preserves_original_prompt_and_article(self) -> None:
         with (
-            patch("llm_config.litellm.validate_environment", return_value={"keys_in_environment": True}),
-            patch("llm_config.litellm.completion") as completion,
+            patch("llm_config.llm_transport.validate_environment", return_value={"keys_in_environment": True}),
+            patch("llm_config.llm_transport.completion") as completion,
         ):
             completion.side_effect = [
-                litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": text}}])
+                llm_transport.ModelResponse(choices=[{"message": {"role": "assistant", "content": text}}])
                 for text in ("摘" * 401, "<think>分析</think>新摘要")
             ]
             summarizer = create_summarizer("test/model")
@@ -198,7 +198,7 @@ class ReadArticleTest(unittest.TestCase):
         summarizer = Mock()
         summarizer.summarize.side_effect = [
             "摘" * 401,
-            litellm.RateLimitError("limited", llm_provider="test", model="test"),
+            llm_transport.RateLimitError("limited", llm_provider="test", model="test"),
             "新摘要",
         ]
 

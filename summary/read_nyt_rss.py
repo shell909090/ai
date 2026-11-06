@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import feedparser
 from bs4 import BeautifulSoup
-import litellm
+import llm_transport
 from llm_config import SummaryClient
 
 # HTTP 请求默认配置
@@ -275,7 +275,7 @@ def _invoke_summary(
         try:
             logging.info("Generating summary with LLM")
             return strip_think_blocks(summarizer.summarize(content, revision_messages))
-        except litellm.RateLimitError as e:
+        except llm_transport.RateLimitError as e:
             if attempt >= max_retries:
                 logging.error(f"Rate limit exceeded after {max_retries} retries: {e}")
                 raise
@@ -450,7 +450,7 @@ def send_article_to_telegram(
 
 
 def create_summarizer(model: str) -> SummaryClient:
-    """创建使用新闻摘要提示词的LiteLLM客户端。"""
+    """创建使用新闻摘要提示词的HTTP客户端。"""
     return SummaryClient(
         model=model,
         system_prompt="""你是一位善于深度解读新闻的分析师。请为读者提供完整、自足的摘要，让读者无需阅读原文即可充分理解事件全貌。
@@ -643,8 +643,8 @@ def main() -> None:
     parser.add_argument(
         "--model",
         "-m",
-        default=os.getenv("MODEL", "groq/qwen/qwen3.6-27b"),
-        help="LLM模型名称，默认从环境变量MODEL读取或使用groq/qwen/qwen3.6-27b",
+        default=os.getenv("MODEL"),
+        help="LLM模型名称，从环境变量MODEL读取，未设置时必须指定",
     )
     parser.add_argument(
         "--output",
