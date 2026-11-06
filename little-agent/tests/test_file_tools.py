@@ -95,9 +95,7 @@ async def test_pos_prepend(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "prepend.txt"
     target.write_text("world")
-    await mgr["edit"](
-        {"path": str(target), "pos": 0, "len": 0, "new_str": "hello "}, mock_session
-    )
+    await mgr["edit"]({"path": str(target), "pos": 0, "len": 0, "new_str": "hello "}, mock_session)
     assert target.read_text() == "hello world"
 
 
@@ -107,9 +105,7 @@ async def test_pos_append(tmp_path: Path, mock_session: MagicMock) -> None:
     mgr = _make_manager()
     target = tmp_path / "append.txt"
     target.write_text("hello")
-    await mgr["edit"](
-        {"path": str(target), "pos": -1, "len": 0, "new_str": " world"}, mock_session
-    )
+    await mgr["edit"]({"path": str(target), "pos": -1, "len": 0, "new_str": " world"}, mock_session)
     assert target.read_text() == "hello world"
 
 
@@ -119,9 +115,7 @@ async def test_pos_replace_range(tmp_path: Path, mock_session: MagicMock) -> Non
     mgr = _make_manager()
     target = tmp_path / "replace.txt"
     target.write_text("hello world")
-    await mgr["edit"](
-        {"path": str(target), "pos": 6, "len": 5, "new_str": "there"}, mock_session
-    )
+    await mgr["edit"]({"path": str(target), "pos": 6, "len": 5, "new_str": "there"}, mock_session)
     assert target.read_text() == "hello there"
 
 

@@ -7,6 +7,7 @@ import logging
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from little_agent.tools.protocol import ToolMap
 from little_agent.types import SessionUpdate
@@ -251,6 +252,9 @@ class OpenAIBackend(_StreamingBackend):
             max_concurrency=max_concurrency,
             context_window=context_window,
         )
+        self._opencode_session_header = (
+            "opencode" in (urlsplit(base_url).hostname or "").lower() if base_url else False
+        )
         if base_url is not None:
             self._client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         else:
@@ -274,6 +278,11 @@ class OpenAIBackend(_StreamingBackend):
                     stream=True,
                     stream_options={"include_usage": True},
                     user=session_id or None,
+                    **(
+                        {"extra_headers": {"x-opencode-session": session_id}}
+                        if self._opencode_session_header
+                        else {}
+                    ),
                 ),
                 timeout=self._timeout,
             )

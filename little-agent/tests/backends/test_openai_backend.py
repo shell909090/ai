@@ -666,3 +666,36 @@ async def test_openai_backend_reasoning_field_with_orphaned_close_tag() -> None:
     result, _ = await _collect(backend.generate(session))  # type: ignore[arg-type]
     assert result.thinking_text == "I am thinking"
     assert result.output_text == "Here is my answer"
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected_header"),
+    [
+        ("https://opencode.ai/zen/go/v1", True),
+        ("https://API.OpenCode.example/v1", True),
+        ("https://my-opencode-provider.example/v1", True),
+        ("https://api.example/v1", False),
+        ("https://api.example/opencode/v1", False),
+        ("https://api.example/v1?provider=opencode", False),
+        ("https://opencode@api.example/v1", False),
+        (None, False),
+    ],
+)
+async def test_opencode_session_header_matches_hostname(
+    base_url: str | None, expected_header: bool
+) -> None:
+    """Route OpenCode requests by the current session only when the hostname matches."""
+    with patch("openai.AsyncOpenAI") as client_factory:
+        create = AsyncMock(return_value=object())
+        client_factory.return_value.chat.completions.create = create
+        backend = OpenAIBackend(model="test-model", api_key="test-key", base_url=base_url)
+        for session_id in ("session-first", "session-second"):
+            await backend._open_stream([], None, session_id)
+            kwargs = create.call_args.kwargs
+            headers = kwargs.get("extra_headers") or {}
+            if expected_header:
+                assert headers["x-opencode-session"] == session_id
+            else:
+                assert "x-opencode-session" not in headers
+            assert kwargs["user"] == session_id
+        assert create.await_count == 2

@@ -8,6 +8,6 @@
     "lib": ["ES2020", "DOM"],
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "vitest.config.mts"],
   "exclude": ["node_modules"]
 }

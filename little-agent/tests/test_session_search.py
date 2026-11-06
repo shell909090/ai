@@ -89,9 +89,7 @@ _ALL_RECORDS = [
 ]
 
 
-def _write_fixture(
-    store: SessionJSONLStore, records: list[dict[str, Any]] | None = None
-) -> Path:
+def _write_fixture(store: SessionJSONLStore, records: list[dict[str, Any]] | None = None) -> Path:
     path = _resolve(store, SESSION_ID)
     _write_jsonl(path, records if records is not None else _ALL_RECORDS)
     return path

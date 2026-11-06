@@ -52,26 +52,23 @@ ts-coverage:
 	@{ echo "=== $$(date -Iseconds) START ==="; \
 	   echo "[before] $$(free -m | grep '^Mem:' | tr -s ' ')"; \
 	} >> $(TS_COVERAGE_LOG)
-	-@LOG="$$(pwd)/$(TS_COVERAGE_LOG)"; \
+	@LOG="$(abspath $(TS_COVERAGE_LOG))"; \
 	 ( while true; do \
 	     printf '[poll %s] %s\n' "$$(date -Iseconds)" "$$(free -m | grep '^Mem:' | tr -s ' ')" >> "$$LOG"; \
 	     sleep 2; \
 	   done ) & POLLER=$$!; \
-	 ( cd $(FRONTEND) && npx vitest run --coverage 2>&1 | tee -a coverage-debug.log ); \
-	 kill $$POLLER 2>/dev/null; wait $$POLLER 2>/dev/null; true
-	@{ echo "[after]  $$(free -m | grep '^Mem:' | tr -s ' ')"; \
-	   echo "=== $$(date -Iseconds) END ==="; echo ""; \
-	} >> $(TS_COVERAGE_LOG)
-	@$(MAKE) ts-coverage-warn --no-print-directory || true
+	 trap 'kill $$POLLER 2>/dev/null; wait $$POLLER 2>/dev/null || :' EXIT; \
+	 trap 'exit 130' INT; trap 'exit 143' TERM; \
+	 status=0; \
+	 ( cd $(FRONTEND) && npx vitest run --coverage ) >> "$$LOG" 2>&1 || status=$$?; \
+	 echo "[after]  $$(free -m | grep '^Mem:' | tr -s ' ')" >> "$$LOG"; \
+	 echo "=== $$(date -Iseconds) END status=$$status ===" >> "$$LOG"; \
+	 echo "Coverage log: $$LOG (exit $$status)"; \
+	 exit $$status
+	@$(MAKE) ts-coverage-warn --no-print-directory
 
 ts-coverage-warn:
-	@node -e " \
-	  try { \
-	    var r = require('./$(FRONTEND)/coverage/coverage-summary.json'); \
-	    var p = r.total.lines.pct; \
-	    if (p < 50) process.stdout.write('WARNING: TypeScript coverage below 50%: ' + p + '%\n'); \
-	  } catch (e) {} \
-	" 2>/dev/null || true
+	@node scripts/check-ts-coverage.cjs "$(FRONTEND)/coverage/coverage-summary.json"
 
 ci-test:
 	uv run pytest ci_tests/ -v
