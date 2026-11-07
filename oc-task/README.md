@@ -13,6 +13,10 @@ oc-task -b -m provider/model 'Run this task on the server'
 
 The second example requires a default model in the environment or configuration. There is no built-in default model. `--agent` selects an agent already configured on the service; it does not create or configure an agent. Configure restricted summarization agents on the server and verify their tool permissions there.
 
+## Agent skill
+
+[skills/oc-task/SKILL.md](skills/oc-task/SKILL.md) contains portable task-submission and systemd scheduling guidance. Link the `skills/oc-task/` directory into your assistant's skill discovery directory as `oc-task` if needed. Keep this link pointing into the project checkout so the skill's relative reference to the project README remains valid. Machine-specific endpoints, models, credentials and task schedules belong in deployment configuration or a separate local skill, not in this project.
+
 ## Execution modes
 
 Foreground execution waits for a final server outcome, streams text in the default output mode, and returns a nonzero exit code on failure. `--timeout SECONDS` limits execution; zero, the default, means no overall limit. On timeout, interruption, or an unattended permission/form request, the client attempts to cancel the server task. Cancellation and optional cleanup can take additional time beyond the execution timeout.
