@@ -7,14 +7,18 @@
 
 其中，`ACP模式` 是当前项目的主要模式，`/loop模式` 是兼容既有外部循环工作流的模式。
 
+## Agent 技能
+
+[skills/tgbot/SKILL.md](skills/tgbot/SKILL.md) 提供 Telegram 收发与 ACP 桥接的技能说明。可将 `skills/tgbot/` 链接到助手的技能发现目录并命名为 `tgbot`；保留完整项目，使相对脚本和文档引用有效。
+
 ## loop模式
 
-使用telegram bot远程操控claude code。方法是，配置使用tgbot.py工具，让本机命令行可以和特定的telegram user交互。然后编写tgbot.md指令，驱动这个脚本来获得消息，处理消息，回复消息。最后配置claude code的/loop，定期执行这个脚本。注意，由于本机console实际无人值守，所以没有人审批权限。因此，要么不使用工具，要么使用`--dangerously-skip-permissions`来跳过审批，要么配置--allowedTools去放行合适工具。一旦实际启用工具，/loop很可能会卡死。
+使用telegram bot远程操控claude code。方法是，配置使用tgbot.py工具，让本机命令行可以和特定的telegram user交互。然后使用 [tgbot 技能](skills/tgbot/SKILL.md) 获取消息、处理消息并回复。最后配置claude code的/loop，定期执行这个脚本。注意，由于本机console实际无人值守，所以没有人审批权限。因此，要么不使用工具，要么使用`--dangerously-skip-permissions`来跳过审批，要么配置--allowedTools去放行合适工具。一旦实际启用工具，/loop很可能会卡死。
 
 启动方法：
 
 1. 用`claude --dangerously-skip-permissions`启动agent。
-2. 读一下tgbot.md，照着执行。
+2. 加载 [tgbot 技能](skills/tgbot/SKILL.md)，明确轮询周期和允许执行的操作。
 
 安全警告：
 

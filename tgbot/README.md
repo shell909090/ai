@@ -9,14 +9,18 @@ Chinese version: [README.cn.md](README.cn.md)
 
 Among them, `ACP mode` is the main mode of the project, while `/loop mode` is the compatibility mode for existing external loop workflows.
 
+## Agent skill
+
+[skills/tgbot/SKILL.md](skills/tgbot/SKILL.md) provides agent instructions for Telegram messaging and ACP bridging. Link `skills/tgbot/` into your assistant's skill discovery directory as `tgbot`; keep the full project checkout so relative script and documentation references remain available.
+
 ## /loop Mode
 
-Use a Telegram bot to remotely operate Claude Code. The basic method is to configure and use `tgbot.py` so the local command line can interact with a specific Telegram user. Then write instructions in `tgbot.md` so the script can fetch messages, process them, and send replies. Finally, configure Claude Code `/loop` to run this script periodically. Note that because the local console is effectively unattended, there is nobody available to approve permissions. In practice, that means either avoiding tools entirely, using `--dangerously-skip-permissions` to bypass approval, or configuring `--allowedTools` to allow an appropriate subset of tools. Once tools are actually enabled, `/loop` can easily get stuck.
+Use a Telegram bot to remotely operate Claude Code. The basic method is to configure and use `tgbot.py` so the local command line can interact with a specific Telegram user. Then use [the tgbot skill](skills/tgbot/SKILL.md) to fetch messages, process them, and send replies. Finally, configure Claude Code `/loop` to run this script periodically. Note that because the local console is effectively unattended, there is nobody available to approve permissions. In practice, that means either avoiding tools entirely, using `--dangerously-skip-permissions` to bypass approval, or configuring `--allowedTools` to allow an appropriate subset of tools. Once tools are actually enabled, `/loop` can easily get stuck.
 
 Startup:
 
 1. Start the agent with `claude --dangerously-skip-permissions`.
-2. Read `tgbot.md` and follow it.
+2. Load [the tgbot skill](skills/tgbot/SKILL.md) and specify the polling interval and permitted operations.
 
 Security warnings:
 
