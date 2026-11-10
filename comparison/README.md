@@ -2,7 +2,7 @@
 
 数据收纳几类模型：
 
-1. 闭源最强大模型。两个：Gemini 4 Carbon、Claude Opus 5.5。
+1. 闭源最强大模型。两个：Gemini 4 Carbon、Claude Fable 5.2。
 2. 开源最强大模型。两个：Kimi K3.1 Pro和DeepSeek V4.1 Flash 1017。
 3. 个人低成本独立部署。一个：Qwen3.8-27B。
 4. 公司可离线部署。两个：GLM-5.3-Flash和Qwen3.8-Flash-Next。
@@ -21,8 +21,8 @@
 | [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) | 2026-09-03 | 闭 | -- | -- | V | 1M | -- |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) | 2026-09-29 | 闭 | -- | -- | V | 1.05M | -- |
 | [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) | 2026-10-26 | 闭 | -- | -- | V | 1.05M | -- |
+| [Claude Fable 5.2](https://www.anthropic.com/claude-fable-and-mythos-5-2) | 2026-11-09 | 闭 | -- | -- | V | 1M | -- |
 | [Claude Opus 5.5](https://www.anthropic.com/claude-opus-5-5) | 2026-09-22 | 闭 | -- | -- | V | 1M | -- |
-| [Claude Sonnet 5.5](https://www.anthropic.com/claude-sonnet-5-5) | 2026-09-28 | 闭 | -- | -- | V | 1M | -- |
 | [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview) | 2026-10-07 | 闭 | -- | -- | V | 1M | -- |
 | [Gemini 4 Carbon](https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-4-carbon/) | 2026-10-28 | 闭 | -- | -- | V/A | 1M | -- |
 | [Gemini 4 Argon](https://blog.google/intl/zh-tw/products/explore-get-answers/gemini-4-argon/) | 2026-09-30 | 闭 | -- | -- | V/A | 1M | -- |
@@ -48,8 +48,8 @@
 | GPT-6 Astra | \$10 | \$50 | \$1 | \$12.5 | \$47.5 |
 | GPT-6.1 Sol | \$2 | \$10 | \$0.1 | \$2.5 | \$7.5 |
 | GPT-6.1 Terra | \$1 | \$5 | \$0.05 | \$1.25 | \$3.75 |
+| Claude Fable 5.2 | \$8 | \$40 | \$0.20 | \$16 | \$32 |
 | Claude Opus 5.5 | \$4 | \$20 | \$0.2 | \$8 | \$18 |
-| Claude Sonnet 5.5 | \$2 | \$10 | \$0.1 | \$4 | \$9 |
 | Claude Haiku 5.5 | \$0.30 | \$1.50 | \$0.03 | \$0.60 | \$1.65 |
 | Gemini 4 Carbon | \$4 | \$20 | \$0.2 | -- | \$10 |
 | Gemini 4 Argon | \$4 | \$20 | \$0.2 | -- | \$10 |
@@ -88,34 +88,35 @@
 
 | 模型 | FrontierCode 2 | Terminal-Bench 4 | AutomationBench | HLE-Diamond | CritPt v2 Hard | AA指数 v5.0.1 | 性价比 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 42.4% | 59.1% | 68.5% | 63.8% | 70.5% | 56.9 | 72.8% |
-| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 40.6% | 56.1% | 64.9% | 58.8% | 69.5% | 54.6 | **90.2%** |
-| [GPT-6.1 Terra](https://artificialanalysis.ai/models/gpt-6-1-terra) | 42.3% | 55.6% | 60.2% | 47.3% | 68.0% | 51.3 | **95.2%** |
-| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 46.4% | 59.6% | 69.5% | 67.9% | 68.0% | 59.1 | 85.8% |
-| [Claude Sonnet 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-sonnet-5-5) | 41.7% | 63.6% | 71.8% | 53.3% | 59.0% | 54.5 | 87.5% |
-| [Claude Haiku 5.5](https://artificialanalysis.ai/models/claude-haiku-5-5) | 34.9% | 32.8% | 35.4% | 29.6% | 43.5% | 36.5 | **79.3%** |
-| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 40.6% | 65.2% | 77.8% | 69.1% | 69.0% | 60.0 | **94.8%** |
-| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 25.7% | 57.1% | 77.5% | 56.7% | 52.5% | 50.4 | 79.7% |
-| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 27.8% | 24.7% | 63.5% | 23.6% | 37.0% | 35.2 | 50.8% |
-| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 25.5% | 67.2% | 73.3% | 37.3% | 49.5% | 46.5 | 72.5% |
-| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 24.0% | 34.8% | 58.6% | 15.2% | 34.0% | 29.9 | 82.5% |
-| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 21.6% | 41.9% | 62.2% | 17.9% | 33.5% | 31.7 | 52.9% |
-| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 17.6% | 32.8% | 60.4% | 18.2% | 24.5% | 27.8 | 71.1% |
+| [GPT-6 Astra](https://artificialanalysis.ai/models/gpt-6-astra) | 42.4% | 59.1% | 68.5% | 63.8% | 70.5% | 56.9 | 77.2% |
+| [GPT-6.1 Sol](https://artificialanalysis.ai/models/gpt-6-1-sol) | 40.6% | 56.1% | 64.9% | 58.8% | 69.5% | 54.6 | **94.5%** |
+| [GPT-6.1 Terra](https://artificialanalysis.ai/models/gpt-6-1-terra) | 42.3% | 55.6% | 60.2% | 47.3% | 68.0% | 51.3 | **99.0%** |
+| [Claude Fable 5.2 (with fallback)](https://artificialanalysis.ai/models/claude-fable-5-2) | 48.8% | 59.6% | 76.4% | 80.2% | 76.5% | 64.6 | **91.9%** |
+| [Claude Opus 5.5 (with fallback)](https://artificialanalysis.ai/models/claude-opus-5-5) | 46.4% | 59.6% | 69.5% | 67.9% | 68.0% | 59.1 | 90.5% |
+| [Claude Haiku 5.5](https://artificialanalysis.ai/models/claude-haiku-5-5) | 34.9% | 32.8% | 35.4% | 29.6% | 43.5% | 36.5 | **81.6%** |
+| [Gemini 4 Carbon](https://artificialanalysis.ai/models/gemini-4-carbon) | 40.6% | 65.2% | 77.8% | 69.1% | 69.0% | 60.0 | **99.6%** |
+| [Gemini 4 Argon](https://artificialanalysis.ai/models/gemini-4-argon) | 25.7% | 57.1% | 77.5% | 56.7% | 52.5% | 50.4 | 83.6% |
+| [Grok 4.7](https://artificialanalysis.ai/models/grok-4-7-high) | 27.8% | 24.7% | 63.5% | 23.6% | 37.0% | 35.2 | 53.5% |
+| [Kimi K3.1 Pro](https://artificialanalysis.ai/models/kimi-k3-1-pro) | 25.5% | 67.2% | 73.3% | 37.3% | 49.5% | 46.5 | 76.1% |
+| [MiMo v2.6 Pro](https://artificialanalysis.ai/models/mimo-v2-6-pro) | 24.0% | 34.8% | 58.6% | 15.2% | 34.0% | 29.9 | 83.3% |
+| [GLM-5.3](https://artificialanalysis.ai/models/glm-5-3) | 21.6% | 41.9% | 62.2% | 17.9% | 33.5% | 31.7 | 55.4% |
+| [GLM-5.3-Flash](https://artificialanalysis.ai/models/glm-5-3-flash) | 17.6% | 32.8% | 60.4% | 18.2% | 24.5% | 27.8 | 72.3% |
 | [DeepSeek V4.1 Flash 1017](https://artificialanalysis.ai/models/deepseek-v4-1-flash-1017) | 28.5% | 33.8% | 66.6% | 25.3% | 25.0% | 32.6 | **100.0%** |
-| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 20.8% | 25.8% | 72.5% | 28.1% | 32.5% | 29.1 | 83.6% |
+| [MiniMax M3.1 Flash](https://artificialanalysis.ai/models/minimax-m3-1-flash) | 20.8% | 25.8% | 72.5% | 28.1% | 32.5% | 29.1 | 84.1% |
 | [Qwen3.8-Flash-Next](https://artificialanalysis.ai/models/qwen3-8-flash-next) | -- | 25.3% | 55.9% | 16.3% | -- | -- | -- |
-| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 14.9% | 5.6% | 48.2% | 15.3% | 4.0% | 20.1 | 39.3% |
+| [Qwen3.8-27B](https://artificialanalysis.ai/models/qwen3-8-27b) | 14.9% | 5.6% | 48.2% | 15.3% | 4.0% | 20.1 | 40.8% |
 
 - 数据核查日期：2026-11-05；AA 指数版本：v5.0.1。表中 AA 指数保留一位小数。
+- Fable 5.2 的规格、价格及 AA 成绩于 2026-11-11 补充核查；同期核对的 Opus/Haiku 5.5 成绩未变。
 - 数据优先采用AA独立评测，其次采用官方模型卡/报告。两者均不存在时，参考采信第三方评价或官方估计值。
-- 闭源推理模型使用表中成绩对应的高推理档位；Claude Opus/Sonnet 5.5 的 AA 评测启用了默认 fallback，因此单独标注。
-- GPT-6 Astra、GPT-6.1 Sol/Terra、Claude Opus/Sonnet/Haiku 5.5、GLM-5.3 和 DeepSeek V4.1 Flash 1017 使用 Max 档；Gemini 4 Carbon、Argon 和 Grok 4.7 使用 High 档；Qwen3.8-27B 使用 Xhigh 档，其余使用各自默认推理档位。
+- 闭源推理模型使用表中成绩对应的高推理档位；Claude Fable 5.2、Opus 5.5 的 AA 评测启用了默认 fallback，因此单独标注。
+- GPT-6 Astra、GPT-6.1 Sol/Terra、Claude Fable 5.2、Opus/Haiku 5.5、GLM-5.3 和 DeepSeek V4.1 Flash 1017 使用 Max 档；Gemini 4 Carbon、Argon 和 Grok 4.7 使用 High 档；Qwen3.8-27B 使用 Xhigh 档，其余使用各自默认推理档位。
 
 ## 性价比
 
 - 性价比使用上文 API 价格区块的综合价格与本区块的 AA 指数计算。
 - 性价比从当前表中选出“相同或更低综合价格下不存在更高 AA 指数模型”的全部 Pareto 前沿模型，拟合得到性价比预测线。然后计算每个模型的 AA 指数相对预测指数的百分比，再对总体归一化。归一化采用所有模型性价比乘以当前模型集合中最高原始性价比的倒数，使最高分恰为 100%，其余分数均落在 0–100% 区间。性价比是当前模型集合内的相对比较，模型或价格变化后需要重新筛选 Pareto 前沿并整体重算。
-- 当前拟合得到的性价比预测线为 `预期 AA 指数 = 37.8174 + 8.7685 × ln(综合价格)`（R² = 0.914）。归一化为 `实际 AA 指数 / 预期 AA 指数 × 91.6928%`。
+- 当前拟合得到的性价比预测线为 `预期 AA 指数 = 38.1277 + 8.1401 × ln(综合价格)`（R² = 0.934）。归一化为 `实际 AA 指数 / 预期 AA 指数 × 94.3868%`。
 - Qwen3.8-Flash-Next 缺少 AA v5.0.1 指数，性价比记为 `--`，不参与拟合与绘图。图中包含尚未公开开放的 Carbon，因此 Pareto 前沿不等同于当前可用 API 的采购建议。
 - Pareto模型的性价比已经被加粗。
 - 价格-AA 关系图（横轴为对数综合价格，纵轴为 AA 指数，红点为 Pareto 前沿模型，红色虚线为 Pareto 拟合线）：
@@ -128,7 +129,7 @@
 - GPT-6.1 Sol明显有价格优势。但是好坏波动大，所以一直有降智传言。
 - GPT-6.1 Terra部分用户报告结果更差却消耗更多。
 - Opus 5.5反馈逆天，号称“全球最好用模型”，“老实干活儿的老二回来了，还当了老大”。
-- Sonnet/Haiku 5.5长任务、跨轮记忆都比较差，失败循环与长上下文可能吃掉价格优势。
+- Haiku 5.5长任务、跨轮记忆都比较差，失败循环与长上下文可能吃掉价格优势。
 - Gemini 4 Argon复杂编码有幻觉，订阅额度和 token 消耗争议较大。
 - Grok被吐槽“只有NSFW是刚需”。而且这批人还在流向Qwen3.8-27B。
 - Kimi K3.1 Pro，复杂后端实现、原型和视觉设计反馈良好，部分用户认为接近 Opus。缺点是慢、工具使用弱、过度复杂化。订阅额度消耗投诉突出。
@@ -143,6 +144,7 @@
 
 - 评测升级到5之后，很多模型评分就大幅降低了。
 - 最强阵营里，Opus 5.5的领先位置被大幅降低，又恢复了御三家混战的格局。
+- Fable 5.2 的 AA v5.0.1 指数为 64.6，超过 Carbon 的 60.0 和 Opus 5.5 的 59.1，成为本表最高分，但综合价格也升至 $32。
 - Kimi K3.1 Pro 的 AA v5.0.1 指数为 46.5，在本表 17 款模型中排名第八，是表内开放权重模型最高分，已经进入最强阵营的混战中。
 - 第二集群里，GLM-5.3 的 AA 指数被 DeepSeek V4.1 Flash 1017 反超。这个集群实际上已经没什么价值了。
 - 高性价比部分。MiMo v2.6 Pro 的评分被大幅下调，反而落后于 DeepSeek V4.1 Flash 1017 了。DeepSeek V4.1 Flash 1017 直接封神。
