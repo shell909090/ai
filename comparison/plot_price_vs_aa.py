@@ -12,12 +12,11 @@ plt.rcParams["axes.unicode_minus"] = False
 data = {
     "GPT-6 Astra": (47.5, 56.9),
     "GPT-6.1 Sol": (7.5, 54.6),
-    "GPT-6.1 Terra": (3.75, 51.3),
     "Claude Fable 5.2": (32, 64.6),
     "Claude Opus 5.5": (18, 59.1),
     "Claude Haiku 5.5": (1.65, 36.5),
     "Gemini 4 Carbon": (10, 60.0),
-    "Gemini 4 Argon": (10, 50.4),
+    "Gemini 4 Hydrogen": (3.75, 53.9),
     "Grok 4.7": (18.9, 35.2),
     "Kimi K3.1 Pro": (11, 46.5),
     "MiMo v2.6 Pro": (0.594, 29.9),
