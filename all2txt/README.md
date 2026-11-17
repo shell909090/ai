@@ -34,7 +34,7 @@ Extract plain text from any file format, designed for RAG (Retrieval-Augmented G
 
 ## Installation
 
-Requires Python ≥ 3.11. Only `pyyaml` is installed by default; optional backends require their own dependencies.
+Requires Python ≥ 3.13. Only `pyyaml` is installed by default; optional backends require their own dependencies.
 
 ```bash
 # Minimal install (plain text, pandoc, pdftotext, groff — all external CLIs)

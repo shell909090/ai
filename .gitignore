@@ -2,6 +2,7 @@ __pycache__
 *.pyc
 
 .venv
+node_modules/
 *.jpg
 *.png
 !comparison/price_vs_aa.png
