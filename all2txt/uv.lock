@@ -6,9 +6,6 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
-[options]
-exclude-newer = "2026-11-14T05:15:35Z"
-
 [manifest]
 overrides = [{ name = "filelock", specifier = ">=4.2.4,<5" }]
 
@@ -3366,14 +3363,14 @@ wheels = [
 
 [[package]]
 name = "smart-open"
-version = "9.0.3"
+version = "9.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/21/df/8e78724259af8d3d456f14ff933134cf2771cb92460b20f1f6f656219d18/smart_open-9.0.3.tar.gz", hash = "sha256:9911fe8cdc60834bd51a28c5d2ec16cdc8b702a24b10e1b747c9dbbbeb423746", size = 65204, upload-time = "2026-11-09T19:04:33.876Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/b9/64f33524ac42fc079f7b6cb471ed15415acf80e5fc4ca02f0821b754d93d/smart_open-9.0.4.tar.gz", hash = "sha256:b14abc01a8a778225fcacaf26e2021ff67c04a5d6810433c42b621200ec42ea6", size = 65241, upload-time = "2026-11-14T11:32:58.272Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/7d/7721837d91457cd6490f78015a7a5f9b8e8c549d8e044a09e5d443ace591/smart_open-9.0.3-py3-none-any.whl", hash = "sha256:8de5f18719bb79b5621571291463d9ab3935bf007b310eb7e604b1b59f2a96b4", size = 76124, upload-time = "2026-11-09T19:04:32.372Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/af/62ef87f267e9f5aeed76392d3d25d5a1a36893743e67fb727b61fff6994b/smart_open-9.0.4-py3-none-any.whl", hash = "sha256:a0194ca29b392127c0cfc51183e0d9492ca129be91169250996c307ef293d80c", size = 76143, upload-time = "2026-11-14T11:32:56.777Z" },
 ]
 
 [package.optional-dependencies]
@@ -3383,11 +3380,11 @@ http = [
 
 [[package]]
 name = "soupsieve"
-version = "4.1"
+version = "4.1.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/95/48/21a393ff731b8f928fa4f8176f9a7ceba2252ee60a5149f25b45c292aa5c/soupsieve-4.1.tar.gz", hash = "sha256:ca9abf7126667010d8f6e9b39bfc1bc3b23c8aed9bcb0f54a754dde969bb8aab", size = 161955, upload-time = "2026-11-10T01:59:50.399Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/52/ee5646b65d98a252e807ccc37725363942372a4113072e0bce7ed22f8b84/soupsieve-4.1.1.tar.gz", hash = "sha256:b296bd2d2f65b1a78149f3d7bf6736a147d2c9e2dfbde0e4404639d748a02e03", size = 169784, upload-time = "2026-11-14T17:23:32.467Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/73/6a2087c72975cfc07394623bca8d17654342ea4055ae368deafe5a81a542/soupsieve-4.1-py3-none-any.whl", hash = "sha256:e4d667b3974ce6e038e7390486b8093369854a1d345ffdd4c121dfc4a782e809", size = 52302, upload-time = "2026-11-10T01:59:48.571Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl", hash = "sha256:8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6", size = 55089, upload-time = "2026-11-14T17:23:31.001Z" },
 ]
 
 [[package]]

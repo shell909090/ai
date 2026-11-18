@@ -114,7 +114,7 @@ elocate-updatedb [--debug]
 
 ## 非功能需求
 
-- 语言：Python 3.11+，使用 uv 管理依赖
+- 语言：Python 3.13+，使用 uv 管理依赖
 - 向量数据库：LanceDB（本地，无需服务端）
 - 嵌入后端：支持两种模式
   - `local`：sentence-transformers 本地推理（默认，无需网络，适合 CPU/GPU/MPS）

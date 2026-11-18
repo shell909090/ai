@@ -2,9 +2,6 @@ version = 1
 revision = 5
 requires-python = ">=3.10"
 
-[options]
-exclude-newer = "2026-11-14T05:15:35Z"
-
 [[package]]
 name = "review-tools"
 version = "0.1.0"
