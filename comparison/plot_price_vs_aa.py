@@ -15,7 +15,7 @@ data = {
     "Claude Fable 5.2": (32, 64.6),
     "Claude Opus 5.5": (18, 59.1),
     "Claude Haiku 5.5": (1.65, 36.5),
-    "Gemini 4 Carbon": (10, 60.0),
+    "Gemini 4 Neon": (7.5, 61.4),
     "Gemini 4 Hydrogen": (3.75, 53.9),
     "Grok 4.7": (18.9, 35.5),
     "Kimi K3.1 Pro": (11, 46.5),
@@ -26,6 +26,7 @@ data = {
     "MiniMax M3.1 Flash": (0.51, 29.1),
     "Qwen3.8-Flash-Next": (0.517, 28.6),
     "Qwen3.8-27B": (2.8, 20.1),
+    "Nanbeige4.3-33B": (None, 20.4),
 }
 
 missing = [model for model, (cost, score) in data.items() if cost is None or score is None]
